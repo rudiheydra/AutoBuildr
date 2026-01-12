@@ -21,6 +21,8 @@ import type {
   Settings,
   SettingsUpdate,
   ModelsResponse,
+  DevServerStatusResponse,
+  DevServerConfig,
 } from './types'
 
 const API_BASE = '/api'
@@ -300,4 +302,34 @@ export async function updateSettings(settings: SettingsUpdate): Promise<Settings
     method: 'PATCH',
     body: JSON.stringify(settings),
   })
+}
+
+// ============================================================================
+// Dev Server API
+// ============================================================================
+
+export async function getDevServerStatus(projectName: string): Promise<DevServerStatusResponse> {
+  return fetchJSON(`/projects/${encodeURIComponent(projectName)}/devserver/status`)
+}
+
+export async function startDevServer(
+  projectName: string,
+  command?: string
+): Promise<{ success: boolean; message: string }> {
+  return fetchJSON(`/projects/${encodeURIComponent(projectName)}/devserver/start`, {
+    method: 'POST',
+    body: JSON.stringify({ command }),
+  })
+}
+
+export async function stopDevServer(
+  projectName: string
+): Promise<{ success: boolean; message: string }> {
+  return fetchJSON(`/projects/${encodeURIComponent(projectName)}/devserver/stop`, {
+    method: 'POST',
+  })
+}
+
+export async function getDevServerConfig(projectName: string): Promise<DevServerConfig> {
+  return fetchJSON(`/projects/${encodeURIComponent(projectName)}/devserver/config`)
 }

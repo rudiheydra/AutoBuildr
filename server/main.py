@@ -34,17 +34,24 @@ from fastapi.staticfiles import StaticFiles
 from .routers import (
     agent_router,
     assistant_chat_router,
+    devserver_router,
     expand_project_router,
     features_router,
     filesystem_router,
     projects_router,
     settings_router,
     spec_creation_router,
+    terminal_router,
 )
 from .schemas import SetupStatus
 from .services.assistant_chat_session import cleanup_all_sessions as cleanup_assistant_sessions
+from .services.dev_server_manager import (
+    cleanup_all_devservers,
+    cleanup_orphaned_devserver_locks,
+)
 from .services.expand_chat_session import cleanup_all_expand_sessions
 from .services.process_manager import cleanup_all_managers, cleanup_orphaned_locks
+from .services.terminal_manager import cleanup_all_terminals
 from .websocket import project_websocket
 
 # Paths
@@ -57,11 +64,14 @@ async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown."""
     # Startup - clean up orphaned lock files from previous runs
     cleanup_orphaned_locks()
+    cleanup_orphaned_devserver_locks()
     yield
-    # Shutdown - cleanup all running agents and sessions
+    # Shutdown - cleanup all running agents, sessions, terminals, and dev servers
     await cleanup_all_managers()
     await cleanup_assistant_sessions()
     await cleanup_all_expand_sessions()
+    await cleanup_all_terminals()
+    await cleanup_all_devservers()
 
 
 # Create FastAPI app
@@ -110,11 +120,13 @@ async def require_localhost(request: Request, call_next):
 app.include_router(projects_router)
 app.include_router(features_router)
 app.include_router(agent_router)
+app.include_router(devserver_router)
 app.include_router(spec_creation_router)
 app.include_router(expand_project_router)
 app.include_router(filesystem_router)
 app.include_router(assistant_chat_router)
 app.include_router(settings_router)
+app.include_router(terminal_router)
 
 
 # ============================================================================
