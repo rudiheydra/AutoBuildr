@@ -130,23 +130,16 @@ For each new capability, estimate features:
 
 # FEATURE CREATION
 
-Once the user approves, create features directly.
+Once the user approves, create features using the MCP tool.
 
 **Signal that you're ready to create features by saying:**
 
-> "Great! I'll create these N features now. Each feature will include:
-> - Category
-> - Name (what's being tested)
-> - Description (how to verify it)
-> - Test steps
->
-> Creating features..."
+> "Great! I'll create these N features now."
 
-**Then output the features in this exact JSON format (the system will parse this):**
+**Then call the `feature_create_bulk` tool to save them directly to the database:**
 
-```json
-<features_to_create>
-[
+```
+feature_create_bulk(features=[
   {
     "category": "functional",
     "name": "Brief feature name",
@@ -167,15 +160,15 @@ Once the user approves, create features directly.
       "Step 3: Verify styling"
     ]
   }
-]
-</features_to_create>
+])
 ```
 
 **CRITICAL:**
-- Wrap the JSON array in `<features_to_create>` tags exactly as shown
+- Call the `feature_create_bulk` MCP tool with ALL features at once
 - Use valid JSON (double quotes, no trailing commas)
 - Include ALL features you promised to create
 - Each feature needs: category, name, description, steps (array of strings)
+- The tool will return the count of created features - verify it matches your expected count
 
 ---
 
