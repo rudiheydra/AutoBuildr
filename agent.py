@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Optional
 from zoneinfo import ZoneInfo
 
-from claude_agent_sdk import ClaudeSDKClient
+from claude_code_sdk import ClaudeSDKClient
 
 # Fix Windows console encoding for Unicode characters (emoji, etc.)
 # Without this, print() crashes when Claude outputs emoji like ✅
@@ -237,6 +237,14 @@ async def run_autonomous_agent(
             print(f"Client/MCP server error: {e}")
             # Don't crash - return error status so the loop can retry
             status, response = "error", str(e)
+
+        # Check for project completion - EXIT when all features pass
+        if "all features are passing" in response.lower() or "no more work to do" in response.lower():
+            print("\n" + "=" * 70)
+            print("  🎉 PROJECT COMPLETE - ALL FEATURES PASSING!")
+            print("=" * 70)
+            print_progress_summary(project_dir)
+            break
 
         # Handle status
         if status == "continue":
