@@ -19,6 +19,7 @@ from .agentspec import (
     # Request schemas
     AcceptanceSpecCreate,
     AgentSpecCreate,
+    AgentSpecUpdate,
     ArtifactCreate,
     EventCreate,
     RunStatusUpdate,
@@ -47,6 +48,7 @@ __all__ = [
     "VALIDATOR_TYPES",
     # Request schemas
     "AgentSpecCreate",
+    "AgentSpecUpdate",
     "AcceptanceSpecCreate",
     "ArtifactCreate",
     "EventCreate",

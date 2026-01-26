@@ -169,6 +169,95 @@ class AgentSpecCreate(BaseModel):
         }
 
 
+class AgentSpecUpdate(BaseModel):
+    """Request schema for updating an AgentSpec.
+
+    All fields are optional - only provided fields will be updated.
+
+    Example:
+        {
+            "display_name": "Updated Feature Name",
+            "max_turns": 100,
+            "tags": ["updated", "priority"]
+        }
+    """
+
+    name: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=100,
+        pattern=r'^[a-z0-9][a-z0-9\-]*[a-z0-9]$|^[a-z0-9]$',
+        description="Machine-friendly name (lowercase, hyphens allowed)"
+    )
+    display_name: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=255,
+        description="Human-friendly display name"
+    )
+    icon: str | None = Field(
+        default=None,
+        max_length=50,
+        description="Emoji or icon identifier"
+    )
+
+    objective: str | None = Field(
+        default=None,
+        min_length=10,
+        max_length=5000,
+        description="Clear goal statement"
+    )
+    task_type: TASK_TYPES | None = Field(default=None, description="Type of task")
+    context: dict[str, Any] | None = Field(
+        default=None,
+        description="Task-specific context"
+    )
+
+    tool_policy: ToolPolicy | None = Field(default=None, description="Tool access policy")
+    max_turns: int | None = Field(
+        default=None,
+        ge=1,
+        le=500,
+        description="Max API round-trips"
+    )
+    timeout_seconds: int | None = Field(
+        default=None,
+        ge=60,
+        le=7200,
+        description="Wall-clock timeout in seconds"
+    )
+
+    parent_spec_id: str | None = Field(
+        default=None,
+        description="Parent spec ID for sub-agent spawning (future)"
+    )
+    source_feature_id: int | None = Field(
+        default=None,
+        description="Linked Feature ID"
+    )
+    priority: int | None = Field(
+        default=None,
+        ge=1,
+        le=9999,
+        description="Execution priority (lower = higher priority)"
+    )
+    tags: list[str] | None = Field(
+        default=None,
+        max_length=20,
+        description="Tags for filtering"
+    )
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "display_name": "Updated Feature Name",
+                "max_turns": 100,
+                "priority": 50,
+                "tags": ["updated", "priority"]
+            }
+        }
+
+
 class AgentSpecResponse(BaseModel):
     """Response schema for an AgentSpec."""
 
