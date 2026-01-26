@@ -13,6 +13,7 @@
  */
 
 import { Clock, AlertCircle, CheckCircle, PauseCircle, XCircle, Timer, Play } from 'lucide-react'
+import { TurnsProgressBar } from './TurnsProgressBar'
 import type { AgentRunStatus, DynamicAgentData } from '../lib/types'
 
 interface DynamicAgentCardProps {
@@ -102,37 +103,7 @@ function StatusBadge({ status }: { status: AgentRunStatus }) {
   )
 }
 
-/**
- * Progress bar showing turns used vs max turns
- */
-function TurnsProgressBar({
-  turnsUsed,
-  maxTurns,
-  status,
-}: {
-  turnsUsed: number
-  maxTurns: number
-  status: AgentRunStatus
-}) {
-  const percentage = Math.min((turnsUsed / maxTurns) * 100, 100)
-
-  return (
-    <div className="mt-3">
-      <div className="flex justify-between text-xs text-neo-text-secondary mb-1">
-        <span>Turns</span>
-        <span>
-          {turnsUsed} / {maxTurns}
-        </span>
-      </div>
-      <div className="neo-progress h-2">
-        <div
-          className={`neo-progress-fill neo-progress-fill-${status}`}
-          style={{ width: `${percentage}%` }}
-        />
-      </div>
-    </div>
-  )
-}
+// TurnsProgressBar is now imported from ./TurnsProgressBar
 
 /**
  * DynamicAgentCard - Main component
@@ -183,11 +154,12 @@ export function DynamicAgentCard({ data, onClick }: DynamicAgentCardProps) {
       {/* Additional run info */}
       {run && (
         <>
-          {/* Progress bar */}
+          {/* Progress bar - using reusable TurnsProgressBar component */}
           <TurnsProgressBar
-            turnsUsed={run.turns_used}
-            maxTurns={spec.max_turns}
+            used={run.turns_used}
+            max={spec.max_turns}
             status={status}
+            className="mt-3"
           />
 
           {/* Error message if failed */}
@@ -224,4 +196,7 @@ export function DynamicAgentCard({ data, onClick }: DynamicAgentCardProps) {
 /**
  * Export status utility functions for use in other components
  */
-export { getStatusIcon, getStatusLabel, StatusBadge, TurnsProgressBar }
+export { getStatusIcon, getStatusLabel, StatusBadge }
+
+// Re-export TurnsProgressBar from its module for convenience
+export { TurnsProgressBar } from './TurnsProgressBar'
