@@ -67,6 +67,28 @@ from api.tool_policy import (
     STANDARD_FORBIDDEN_PATTERNS,
     TASK_SPECIFIC_FORBIDDEN_PATTERNS,
     TASK_TOOL_HINTS,
+    # Feature #40: ToolPolicy Allowed Tools Filtering
+    ToolDefinition,
+    ToolFilterResult,
+    extract_allowed_tools,
+    filter_tools,
+    filter_tools_for_spec,
+    get_filtered_tool_names,
+    validate_tool_names,
+    # Feature #44: Policy Violation Event Logging
+    PolicyViolation,
+    ViolationAggregation,
+    VIOLATION_TYPES,
+    create_allowed_tools_violation,
+    create_directory_sandbox_violation,
+    create_forbidden_patterns_violation,
+    get_violation_aggregation,
+    record_allowed_tools_violation,
+    record_and_aggregate_violation,
+    record_directory_sandbox_violation,
+    record_forbidden_patterns_violation,
+    record_policy_violation_event,
+    update_run_violation_metadata,
 )
 from api.display_derivation import (
     derive_display_name,
@@ -83,7 +105,9 @@ from api.display_derivation import (
     DEFAULT_ICON,
 )
 from api.validators import (
+    AcceptanceGate,
     FileExistsValidator,
+    GateResult,
     Validator,
     ValidatorResult,
     VALIDATOR_REGISTRY,
@@ -109,6 +133,11 @@ from api.websocket_events import (
     broadcast_acceptance_update_sync,
     build_acceptance_update_from_results,
     create_validator_result_payload,
+)
+from api.event_recorder import (
+    EventRecorder,
+    get_event_recorder,
+    clear_recorder_cache,
 )
 
 __all__ = [
@@ -172,6 +201,14 @@ __all__ = [
     "STANDARD_FORBIDDEN_PATTERNS",
     "TASK_SPECIFIC_FORBIDDEN_PATTERNS",
     "TASK_TOOL_HINTS",
+    # Feature #40: ToolPolicy Allowed Tools Filtering exports
+    "ToolDefinition",
+    "ToolFilterResult",
+    "extract_allowed_tools",
+    "filter_tools",
+    "filter_tools_for_spec",
+    "get_filtered_tool_names",
+    "validate_tool_names",
     # Display derivation exports
     "derive_display_name",
     "derive_display_properties",
@@ -185,8 +222,10 @@ __all__ = [
     "MASCOT_POOL",
     "TASK_TYPE_ICONS",
     "DEFAULT_ICON",
-    # Validators exports
+    # Validators exports (Feature #35: AcceptanceGate)
+    "AcceptanceGate",
     "FileExistsValidator",
+    "GateResult",
     "Validator",
     "ValidatorResult",
     "VALIDATOR_REGISTRY",
@@ -210,4 +249,8 @@ __all__ = [
     "broadcast_acceptance_update_sync",
     "build_acceptance_update_from_results",
     "create_validator_result_payload",
+    # Event recorder exports (Feature #30)
+    "EventRecorder",
+    "get_event_recorder",
+    "clear_recorder_cache",
 ]

@@ -1743,3 +1743,1011 @@ def get_supported_task_types() -> list[str]:
         List of supported task type strings
     """
     return list(TOOL_SETS.keys())
+
+
+# =============================================================================
+# Tool Filtering (Feature #40: ToolPolicy Allowed Tools Filtering)
+# =============================================================================
+
+@dataclass
+class ToolDefinition:
+    """
+    Represents a tool definition for the Claude SDK.
+
+    This is a lightweight representation of tool information
+    that can be used for filtering and validation.
+    """
+    name: str
+    description: str = ""
+    input_schema: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "name": self.name,
+            "description": self.description,
+            "input_schema": self.input_schema,
+            "metadata": self.metadata,
+        }
+
+
+@dataclass
+class ToolFilterResult:
+    """
+    Result of filtering tools based on ToolPolicy.
+
+    Contains the filtered tools and information about what was filtered.
+    """
+    filtered_tools: list[ToolDefinition]
+    allowed_count: int
+    total_count: int
+    filtered_out: list[str]  # Names of tools that were filtered out
+    invalid_tools: list[str]  # Tools in allowed_tools that don't exist
+    mode: str  # "whitelist" or "all_allowed"
+
+    @property
+    def all_allowed(self) -> bool:
+        """True if all tools were allowed (no filtering applied)."""
+        return self.mode == "all_allowed"
+
+    @property
+    def has_invalid_tools(self) -> bool:
+        """True if some tools in allowed_tools don't exist in available tools."""
+        return len(self.invalid_tools) > 0
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "allowed_count": self.allowed_count,
+            "total_count": self.total_count,
+            "filtered_out": self.filtered_out,
+            "invalid_tools": self.invalid_tools,
+            "mode": self.mode,
+            "all_allowed": self.all_allowed,
+            "has_invalid_tools": self.has_invalid_tools,
+        }
+
+
+def extract_allowed_tools(tool_policy: dict[str, Any] | None) -> list[str] | None:
+    """
+    Extract allowed_tools from a tool_policy dict.
+
+    Feature #40, Step 1: Extract allowed_tools from spec.tool_policy
+
+    Handles various edge cases:
+    - None tool_policy -> None (all tools allowed)
+    - Missing allowed_tools key -> None (all tools allowed)
+    - Empty list -> None (all tools allowed)
+    - None value -> None (all tools allowed)
+    - Non-list values (with warning) -> None
+
+    Args:
+        tool_policy: Tool policy dictionary from AgentSpec
+
+    Returns:
+        List of tool name strings, or None if all tools should be allowed
+
+    Example:
+        >>> policy = {
+        ...     "policy_version": "v1",
+        ...     "allowed_tools": ["Read", "Write", "Edit"]
+        ... }
+        >>> extract_allowed_tools(policy)
+        ['Read', 'Write', 'Edit']
+
+        >>> extract_allowed_tools(None)  # All allowed
+        None
+
+        >>> extract_allowed_tools({"allowed_tools": []})  # All allowed
+        None
+    """
+    if tool_policy is None:
+        return None
+
+    allowed = tool_policy.get("allowed_tools")
+
+    if allowed is None:
+        return None
+
+    if not isinstance(allowed, list):
+        _logger.warning(
+            "allowed_tools is not a list: %r (type: %s), treating as None (all allowed)",
+            allowed, type(allowed).__name__
+        )
+        return None
+
+    # Filter to only valid string entries
+    valid_tools = []
+    for tool in allowed:
+        if isinstance(tool, str):
+            stripped = tool.strip()
+            if stripped:
+                valid_tools.append(stripped)
+        else:
+            _logger.warning(
+                "Skipping non-string tool in allowed_tools: %r (type: %s)",
+                tool, type(tool).__name__
+            )
+
+    # Feature #40, Step 2: If None or empty, allow all available tools
+    if not valid_tools:
+        return None
+
+    return valid_tools
+
+
+def validate_tool_names(
+    tool_names: list[str],
+    available_tools: list[str],
+) -> tuple[list[str], list[str]]:
+    """
+    Validate that tool names exist in the available tools set.
+
+    Feature #40, Step 5: Verify filtered tools are valid MCP tool names
+
+    Args:
+        tool_names: List of tool names to validate
+        available_tools: List of available tool names
+
+    Returns:
+        Tuple of (valid_tools, invalid_tools)
+        - valid_tools: Tool names that exist in available_tools
+        - invalid_tools: Tool names that don't exist
+
+    Example:
+        >>> available = ["Read", "Write", "Bash"]
+        >>> validate_tool_names(["Read", "Write", "InvalidTool"], available)
+        (['Read', 'Write'], ['InvalidTool'])
+    """
+    available_set = set(available_tools)
+    valid = []
+    invalid = []
+
+    for name in tool_names:
+        if name in available_set:
+            valid.append(name)
+        else:
+            invalid.append(name)
+
+    return valid, invalid
+
+
+def filter_tools(
+    available_tools: list[ToolDefinition] | list[dict[str, Any]],
+    allowed_tools: list[str] | None,
+    *,
+    spec_id: str | None = None,
+) -> ToolFilterResult:
+    """
+    Filter tools based on allowed_tools whitelist.
+
+    Feature #40: ToolPolicy Allowed Tools Filtering
+
+    This function implements the core filtering logic:
+    - Step 2: If None or empty, allow all available tools
+    - Step 3: If list provided, filter tools to only include those in list
+    - Step 4: Log which tools are available to agent
+    - Step 5: Verify filtered tools are valid MCP tool names
+    - Step 6: Return filtered tool definitions to Claude SDK
+
+    Args:
+        available_tools: List of available tool definitions (ToolDefinition or dicts)
+        allowed_tools: List of allowed tool names, or None to allow all
+        spec_id: Optional spec ID for logging context
+
+    Returns:
+        ToolFilterResult with filtered tools and filtering metadata
+
+    Example:
+        >>> tools = [
+        ...     ToolDefinition(name="Read", description="Read file"),
+        ...     ToolDefinition(name="Write", description="Write file"),
+        ...     ToolDefinition(name="Bash", description="Run command"),
+        ... ]
+        >>> result = filter_tools(tools, ["Read", "Write"])
+        >>> len(result.filtered_tools)
+        2
+        >>> result.filtered_out
+        ['Bash']
+
+        >>> result = filter_tools(tools, None)  # All allowed
+        >>> len(result.filtered_tools)
+        3
+        >>> result.mode
+        'all_allowed'
+    """
+    # Normalize input to ToolDefinition objects
+    normalized_tools: list[ToolDefinition] = []
+    for tool in available_tools:
+        if isinstance(tool, ToolDefinition):
+            normalized_tools.append(tool)
+        elif isinstance(tool, dict):
+            normalized_tools.append(ToolDefinition(
+                name=tool.get("name", ""),
+                description=tool.get("description", ""),
+                input_schema=tool.get("input_schema", {}),
+                metadata=tool.get("metadata", {}),
+            ))
+        else:
+            _logger.warning("Skipping invalid tool definition: %r", tool)
+
+    # Get available tool names for validation
+    available_names = [t.name for t in normalized_tools]
+    total_count = len(normalized_tools)
+
+    # Step 2: If None or empty, allow all available tools
+    if not allowed_tools:
+        # Feature #40, Step 4: Log which tools are available
+        _logger.info(
+            "All %d tools allowed for spec %s: %s",
+            total_count,
+            spec_id or "unknown",
+            ", ".join(sorted(available_names))
+        )
+
+        return ToolFilterResult(
+            filtered_tools=normalized_tools,
+            allowed_count=total_count,
+            total_count=total_count,
+            filtered_out=[],
+            invalid_tools=[],
+            mode="all_allowed",
+        )
+
+    # Step 5: Verify filtered tools are valid MCP tool names
+    valid_names, invalid_names = validate_tool_names(allowed_tools, available_names)
+
+    if invalid_names:
+        _logger.warning(
+            "Some allowed_tools are not valid for spec %s: %s",
+            spec_id or "unknown",
+            ", ".join(invalid_names)
+        )
+
+    # Step 3: Filter tools to only include those in allowed_tools list
+    allowed_set = set(valid_names)
+    filtered: list[ToolDefinition] = []
+    filtered_out: list[str] = []
+
+    for tool in normalized_tools:
+        if tool.name in allowed_set:
+            filtered.append(tool)
+        else:
+            filtered_out.append(tool.name)
+
+    # Step 4: Log which tools are available to agent
+    allowed_count = len(filtered)
+    _logger.info(
+        "Filtered tools for spec %s: %d/%d allowed (%s)",
+        spec_id or "unknown",
+        allowed_count,
+        total_count,
+        ", ".join(sorted(t.name for t in filtered))
+    )
+
+    if filtered_out:
+        _logger.debug(
+            "Tools filtered out for spec %s: %s",
+            spec_id or "unknown",
+            ", ".join(sorted(filtered_out))
+        )
+
+    # Step 6: Return filtered tool definitions
+    return ToolFilterResult(
+        filtered_tools=filtered,
+        allowed_count=allowed_count,
+        total_count=total_count,
+        filtered_out=filtered_out,
+        invalid_tools=invalid_names,
+        mode="whitelist",
+    )
+
+
+def filter_tools_for_spec(
+    spec: "AgentSpec",
+    available_tools: list[ToolDefinition] | list[dict[str, Any]],
+) -> ToolFilterResult:
+    """
+    Filter tools for a specific AgentSpec.
+
+    Convenience function that extracts allowed_tools from the spec
+    and calls filter_tools.
+
+    Args:
+        spec: The AgentSpec with tool_policy
+        available_tools: List of available tool definitions
+
+    Returns:
+        ToolFilterResult with filtered tools
+
+    Example:
+        # In HarnessKernel.execute():
+        from api.tool_policy import filter_tools_for_spec
+
+        result = filter_tools_for_spec(spec, all_available_tools)
+        filtered_tool_defs = result.filtered_tools
+    """
+    tool_policy = spec.tool_policy or {}
+    allowed_tools = extract_allowed_tools(tool_policy)
+
+    return filter_tools(
+        available_tools=available_tools,
+        allowed_tools=allowed_tools,
+        spec_id=spec.id,
+    )
+
+
+def get_filtered_tool_names(
+    tool_policy: dict[str, Any] | None,
+    available_tool_names: list[str],
+    *,
+    spec_id: str | None = None,
+) -> tuple[list[str], list[str]]:
+    """
+    Get filtered tool names based on tool_policy.
+
+    This is a lightweight version of filter_tools that works with
+    just tool names, without needing full tool definitions.
+
+    Args:
+        tool_policy: Tool policy dict with allowed_tools
+        available_tool_names: List of all available tool names
+        spec_id: Optional spec ID for logging
+
+    Returns:
+        Tuple of (filtered_names, filtered_out_names)
+
+    Example:
+        >>> available = ["Read", "Write", "Bash", "Edit"]
+        >>> policy = {"allowed_tools": ["Read", "Edit"]}
+        >>> filtered, out = get_filtered_tool_names(policy, available)
+        >>> filtered
+        ['Read', 'Edit']
+        >>> out
+        ['Bash', 'Write']
+    """
+    allowed_tools = extract_allowed_tools(tool_policy)
+
+    if not allowed_tools:
+        # All allowed
+        _logger.info(
+            "All %d tools allowed for spec %s",
+            len(available_tool_names),
+            spec_id or "unknown"
+        )
+        return list(available_tool_names), []
+
+    # Validate and filter
+    valid_names, invalid_names = validate_tool_names(allowed_tools, available_tool_names)
+
+    if invalid_names:
+        _logger.warning(
+            "Invalid tool names in allowed_tools for spec %s: %s",
+            spec_id or "unknown",
+            ", ".join(invalid_names)
+        )
+
+    # Get filtered out names
+    allowed_set = set(valid_names)
+    filtered_out = [name for name in available_tool_names if name not in allowed_set]
+
+    _logger.info(
+        "Tool filtering for spec %s: %d allowed, %d filtered out",
+        spec_id or "unknown",
+        len(valid_names),
+        len(filtered_out)
+    )
+
+    return valid_names, filtered_out
+
+
+# =============================================================================
+# Feature #44: Policy Violation Event Logging
+# =============================================================================
+
+# Violation types - categorizes the type of policy violation
+VIOLATION_TYPES = [
+    "allowed_tools",        # Tool not in allowed_tools list
+    "forbidden_patterns",   # Arguments matched a forbidden pattern
+    "directory_sandbox",    # File path outside allowed directories
+]
+
+
+@dataclass
+class PolicyViolation:
+    """
+    Represents a policy violation that occurred during agent execution.
+
+    This dataclass captures all relevant information about a policy violation
+    for event logging and aggregation.
+
+    Attributes:
+        violation_type: Category of violation (allowed_tools, forbidden_patterns, directory_sandbox)
+        tool_name: Name of the tool that triggered the violation
+        turn_number: Agent turn number when the violation occurred
+        details: Dictionary containing violation-specific details
+        message: Human-readable description of the violation
+        blocked_operation: Description of what operation was blocked
+    """
+    violation_type: str
+    tool_name: str
+    turn_number: int
+    details: dict[str, Any]
+    message: str
+    blocked_operation: str
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "violation_type": self.violation_type,
+            "tool_name": self.tool_name,
+            "turn_number": self.turn_number,
+            "details": self.details,
+            "message": self.message,
+            "blocked_operation": self.blocked_operation,
+        }
+
+
+@dataclass
+class ViolationAggregation:
+    """
+    Aggregated violation counts for a run.
+
+    This is stored in run metadata to provide a summary of all violations
+    without needing to query events.
+
+    Attributes:
+        total_count: Total number of violations
+        by_type: Count per violation type
+        by_tool: Count per tool name
+        last_turn: Turn number of the most recent violation
+    """
+    total_count: int = 0
+    by_type: dict[str, int] = field(default_factory=dict)
+    by_tool: dict[str, int] = field(default_factory=dict)
+    last_turn: int = 0
+
+    def add_violation(
+        self,
+        violation_type: str,
+        tool_name: str,
+        turn_number: int,
+    ) -> None:
+        """
+        Update aggregation with a new violation.
+
+        Args:
+            violation_type: Type of the violation
+            tool_name: Name of the tool
+            turn_number: Turn number when violation occurred
+        """
+        self.total_count += 1
+
+        # Update by_type count
+        self.by_type[violation_type] = self.by_type.get(violation_type, 0) + 1
+
+        # Update by_tool count
+        self.by_tool[tool_name] = self.by_tool.get(tool_name, 0) + 1
+
+        # Track latest turn
+        if turn_number > self.last_turn:
+            self.last_turn = turn_number
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "total_count": self.total_count,
+            "by_type": self.by_type,
+            "by_tool": self.by_tool,
+            "last_turn": self.last_turn,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> "ViolationAggregation":
+        """Create ViolationAggregation from dictionary."""
+        if not data:
+            return cls()
+
+        return cls(
+            total_count=data.get("total_count", 0),
+            by_type=data.get("by_type", {}),
+            by_tool=data.get("by_tool", {}),
+            last_turn=data.get("last_turn", 0),
+        )
+
+
+def create_allowed_tools_violation(
+    tool_name: str,
+    turn_number: int,
+    allowed_tools: list[str] | None,
+    arguments: dict[str, Any] | None = None,
+) -> PolicyViolation:
+    """
+    Create a PolicyViolation for an allowed_tools violation.
+
+    Feature #44, Step 2: When tool blocked by allowed_tools, record event.
+
+    Args:
+        tool_name: Name of the tool that was blocked
+        turn_number: Agent turn number when violation occurred
+        allowed_tools: List of allowed tools (for context in details)
+        arguments: Tool arguments that were blocked
+
+    Returns:
+        PolicyViolation instance ready for logging
+
+    Example:
+        >>> violation = create_allowed_tools_violation(
+        ...     "rm", turn_number=5, allowed_tools=["Read", "Write"]
+        ... )
+        >>> violation.violation_type
+        'allowed_tools'
+    """
+    # Limit allowed_tools list in details to avoid huge payloads
+    allowed_preview = (allowed_tools[:10] + ["..."]) if allowed_tools and len(allowed_tools) > 10 else allowed_tools
+
+    details = {
+        "blocked_tool": tool_name,
+        "allowed_tools": allowed_preview,
+        "allowed_tools_count": len(allowed_tools) if allowed_tools else 0,
+    }
+
+    # Include truncated arguments if provided
+    if arguments:
+        args_str = json.dumps(arguments, default=str)
+        if len(args_str) > 500:
+            details["arguments_preview"] = args_str[:500] + "..."
+        else:
+            details["arguments"] = arguments
+
+    return PolicyViolation(
+        violation_type="allowed_tools",
+        tool_name=tool_name,
+        turn_number=turn_number,
+        details=details,
+        message=f"Tool '{tool_name}' is not in the allowed_tools whitelist",
+        blocked_operation=f"Call to tool '{tool_name}'",
+    )
+
+
+def create_forbidden_patterns_violation(
+    tool_name: str,
+    turn_number: int,
+    pattern_matched: str,
+    arguments: dict[str, Any] | None = None,
+) -> PolicyViolation:
+    """
+    Create a PolicyViolation for a forbidden_patterns violation.
+
+    Feature #44, Step 3: When tool blocked by forbidden_patterns, record pattern matched.
+
+    Args:
+        tool_name: Name of the tool that was blocked
+        turn_number: Agent turn number when violation occurred
+        pattern_matched: The regex pattern that matched
+        arguments: Tool arguments that matched the pattern
+
+    Returns:
+        PolicyViolation instance ready for logging
+
+    Example:
+        >>> violation = create_forbidden_patterns_violation(
+        ...     "Bash", turn_number=10, pattern_matched="rm -rf"
+        ... )
+        >>> violation.details["pattern_matched"]
+        'rm -rf'
+    """
+    details = {
+        "blocked_tool": tool_name,
+        "pattern_matched": pattern_matched,
+    }
+
+    # Include truncated arguments if provided
+    if arguments:
+        args_str = json.dumps(arguments, default=str)
+        if len(args_str) > 500:
+            details["arguments_preview"] = args_str[:500] + "..."
+        else:
+            details["arguments"] = arguments
+
+    return PolicyViolation(
+        violation_type="forbidden_patterns",
+        tool_name=tool_name,
+        turn_number=turn_number,
+        details=details,
+        message=f"Tool '{tool_name}' arguments match forbidden pattern: '{pattern_matched}'",
+        blocked_operation=f"Call to tool '{tool_name}' with pattern-matching arguments",
+    )
+
+
+def create_directory_sandbox_violation(
+    tool_name: str,
+    turn_number: int,
+    attempted_path: str,
+    reason: str,
+    allowed_directories: list[str],
+    was_symlink: bool = False,
+) -> PolicyViolation:
+    """
+    Create a PolicyViolation for a directory sandbox violation.
+
+    Feature #44, Step 4: When file operation blocked by sandbox, record attempted path.
+
+    Args:
+        tool_name: Name of the tool that was blocked
+        turn_number: Agent turn number when violation occurred
+        attempted_path: The path that was blocked
+        reason: Reason for blocking (e.g., "path traversal", "outside sandbox")
+        allowed_directories: List of allowed directories for context
+        was_symlink: Whether the path was a symlink
+
+    Returns:
+        PolicyViolation instance ready for logging
+
+    Example:
+        >>> violation = create_directory_sandbox_violation(
+        ...     "write_file", turn_number=15,
+        ...     attempted_path="/etc/passwd",
+        ...     reason="Path is not within any allowed directory",
+        ...     allowed_directories=["/home/user/project"]
+        ... )
+        >>> violation.details["attempted_path"]
+        '/etc/passwd'
+    """
+    # Limit allowed_directories list in details
+    dirs_preview = (allowed_directories[:5] + ["..."]) if len(allowed_directories) > 5 else allowed_directories
+
+    details = {
+        "blocked_tool": tool_name,
+        "attempted_path": attempted_path,
+        "reason": reason,
+        "allowed_directories": dirs_preview,
+        "allowed_directories_count": len(allowed_directories),
+        "was_symlink": was_symlink,
+    }
+
+    return PolicyViolation(
+        violation_type="directory_sandbox",
+        tool_name=tool_name,
+        turn_number=turn_number,
+        details=details,
+        message=f"Tool '{tool_name}' blocked: {reason}",
+        blocked_operation=f"File operation on path '{attempted_path}'",
+    )
+
+
+def record_policy_violation_event(
+    db: "Session",
+    run_id: str,
+    sequence: int,
+    violation: PolicyViolation,
+) -> "AgentEvent":
+    """
+    Record a policy_violation event for a run.
+
+    Feature #44: Log all tool policy violations as AgentEvents with
+    violation type and blocked operation details.
+
+    The event payload includes:
+    - violation_type: Category of violation
+    - tool_name: Tool that triggered the violation
+    - turn_number: Agent turn number for context (Step 5)
+    - blocked_operation: What was blocked
+    - message: Human-readable explanation
+    - details: Violation-specific details
+
+    Args:
+        db: Database session
+        run_id: ID of the AgentRun
+        sequence: Event sequence number
+        violation: PolicyViolation instance with all details
+
+    Returns:
+        The created AgentEvent
+
+    Example:
+        >>> violation = create_forbidden_patterns_violation("Bash", 5, "rm -rf")
+        >>> event = record_policy_violation_event(db, run_id, 10, violation)
+        >>> event.event_type
+        'policy_violation'
+    """
+    from api.agentspec_models import AgentEvent
+
+    # Build payload with all violation details
+    payload = {
+        "violation_type": violation.violation_type,
+        "tool": violation.tool_name,
+        "turn_number": violation.turn_number,  # Feature #44, Step 5
+        "blocked_operation": violation.blocked_operation,
+        "message": violation.message,
+        "details": violation.details,
+    }
+
+    event = AgentEvent(
+        run_id=run_id,
+        sequence=sequence,
+        event_type="policy_violation",
+        timestamp=_utc_now(),
+        payload=payload,
+        tool_name=violation.tool_name,
+    )
+
+    db.add(event)
+    # Note: Caller should commit the session
+
+    _logger.info(
+        "Recorded policy_violation event: run=%s, type=%s, tool=%s, turn=%d",
+        run_id,
+        violation.violation_type,
+        violation.tool_name,
+        violation.turn_number,
+    )
+
+    return event
+
+
+def record_allowed_tools_violation(
+    db: "Session",
+    run_id: str,
+    sequence: int,
+    tool_name: str,
+    turn_number: int,
+    allowed_tools: list[str] | None,
+    arguments: dict[str, Any] | None = None,
+) -> "AgentEvent":
+    """
+    Convenience function to record an allowed_tools violation event.
+
+    Feature #44, Step 2: When tool blocked by allowed_tools, record event.
+
+    Args:
+        db: Database session
+        run_id: Run ID
+        sequence: Event sequence number
+        tool_name: Name of blocked tool
+        turn_number: Agent turn number
+        allowed_tools: List of allowed tools
+        arguments: Tool arguments that were blocked
+
+    Returns:
+        The created AgentEvent
+    """
+    violation = create_allowed_tools_violation(
+        tool_name=tool_name,
+        turn_number=turn_number,
+        allowed_tools=allowed_tools,
+        arguments=arguments,
+    )
+    return record_policy_violation_event(db, run_id, sequence, violation)
+
+
+def record_forbidden_patterns_violation(
+    db: "Session",
+    run_id: str,
+    sequence: int,
+    tool_name: str,
+    turn_number: int,
+    pattern_matched: str,
+    arguments: dict[str, Any] | None = None,
+) -> "AgentEvent":
+    """
+    Convenience function to record a forbidden_patterns violation event.
+
+    Feature #44, Step 3: When tool blocked by forbidden_patterns, record pattern matched.
+
+    Args:
+        db: Database session
+        run_id: Run ID
+        sequence: Event sequence number
+        tool_name: Name of blocked tool
+        turn_number: Agent turn number
+        pattern_matched: The pattern that matched
+        arguments: Tool arguments that matched
+
+    Returns:
+        The created AgentEvent
+    """
+    violation = create_forbidden_patterns_violation(
+        tool_name=tool_name,
+        turn_number=turn_number,
+        pattern_matched=pattern_matched,
+        arguments=arguments,
+    )
+    return record_policy_violation_event(db, run_id, sequence, violation)
+
+
+def record_directory_sandbox_violation(
+    db: "Session",
+    run_id: str,
+    sequence: int,
+    tool_name: str,
+    turn_number: int,
+    attempted_path: str,
+    reason: str,
+    allowed_directories: list[str],
+    was_symlink: bool = False,
+) -> "AgentEvent":
+    """
+    Convenience function to record a directory_sandbox violation event.
+
+    Feature #44, Step 4: When file operation blocked by sandbox, record attempted path.
+
+    Args:
+        db: Database session
+        run_id: Run ID
+        sequence: Event sequence number
+        tool_name: Name of blocked tool
+        turn_number: Agent turn number
+        attempted_path: The path that was blocked
+        reason: Reason for blocking
+        allowed_directories: List of allowed directories
+        was_symlink: Whether the path was a symlink
+
+    Returns:
+        The created AgentEvent
+    """
+    violation = create_directory_sandbox_violation(
+        tool_name=tool_name,
+        turn_number=turn_number,
+        attempted_path=attempted_path,
+        reason=reason,
+        allowed_directories=allowed_directories,
+        was_symlink=was_symlink,
+    )
+    return record_policy_violation_event(db, run_id, sequence, violation)
+
+
+def get_violation_aggregation(
+    db: "Session",
+    run_id: str,
+) -> ViolationAggregation:
+    """
+    Compute violation aggregation from events for a run.
+
+    Feature #44, Step 6: Aggregate violation count in run metadata.
+
+    This function queries all policy_violation events for a run and
+    computes aggregated statistics.
+
+    Args:
+        db: Database session
+        run_id: Run ID to aggregate violations for
+
+    Returns:
+        ViolationAggregation with counts and statistics
+
+    Example:
+        >>> aggregation = get_violation_aggregation(db, run_id)
+        >>> print(f"Total violations: {aggregation.total_count}")
+        >>> print(f"By type: {aggregation.by_type}")
+    """
+    from api.agentspec_models import AgentEvent
+
+    # Query all policy_violation events for this run
+    events = (
+        db.query(AgentEvent)
+        .filter(AgentEvent.run_id == run_id)
+        .filter(AgentEvent.event_type == "policy_violation")
+        .all()
+    )
+
+    aggregation = ViolationAggregation()
+
+    for event in events:
+        if event.payload:
+            violation_type = event.payload.get("violation_type", "unknown")
+            tool_name = event.payload.get("tool", event.tool_name or "unknown")
+            turn_number = event.payload.get("turn_number", 0)
+
+            aggregation.add_violation(violation_type, tool_name, turn_number)
+
+    _logger.debug(
+        "Computed violation aggregation for run %s: total=%d, by_type=%s",
+        run_id,
+        aggregation.total_count,
+        aggregation.by_type,
+    )
+
+    return aggregation
+
+
+def update_run_violation_metadata(
+    db: "Session",
+    run_id: str,
+    violation: PolicyViolation,
+) -> dict[str, Any]:
+    """
+    Update the run's metadata with incremental violation aggregation.
+
+    Feature #44, Step 6: Aggregate violation count in run metadata.
+
+    This function updates the AgentRun's acceptance_results field to include
+    violation aggregation data. It's called each time a violation is recorded.
+
+    Args:
+        db: Database session
+        run_id: Run ID to update
+        violation: The new violation to add to aggregation
+
+    Returns:
+        Updated aggregation dictionary
+
+    Note:
+        The aggregation is stored in a "violation_aggregation" key within
+        the run's metadata/acceptance_results for easy access.
+    """
+    from api.agentspec_models import AgentRun
+
+    # Get the run
+    run = db.query(AgentRun).filter(AgentRun.id == run_id).first()
+
+    if not run:
+        _logger.warning("Cannot update violation metadata: run %s not found", run_id)
+        return {}
+
+    # Get or initialize acceptance_results
+    if run.acceptance_results is None:
+        run.acceptance_results = {}
+
+    # Extract existing aggregation or create new one
+    existing_data = run.acceptance_results.get("violation_aggregation", {})
+    aggregation = ViolationAggregation.from_dict(existing_data)
+
+    # Add the new violation
+    aggregation.add_violation(
+        violation.violation_type,
+        violation.tool_name,
+        violation.turn_number,
+    )
+
+    # Update the run's metadata
+    # Need to create a new dict to trigger SQLAlchemy change detection
+    updated_results = dict(run.acceptance_results)
+    updated_results["violation_aggregation"] = aggregation.to_dict()
+    run.acceptance_results = updated_results
+
+    # Note: Caller should commit the session
+
+    _logger.debug(
+        "Updated run %s violation metadata: total=%d",
+        run_id,
+        aggregation.total_count,
+    )
+
+    return aggregation.to_dict()
+
+
+def record_and_aggregate_violation(
+    db: "Session",
+    run_id: str,
+    sequence: int,
+    violation: PolicyViolation,
+) -> tuple["AgentEvent", dict[str, Any]]:
+    """
+    Record a violation event and update run aggregation in one operation.
+
+    This is the main entry point for logging policy violations during execution.
+    It combines event recording with metadata aggregation for convenience.
+
+    Args:
+        db: Database session
+        run_id: Run ID
+        sequence: Event sequence number
+        violation: PolicyViolation instance
+
+    Returns:
+        Tuple of (created event, updated aggregation dict)
+
+    Example:
+        >>> violation = create_forbidden_patterns_violation("Bash", 5, "rm -rf")
+        >>> event, aggregation = record_and_aggregate_violation(db, run_id, 10, violation)
+        >>> print(f"Event ID: {event.id}, Total violations: {aggregation['total_count']}")
+    """
+    # Record the event
+    event = record_policy_violation_event(db, run_id, sequence, violation)
+
+    # Update aggregation
+    aggregation = update_run_violation_metadata(db, run_id, violation)
+
+    return event, aggregation
