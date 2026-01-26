@@ -1,6 +1,66 @@
 # AutoBuildr Progress Log
 # ======================
 
+## Session: 2026-01-27 (Coding Agent - Feature #28)
+
+### Feature #28: Timeout Seconds Wall-Clock Enforcement - COMPLETED
+
+**Status:** PASSING
+
+**Category:** A. Security & Access Control
+
+**Description:** Enforce timeout_seconds wall-clock limit during kernel execution using started_at timestamp comparison.
+
+**Dependencies:** Feature #3 (AgentRun SQLite Table Schema) - PASSING, Feature #26 (AgentRun Status Transition State Machine) - PASSING
+
+**Implementation Summary:**
+
+Implemented all 8 verification steps for timeout_seconds wall-clock enforcement:
+
+1. **Record started_at timestamp at run begin**: HarnessKernel.initialize_run() now passes run.started_at to BudgetTracker
+2. **Compute elapsed_seconds = now - started_at**: BudgetTracker.elapsed_seconds property computes time difference
+3. **Check elapsed_seconds < spec.timeout_seconds**: BudgetTracker.check_timeout_or_raise() method
+4. **Set status to timeout**: HarnessKernel.handle_timeout_exceeded() sets run.status = "timeout"
+5. **Set error message to timeout_exceeded**: run.error and result.error set to "timeout_exceeded"
+6. **Record timeout event with elapsed_seconds**: Event payload includes elapsed_seconds, timeout_seconds, is_timed_out
+7. **Ensure partial work committed**: db.commit() called before returning ExecutionResult
+8. **Handle long-running tool calls**: Post-turn timeout check in execute_with_budget loop
+
+**Key Implementation Details:**
+- Added `TimeoutSecondsExceeded` exception class extending `BudgetExceeded`
+- Extended `BudgetTracker` dataclass with timeout tracking fields (timeout_seconds, started_at)
+- Added timeout-related properties: elapsed_seconds, remaining_seconds, is_timed_out
+- Added check_timeout_or_raise() and check_all_budgets_or_raise() methods
+- Updated to_payload() to include timeout fields in event payloads
+- Updated HarnessKernel.check_budget_before_turn() to check both max_turns and timeout
+- Added HarnessKernel.handle_timeout_exceeded() method
+- Updated execute_with_budget() to handle TimeoutSecondsExceeded exceptions
+
+**Verification Steps:**
+- Step 1: Record started_at timestamp at run begin - PASS
+- Step 2: Compute elapsed_seconds = now - started_at - PASS
+- Step 3: Check elapsed_seconds < spec.timeout_seconds - PASS
+- Step 4: When timeout reached, set status to timeout - PASS
+- Step 5: Set error message to timeout_exceeded - PASS
+- Step 6: Record timeout event with elapsed_seconds in payload - PASS
+- Step 7: Ensure partial work is committed before termination - PASS
+- Step 8: Handle long-running tool calls that exceed timeout - PASS
+
+**Test Results:**
+- tests/test_feature_28_timeout_seconds.py: 38/38 tests PASS
+- tests/test_harness_kernel.py: 41/41 tests PASS (no regressions)
+- tests/verify_feature_28.py: All 8 verification steps PASS
+
+**Files Modified:**
+- api/harness_kernel.py: Added TimeoutSecondsExceeded, extended BudgetTracker, updated HarnessKernel
+- tests/test_harness_kernel.py: Updated test_to_payload test
+
+**Files Created:**
+- tests/test_feature_28_timeout_seconds.py: Comprehensive test suite (38 tests)
+- tests/verify_feature_28.py: Feature verification script (all 8 steps verified)
+
+---
+
 ## Session: 2026-01-27 (Coding Agent - Feature #92)
 
 ### Feature #92: Iteration limit exceeded logs specific algorithm name and context - COMPLETED
