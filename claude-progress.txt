@@ -1,6 +1,64 @@
 # AutoBuildr Progress Log
 # ======================
 
+## Session: 2026-01-27 (Coding Agent - Feature #24)
+
+### Feature #24: POST /api/agent-runs/:id/cancel Cancel Agent - COMPLETED
+
+**Status:** PASSING
+
+**Category:** D. Workflow Completeness
+
+**Description:** Implement POST /api/agent-runs/:id/cancel endpoint to cancel a running or paused agent.
+
+**Dependencies:** [3, 5, 9] - All passing
+- Feature #3: AgentRun SQLite Table Schema
+- Feature #5: AgentEvent SQLite Table Schema
+- Feature #9: AgentRun Pydantic Response Schema
+
+**Verification Steps (All Passed - 35/35 tests):**
+
+1. Define FastAPI route POST /api/agent-runs/{run_id}/cancel - PASS
+2. Query AgentRun by id - PASS
+3. Return 404 if not found - PASS
+4. Return 409 if status is already completed, failed, or timeout - PASS
+5. Update status to failed - PASS
+6. Set error to user_cancelled - PASS
+7. Set completed_at to current timestamp - PASS
+8. Record failed event with cancellation reason - PASS
+9. Signal kernel to abort - PASS
+10. Return updated AgentRunResponse - PASS
+
+**Implementation Summary:**
+
+The cancel endpoint was implemented in server/routers/agent_runs.py (lines 747-892).
+The implementation includes:
+
+1. Route definition at POST /api/agent-runs/{run_id}/cancel
+2. AgentRun lookup using get_agent_run() from api.agentspec_crud
+3. 404 error for non-existent runs with run_id in message
+4. 409 Conflict for terminal states (completed, failed, timeout)
+5. Status update handling:
+   - For pending: direct update to failed status
+   - For running/paused: use run.fail() state machine method
+6. Error field set to "user_cancelled"
+7. completed_at timestamp set to current UTC time
+8. Recording 'failed' AgentEvent with payload containing:
+   - reason: "user_cancelled"
+   - previous_status: original status before cancellation
+   - new_status: "failed"
+   - turns_used, tokens_in, tokens_out
+9. Event broadcaster called for kernel abort signal
+10. Full AgentRunResponse returned with all fields
+
+**Tests Created:**
+- tests/test_feature_24_cancel_agent.py (35 tests, all passing)
+- scripts/verify_feature_24_cancel.py (verification script)
+
+**Current Stats:** 64/103 features passing (62.1%)
+
+---
+
 ## Session: 2026-01-27 (Coding Agent - Feature #23)
 
 ### Feature #23: POST /api/agent-runs/:id/resume Resume Agent - COMPLETED
@@ -5142,4 +5200,23 @@ Key design decisions:
     - Step 7: Content-Disposition header set for download
     - Step 8: Missing file handled gracefully with 404
   - Note: Browser automation unavailable - verified via API and unit tests
+  - No regression found - feature still working correctly
+[Testing] 2026-01-27 09:31:40 - Feature #37 regression test PASSED
+  - Feature: StaticSpecAdapter for Legacy Coding Agent
+  - Verification: All 11 steps pass
+  - Unit tests: 53/53 tests pass (test_feature_37_coding_spec_adapter.py)
+  - General adapter tests: 45/45 tests pass (test_static_spec_adapter.py)
+  - API verification: create_coding_spec() works correctly
+  - All verification steps confirmed working:
+    - Step 1: create_coding_spec(feature_id) method defined
+    - Step 2: Loads coding agent prompt from prompts/ (10391 chars)
+    - Step 3: Interpolates feature details into context
+    - Step 4: task_type set to 'coding'
+    - Step 5: tool_policy includes code editing tools (Read, Write, Edit, Glob, Grep)
+    - Step 6: Bash tool allowed with security hints referencing allowlist
+    - Step 7: 7 forbidden patterns configured for dangerous operations
+    - Step 8: max_turns=150, appropriate for implementation
+    - Step 9: AcceptanceSpec with test_pass, lint_clean, and feature_passing validators
+    - Step 10: source_feature_id linked to feature
+    - Step 11: Returns static AgentSpec instance
   - No regression found - feature still working correctly
