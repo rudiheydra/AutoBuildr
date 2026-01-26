@@ -630,3 +630,43 @@ export interface NextRunResponse {
   is_currently_running: boolean
   active_schedule_count: number
 }
+
+// ============================================================================
+// AgentEvent Types (for Event Timeline)
+// ============================================================================
+
+// Event types from the backend AgentEvent model
+export type AgentEventType =
+  | 'started'
+  | 'tool_call'
+  | 'tool_result'
+  | 'turn_complete'
+  | 'acceptance_check'
+  | 'completed'
+  | 'failed'
+  | 'paused'
+  | 'resumed'
+  | 'timeout'
+
+// Single event in the timeline
+export interface AgentEvent {
+  id: number
+  run_id: string
+  event_type: AgentEventType
+  timestamp: string
+  sequence: number
+  payload: Record<string, unknown> | null
+  payload_truncated: number | null
+  artifact_ref: string | null
+  tool_name: string | null
+}
+
+// Response from GET /api/agent-runs/:id/events
+export interface AgentEventListResponse {
+  events: AgentEvent[]
+  total: number
+  run_id: string
+  start_sequence: number | null
+  end_sequence: number | null
+  has_more: boolean
+}
