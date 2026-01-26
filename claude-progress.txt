@@ -5794,6 +5794,54 @@ Created api/event_recorder.py:
 
 ---
 
+## Session: 2026-01-27 (Coding Agent - Feature #55)
+
+### Feature #55: Validator Generation from Feature Steps - COMPLETED
+
+**Status:** PASSING
+
+**Category:** D. Workflow Completeness
+
+**Description:** Generate AcceptanceSpec validators from feature verification steps by parsing step text.
+
+**Dependencies:** [2, 8, 53] - All passing
+
+**Implementation Summary:**
+
+Created api/validator_generator.py with ValidatorGenerator class that parses step text
+and automatically generates appropriate validators:
+- test_pass: For steps with run/execute commands
+- file_exists: For steps mentioning file paths and existence
+- forbidden_patterns: For steps with should not/must not patterns
+
+**Verification Steps (All 7 Passed):**
+1. Analyze each feature step for validator hints - PASS
+2. If step contains run/execute, create test_pass validator - PASS
+3. If step mentions file/path, create file_exists validator - PASS
+4. If step mentions should not/must not, create forbidden_patterns - PASS
+5. Extract command or path from step text - PASS
+6. Set appropriate timeout for test_pass validators - PASS
+7. Return array of validator configs - PASS
+
+**Test Results:**
+- tests/test_feature_55_validator_generator.py: 52/52 tests PASS
+- tests/verify_feature_55.py: 7/7 verification steps PASS
+
+**Files Created:**
+- api/validator_generator.py: Main implementation (700+ lines)
+- tests/test_feature_55_validator_generator.py: Comprehensive test suite
+- tests/verify_feature_55.py: Feature verification script
+
+**Commit:** 3eb7496
+
+---
+
+**Updated Progress:**
+- Total: 73/103 features passing (approximately 70.9%)
+- Feature #55: Validator Generation from Feature Steps - PASSING
+
+---
+
 ## Session: 2026-01-27 (Coding Agent - Feature #58)
 
 ### Feature #58: Budget Derivation from Task Complexity - VERIFIED
@@ -5892,3 +5940,110 @@ The implementation in api/tool_policy.py includes:
   - Accessibility: role=progressbar, aria-valuenow/min/max, aria-label - PASSED
   - Browser automation unavailable - verified via unit tests and code analysis
   - No regression found - feature still working correctly
+[Testing] 2026-01-27 09:50:18 - Feature #91 regression test PASSED
+  - Feature: Graph algorithms enforce iteration limit based on feature count
+  - Category: error-handling
+  - Verification: All 5 feature steps pass
+  - Unit tests: 27/27 tests pass (test_feature_91_iteration_limits.py)
+  - All verification steps confirmed working:
+    - Step 1: iteration_count variable in compute_scheduling_scores BFS loop - PASS
+    - Step 2: max_iterations = len(features) * 2 formula used (lines 384, 463, 542) - PASS
+    - Step 3: _logger.error calls log algorithm name and bail out (lines 393, 472, 558) - PASS
+    - Step 4: Functions return dict/list types quickly (< 1ms) even on cyclic graphs - PASS
+    - Step 5: All algorithms complete in < 100ms on cyclic graphs (< 0.1ms actual) - PASS
+  - Implementation verified in api/dependency_resolver.py
+  - No regression found - feature still working correctly
+
+---
+
+## Session: 2026-01-27 (Coding Agent - Feature #59)
+
+### Feature #59: Unique Spec Name Generation - COMPLETED
+
+**Status:** PASSING
+
+**Category:** M. Form Validation
+
+**Description:** Generate unique, URL-safe spec names from objectives with collision handling.
+
+**Dependencies:** [1, 7] - Both passing
+- Feature #1: AgentSpec SQLite Table Schema
+- Feature #7: AgentSpec Pydantic Request/Response Schemas
+
+**Implementation Summary:**
+
+Created `api/spec_name_generator.py` with the following functionality:
+
+1. **extract_keywords(objective)** - Extract meaningful keywords from objectives
+   - Filters stop words (58 common words like "the", "is", "and")
+   - Removes special characters
+   - Keeps alphanumeric words of 2+ characters
+   - Returns up to 6 keywords by default
+
+2. **generate_slug(keywords)** - Generate URL-safe slug from keywords
+   - Joins keywords with hyphens
+   - Truncates at word boundaries if too long
+   - Returns "spec" for empty keyword lists
+
+3. **normalize_slug(text)** - Normalize text to slug format
+   - Converts to lowercase
+   - Replaces special characters with hyphens
+   - Removes consecutive and leading/trailing hyphens
+
+4. **generate_timestamp_suffix()** - Create timestamp for uniqueness
+   - Returns current Unix timestamp as string
+
+5. **generate_sequence_suffix(base_name, existing_names)** - Calculate next sequence
+   - Finds maximum existing sequence suffix
+   - Returns next available number
+
+6. **generate_spec_name(objective, task_type)** - Generate spec name
+   - Format: {task_type}-{keywords}-{timestamp}
+   - Respects 100 character max length
+
+7. **validate_spec_name(name)** - Validate name format
+   - Pattern: ^[a-z0-9][a-z0-9\-]*[a-z0-9]$ or single char
+   - Max 100 characters
+
+8. **check_name_exists(session, name)** - Check database for collision
+
+9. **get_existing_names_with_prefix(session, prefix)** - Get existing names for collision detection
+
+10. **generate_unique_spec_name(session, objective, task_type)** - Generate collision-free name
+    - Uses timestamp for initial uniqueness
+    - Appends numeric suffix (-1, -2, etc.) on collision
+    - Raises ValueError after 100 retries
+
+11. **generate_spec_name_for_feature()** - Convenience function for features
+
+**All 8 Feature Steps Verified:**
+
+1. Extract keywords from objective - PASS
+2. Generate slug from keywords - PASS
+3. Prepend task_type prefix - PASS
+4. Add timestamp or sequence for uniqueness - PASS
+5. Validate against existing spec names - PASS
+6. If collision, append numeric suffix - PASS
+7. Limit to 100 chars - PASS
+8. Return unique spec name - PASS
+
+**Test Results:**
+- tests/test_feature_59_spec_name_generator.py: 63/63 tests PASS
+- tests/verify_feature_59.py: All 8 verification steps PASS
+
+**Files Created:**
+- api/spec_name_generator.py: Main implementation (450 lines)
+- tests/test_feature_59_spec_name_generator.py: Comprehensive test suite (585 lines)
+- tests/verify_feature_59.py: Feature verification script (300 lines)
+
+**Files Modified:**
+- api/__init__.py: Added exports for all spec_name_generator functions
+
+**Commit:** e564e9f - "feat: Implement Unique Spec Name Generation (Feature #59)"
+
+---
+
+**Updated Progress:**
+- Feature #59: Unique Spec Name Generation - PASSING
+
+**Session completed successfully.**
