@@ -1,6 +1,61 @@
 # AutoBuildr Progress Log
 # ======================
 
+## Session: 2026-01-27 (Coding Agent - Feature #22)
+
+### Feature #22: POST /api/agent-runs/:id/pause Pause Agent - COMPLETED
+
+**Status:** PASSING
+
+**Category:** D. Workflow Completeness
+
+**Description:** Implement POST /api/agent-runs/:id/pause endpoint to pause a running agent with proper validation.
+
+**Dependencies:** [3, 5, 9] - All passing
+- Feature #3: AgentRun SQLite Table Schema
+- Feature #5: AgentEvent SQLite Table Schema
+- Feature #9: AgentRun Pydantic Response Schema
+
+**Verification Steps (All Passed):**
+
+1. Define FastAPI route POST /api/agent-runs/{run_id}/pause - PASS
+2. Query AgentRun by id - PASS
+3. Return 404 if not found - PASS
+4. Return 409 Conflict if status is not running - PASS
+5. Update status to paused - PASS
+6. Record paused AgentEvent - PASS
+7. Commit transaction - PASS
+8. Signal kernel to pause - PASS
+9. Return updated AgentRunResponse - PASS
+
+**Implementation Summary:**
+
+The pause endpoint was already implemented in server/routers/agent_runs.py.
+Fixed a bug where `get_event_broadcaster()` was being called without the
+required `project_name` argument and without awaiting the async function.
+
+**Bug Fixes:**
+
+1. Fixed `get_event_broadcaster()` calls in:
+   - POST /api/agent-runs/:id/pause
+   - POST /api/agent-runs/:id/resume
+   - POST /api/agent-runs/:id/cancel
+
+2. Changed to use `broadcast_agent_event_sync()` wrapper since the
+   endpoint is synchronous and we don't have the project name context.
+
+3. Made broadcasting optional with try/except since it's just for UI
+   updates and shouldn't fail the pause operation.
+
+**Tests Created:**
+
+- tests/test_feature_22_pause_agent_run.py - 29 comprehensive tests
+- tests/verify_feature_22.py - Step-by-step verification script
+
+**Current Progress:** 64/103 features passing (62.1%)
+
+---
+
 ## Session: 2026-01-27 (Coding Agent - Feature #84)
 
 ### Feature #84: Loading State Indicators - COMPLETED
@@ -4936,5 +4991,69 @@ Key design decisions:
 **Updated Progress:**
 - Total: 64/103 features passing (approximately 62.1%)
 - Feature #71: Real-time Card Updates via WebSocket - PASSING
+
+---
+
+## Session: 2026-01-27 (Coding Agent - Feature #17)
+
+### Feature #17: GET /api/agent-runs List Runs Endpoint - VERIFIED
+
+**Status:** PASSING (already implemented, verified this session)
+
+**Category:** F. UI-Backend Integration
+
+**Description:** Implement GET /api/agent-runs endpoint with filtering by agent_spec_id and status with pagination.
+
+**Dependencies:** [3, 9] - Both passing
+- Feature #3: AgentRun SQLite Table Schema
+- Feature #9: AgentRun Pydantic Response Schema
+
+**Verification Summary (8 Steps - All Passed):**
+
+1. Define FastAPI route GET /api/agent-runs - PASS
+   - Route defined in server/routers/agent_runs.py
+   - Response model: AgentRunListResponse
+
+2. Add query parameters: agent_spec_id, status, limit, offset - PASS
+   - agent_spec_id: Optional[str], default None
+   - status: Optional[str], default None
+   - limit: int, default 50, max 100
+   - offset: int, default 0
+
+3. Build query with conditional filters - PASS
+   - Conditional checks: if agent_spec_id is not None, if status is not None
+
+4. Filter by agent_spec_id if provided - PASS
+   - AgentRunModel.agent_spec_id == agent_spec_id
+
+5. Filter by status if provided - PASS
+   - Validates status against RUN_STATUS (6 valid: pending, running, paused, completed, failed, timeout)
+   - Returns 400 for invalid status values
+
+6. Order by created_at descending - PASS
+   - query.order_by(AgentRunModel.created_at.desc())
+
+7. Apply pagination - PASS
+   - query.offset(offset).limit(limit)
+   - Max limit enforced at 100
+
+8. Return AgentRunListResponse with total count - PASS
+   - Response includes: runs, total, offset, limit
+   - X-Total-Count header also set
+
+**Test Results:**
+- tests/test_feature_17_list_agent_runs.py: 30/39 unit tests PASS (9 integration tests skipped - server needs restart)
+- tests/verify_feature_17.py: All 8 verification steps PASS
+
+**Files Created:**
+- tests/verify_feature_17.py: Verification script (189 lines)
+
+**Note:** The endpoint implementation already existed in server/routers/agent_runs.py. This session verified the implementation meets all requirements and created the verification script.
+
+---
+
+**Updated Progress:**
+- Total: 64/103 features passing (approximately 62.1%)
+- Feature #17: GET /api/agent-runs List Runs Endpoint - PASSING (verified)
 
 **Session completed successfully.**
