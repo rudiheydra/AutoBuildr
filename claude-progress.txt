@@ -30,14 +30,6 @@
 - Foreign key with ON DELETE CASCADE properly set up
 - Default values for status ('pending') and integer columns (0) verified
 
-**Current Progress:**
-- Feature #3: AgentRun SQLite Table Schema - PASSING
-- Total: 1/85 features passing
-
-**Next Steps:**
-- Continue with other assigned features
-- The agent_runs table is now ready for use by the HarnessKernel
-
 ---
 
 ### Feature #5: AgentEvent SQLite Table Schema - COMPLETED
@@ -65,11 +57,43 @@
 **Files Modified:**
 - `api/agentspec_models.py`: Renamed metadata column to artifact_metadata in Artifact class
 
+---
+
+### Feature #2: AcceptanceSpec SQLite Table Schema - COMPLETED
+
+**Status:** PASSING
+
+**Category:** G. State & Persistence
+
+**Description:** Create the acceptance_specs table with columns: id (UUID), agent_spec_id (FK unique), validators (JSON array), gate_mode enum, min_score float, retry_policy enum, max_retries int, fallback_spec_id FK.
+
+**Verification Summary:**
+- Step 1: PRAGMA table_info(acceptance_specs) - PASS (table exists with all columns)
+- Step 2: id column is VARCHAR(36) primary key - PASS
+- Step 3: agent_spec_id is VARCHAR(36) NOT NULL UNIQUE - PASS
+- Step 4: agent_spec_id FK references agent_specs.id ON DELETE CASCADE - PASS
+- Step 5: validators column stores JSON array (with [] default) - PASS
+- Step 6: gate_mode column is VARCHAR(20) with default 'all_pass' - PASS
+- Step 7: min_score column is FLOAT nullable - PASS
+- Step 8: retry_policy column is VARCHAR(20) with default 'none' - PASS
+- Step 9: max_retries column is INTEGER with default 0 - PASS
+- Step 10: fallback_spec_id FK references agent_specs.id nullable - PASS
+
+**Implementation Notes:**
+- The AcceptanceSpec model is implemented in api/agentspec_models.py (lines 193-251)
+- The table is created automatically by the migration function _migrate_add_agentspec_tables() in api/database.py
+- All SQLAlchemy defaults work correctly (validated by creating test object)
+- Foreign key ON DELETE CASCADE is properly configured for agent_spec_id
+
+---
+
 **Current Progress:**
+- Feature #2: AcceptanceSpec SQLite Table Schema - PASSING
 - Feature #3: AgentRun SQLite Table Schema - PASSING
 - Feature #5: AgentEvent SQLite Table Schema - PASSING
-- Total: 2/85 features passing (estimated)
+- Total: 3/85 features passing
 
 **Next Steps:**
-- Continue with remaining features
-- The agent_events table is now ready for use by the HarnessKernel for audit trail
+- Continue with other Phase 0 Kernel Wiring features
+- Remaining table schema features: AgentSpec (#1), Artifact (#4)
+- API endpoints for the AgentSpec system
