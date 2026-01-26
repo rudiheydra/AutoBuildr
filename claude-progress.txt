@@ -1008,3 +1008,79 @@
 - HarnessKernel.execute() implementation
 - Tool policy enforcement features
 
+---
+
+## Session: 2026-01-27 (continued)
+
+### Feature #19: GET /api/agent-runs/:id/events Event Timeline - COMPLETED
+
+**Status:** PASSING
+
+**Category:** F. UI-Backend Integration
+
+**Description:** Implement GET /api/agent-runs/:id/events endpoint to retrieve ordered event timeline with filtering.
+
+**Verification Summary:**
+- Step 1: Define FastAPI route GET /api/agent-runs/{run_id}/events - PASS
+  - Router defined in server/routers/agent_runs.py
+  - Route path: /{run_id}/events
+  - Response model: AgentEventListResponse
+- Step 2: Add query parameters: event_type filter, limit, offset - PASS
+  - event_type: Optional filter for specific event types (validated against 9 allowed types)
+  - limit: 1-500, default 50
+  - offset: >= 0, default 0
+- Step 3: Query AgentEvents by run_id ordered by sequence - PASS
+  - Events queried with SQLAlchemy filtering by run_id
+  - Ordered by sequence column for correct timeline order
+- Step 4: Filter by event_type if provided - PASS
+  - Validates event_type against allowed list (started, tool_call, tool_result, etc.)
+  - Returns 400 error for invalid event_type
+- Step 5: Apply pagination for large event streams - PASS
+  - Uses offset/limit for pagination
+  - has_more field indicates if more events exist
+- Step 6: Return AgentEventListResponse - PASS
+  - events: List of AgentEventResponse objects
+  - total: Total count of events (filtered if event_type provided)
+  - run_id: ID of the parent AgentRun
+  - start_sequence/end_sequence: First and last sequence numbers in response
+  - has_more: Boolean for pagination
+
+**Implementation Notes:**
+- Endpoint also validates run exists (returns 404 if not found)
+- Event type validation returns descriptive 400 error with list of valid types
+- Total count respects event_type filter when applied
+- Fixed missing imports in agent_specs.py (Depends, get_db) that was preventing router from loading
+
+**Files Added:**
+- server/routers/agent_runs.py: AgentRun management endpoints including events timeline
+- tests/verify_feature_19.py: Feature verification script (all steps pass)
+- tests/test_feature_19_api.py: API integration tests
+- tests/check_router.py: Router import verification utility
+
+**Commit:** 21d5b78 - "feat: Implement GET /api/agent-runs/:id/events endpoint (Feature #19)"
+
+---
+
+**Updated Progress:**
+- Feature #1: AgentSpec SQLite Table Schema - PASSING
+- Feature #2: AcceptanceSpec SQLite Table Schema - PASSING
+- Feature #3: AgentRun SQLite Table Schema - PASSING
+- Feature #4: Artifact SQLite Table Schema - PASSING
+- Feature #5: AgentEvent SQLite Table Schema - PASSING
+- Feature #7: AgentSpec Pydantic Request/Response Schemas - PASSING
+- Feature #8: AcceptanceSpec Pydantic Schemas - PASSING
+- Feature #9: AgentRun Pydantic Response Schema - PASSING
+- Feature #10: Artifact and AgentEvent Pydantic Schemas - PASSING
+- Feature #19: GET /api/agent-runs/:id/events Event Timeline - PASSING
+- Feature #26: AgentRun Status Transition State Machine - PASSING
+- Feature #31: Artifact Storage with Content-Addressing - PASSING
+- Feature #43: Tool Hints System Prompt Injection - PASSING
+- Feature #51: Skill Template Registry - PASSING
+- Feature #65: AgentRun Status Color Coding - PASSING
+- Total: 15/85 features passing (approximately 17.6%)
+
+**Next Steps:**
+- Continue with API endpoint features
+- GET /api/agent-runs/:id endpoint
+- AgentSpec CRUD endpoints
+
