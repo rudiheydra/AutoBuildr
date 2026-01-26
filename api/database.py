@@ -332,6 +332,61 @@ def _migrate_add_schedules_tables(engine) -> None:
                 conn.commit()
 
 
+def _migrate_add_agentspec_tables(engine) -> None:
+    """Create AgentSpec-related tables if they don't exist.
+
+    This migration is additive and non-destructive:
+    - Creates new tables only if missing
+    - Does NOT modify the existing features table
+    - Feature -> AgentSpec linking is optional (via source_feature_id)
+
+    Tables created:
+    - agent_specs: Core execution primitive
+    - acceptance_specs: Verification gate definitions
+    - agent_runs: Execution instances
+    - artifacts: Persisted outputs
+    - agent_events: Audit trail
+    """
+    from sqlalchemy import inspect
+
+    # Import models here to avoid circular imports
+    # These imports are safe because this function is called after Base is defined
+    try:
+        from api.agentspec_models import (
+            AcceptanceSpec,
+            AgentEvent,
+            AgentRun,
+            AgentSpec,
+            Artifact,
+        )
+    except ImportError:
+        # agentspec_models not yet available (shouldn't happen in normal use)
+        return
+
+    inspector = inspect(engine)
+    existing_tables = inspector.get_table_names()
+
+    # Create tables in dependency order (foreign key constraints)
+    tables_to_create = [
+        ("agent_specs", AgentSpec),
+        ("acceptance_specs", AcceptanceSpec),
+        ("agent_runs", AgentRun),
+        ("artifacts", Artifact),
+        ("agent_events", AgentEvent),
+    ]
+
+    for table_name, model_class in tables_to_create:
+        if table_name not in existing_tables:
+            try:
+                model_class.__table__.create(bind=engine)
+            except Exception as e:
+                # Log but don't fail - table might have partial state
+                import logging
+                logging.getLogger(__name__).warning(
+                    f"Could not create table {table_name}: {e}"
+                )
+
+
 def create_database(project_dir: Path) -> tuple:
     """
     Create database and return engine + session maker.
@@ -367,6 +422,9 @@ def create_database(project_dir: Path) -> tuple:
 
     # Migrate to add schedules tables
     _migrate_add_schedules_tables(engine)
+
+    # Migrate to add AgentSpec tables (AutoBuildr extension)
+    _migrate_add_agentspec_tables(engine)
 
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     return engine, SessionLocal
