@@ -284,7 +284,7 @@ async def get_run_artifacts(
             content_hash=a.content_hash,
             size_bytes=a.size_bytes,
             created_at=a.created_at,
-            metadata=a.metadata,
+            metadata=a.artifact_metadata,
             # Compute has_inline_content without including actual content
             has_inline_content=a.content_inline is not None and len(a.content_inline) > 0,
         )
