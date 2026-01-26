@@ -29,6 +29,8 @@ from fastapi.staticfiles import StaticFiles
 
 from .routers import (
     agent_router,
+    agent_runs_router,
+    agent_specs_router,
     assistant_chat_router,
     devserver_router,
     expand_project_router,
@@ -63,6 +65,11 @@ async def lifespan(app: FastAPI):
     # Startup - clean up orphaned lock files from previous runs
     cleanup_orphaned_locks()
     cleanup_orphaned_devserver_locks()
+
+    # Initialize the global database session maker for AgentRun/AgentSpec endpoints
+    from api.database import create_database, set_session_maker
+    _, session_maker = create_database(ROOT_DIR)
+    set_session_maker(session_maker)
 
     # Start the scheduler service
     scheduler = get_scheduler()
@@ -140,6 +147,8 @@ if not ALLOW_REMOTE:
 app.include_router(projects_router)
 app.include_router(features_router)
 app.include_router(agent_router)
+app.include_router(agent_runs_router)
+app.include_router(agent_specs_router)
 app.include_router(schedules_router)
 app.include_router(devserver_router)
 app.include_router(spec_creation_router)
