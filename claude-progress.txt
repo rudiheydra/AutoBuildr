@@ -2077,3 +2077,78 @@ Added `validate_dependency_graph()` function to api/dependency_resolver.py that:
 - Feature #41: ToolPolicy Forbidden Patterns Enforcement - PASSING
 
 **Session completed successfully.**
+
+## Regression Test Session: 2026-01-27 03:35
+
+### Feature #87: Core validate_dependency_graph function detects simple cycles - VERIFIED (No Regression)
+
+**Status:** PASSING
+
+**Category:** error-handling
+
+**Verification Summary (5 Steps):**
+1. Create feature A (id=1) with dependencies=[2] - PASS
+2. Create feature B (id=2) with dependencies=[1] - PASS
+3. Call validate_dependency_graph() with both features - PASS
+4. Verify the result includes cycles list with [1, 2] or [2, 1] - PASS (cycles=[[1, 2]])
+5. Verify the error type is marked as requires_user_action=True - PASS (auto_fixable=False)
+
+**Test Results:**
+- 13 unit tests in tests/test_validate_dependency_graph_cycles.py - ALL PASS
+- Direct function verification - ALL STEPS PASSED
+
+**Implementation Verified:**
+- api/dependency_resolver.py: validate_dependency_graph(), _detect_cycles_for_validation()
+- ValidationResult TypedDict with correct structure
+- Simple cycles (A->B->A) detected and reported with cycle_path
+- Cycle issues marked as auto_fixable=False (requires user action)
+
+**Note:** Browser automation unavailable in this environment. Feature verified through unit tests and direct function calls, which is appropriate for this core algorithm feature.
+
+**Conclusion:** Feature #87 passes all verification steps. No regression detected.
+
+[Testing] Feature #87 verified - still passing
+
+## Session: 2026-01-27 (Coding Agent - Feature #88)
+
+### Feature #88: Core validate_dependency_graph function detects complex cycles - COMPLETED
+
+**Status:** PASSING
+
+**Category:** error-handling
+
+**Description:** The validate_dependency_graph() function should detect complex cycles (A -> B -> C -> A) and return the full cycle path for user review.
+
+**Dependencies:** None
+
+**Verification Summary (6 Steps):**
+
+- Step 1: Create feature A (id=1) with dependencies=[2] - PASS
+- Step 2: Create feature B (id=2) with dependencies=[3] - PASS
+- Step 3: Create feature C (id=3) with dependencies=[1] - PASS
+- Step 4: Call validate_dependency_graph() with all three features - PASS
+  - Returns ValidationResult with is_valid=False, cycles=[[1, 2, 3]]
+- Step 5: Verify the result includes the complete cycle path [1, 2, 3] - PASS
+  - Cycle contains all three feature IDs in normalized order
+- Step 6: Verify missing dependencies to non-existent features are also detected - PASS
+  - Tested with feature A having deps=[2, 99] (99 doesn't exist)
+  - missing_targets = {1: [99]} correctly populated
+
+**Implementation Details:**
+- Function: api/dependency_resolver.py::validate_dependency_graph()
+- Uses DFS with recursion stack for cycle detection
+- Normalizes cycles (starts from smallest ID) for deduplication
+- Detects complex cycles (3+ features) alongside simple cycles (2 features)
+
+**Test Results:**
+- tests/test_validate_dependency_graph_complex_cycles.py: 19/19 tests PASS
+
+**Files Created:**
+- tests/test_validate_dependency_graph_complex_cycles.py: Comprehensive test suite (393 lines)
+
+---
+
+**Updated Progress:**
+- Total: 29/103 features passing (approximately 28.2%)
+- Feature #88: Core validate_dependency_graph function detects complex cycles - PASSING
+
