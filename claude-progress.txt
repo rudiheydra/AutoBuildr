@@ -2682,3 +2682,101 @@ All graph traversal functions in api/dependency_resolver.py have proper cycle pr
 - Feature #93: All graph traversal functions have cycle protection - PASSING
 
 **Session completed successfully.**
+
+## Regression Test Session: 2026-01-26 16:47 UTC
+
+### Feature #18: GET /api/agent-runs/:id Get Run Details - VERIFIED (No Regression)
+
+**Status:** PASSING
+
+**Category:** F. UI-Backend Integration
+
+**Description:** Implement GET /api/agent-runs/:id endpoint to retrieve full run details with spec info.
+
+**Verification Summary (5 Steps):**
+1. Define FastAPI route GET /api/agent-runs/{run_id} - PASS
+2. Query AgentRun by id with eager load of agent_spec - PASS
+3. Return 404 if not found - PASS
+4. Include spec display_name and icon in response - PASS
+5. Return AgentRunResponse with nested spec summary - PASS
+
+**Test Results:**
+- API endpoint responds correctly at /api/agent-runs/{run_id}
+- Valid run ID returns full AgentRunSummary with nested spec
+- Invalid run ID returns HTTP 404 with proper error message
+- Response includes display_name, icon, event_count, artifact_count
+
+**Implementation Verified:**
+- server/routers/agent_runs.py: Route definition and handler
+- server/schemas/agentspec.py: AgentRunSummary, AgentRunResponse, AgentSpecResponse schemas
+- Uses SQLAlchemy joinedload for efficient eager loading of agent_spec
+
+**Note:** Browser automation unavailable in this environment. Feature verified through direct API testing, which is appropriate for this backend API feature.
+
+**Conclusion:** Feature #18 passes all verification steps. No regression detected.
+
+[Testing] Feature #18 verified - still passing
+
+## Session: 2026-01-27 (Coding Agent - Feature #96)
+
+### Feature #96: Startup health check auto-fixes self-references with warning - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Description:** On startup, if self-referencing dependencies (A -> A) are detected, they should be automatically removed and a warning logged.
+
+**Dependencies:** None
+
+**Verification Summary (5 Steps):**
+
+- Step 1: Insert a feature with self-reference into database - PASS
+  - Created Feature #999 with dependencies=[999] (self-reference)
+  - Successfully inserted into test database
+
+- Step 2: Start the orchestrator (run health check) - PASS
+  - _run_dependency_health_check() called and completed successfully
+  - Detected self-reference via validate_dependency_graph()
+
+- Step 3: Verify the self-reference is automatically removed from the feature - PASS
+  - Feature #999 dependencies changed: [999] -> []
+  - Self-reference correctly removed while preserving other valid dependencies
+
+- Step 4: Verify a WARNING level log is emitted with feature ID and action taken - PASS
+  - Found WARNING log: "Auto-fixed self-reference: Feature #999 removed dependency on itself"
+  - Uses Python's standard logging module at WARNING level
+  - Log includes feature ID, original deps, and new deps
+
+- Step 5: Verify orchestrator continues to normal operation after fix - PASS
+  - get_ready_features() returned 1 feature (the fixed feature)
+  - Orchestrator able to continue without errors
+
+**Implementation Details:**
+- Added import logging and _logger = logging.getLogger(__name__) to parallel_orchestrator.py
+- Added _logger.warning() call in _run_dependency_health_check() when auto-fixing self-references
+- Log message format: "Auto-fixed self-reference: Feature #%d removed dependency on itself (original_deps=%s, new_deps=%s)"
+
+**Test Results:**
+- tests/test_feature_96_self_reference_auto_fix.py: 9/9 tests PASS
+  - TestSelfReferenceAutoFix: 4 tests (verification steps 1-5)
+  - TestMultipleSelfReferences: 2 tests
+  - TestWarningLogContent: 1 test
+  - TestNoSelfReferences: 1 test
+  - TestEmptyDatabase: 1 test
+- tests/verify_feature_96.py: All 5 verification steps PASS
+
+**Files Created:**
+- tests/test_feature_96_self_reference_auto_fix.py: 9 comprehensive unit tests (~340 lines)
+- tests/verify_feature_96.py: Standalone verification script (~215 lines)
+
+**Commit:** 56fd6f9 - "feat: Add tests for Feature #96 - Startup health check auto-fixes self-references with warning"
+
+---
+
+**Updated Progress:**
+- Total: 36/103 features passing (approximately 35.0%)
+- Feature #96: Startup health check auto-fixes self-references with warning - PASSING
+
+**Session completed successfully.**
+
