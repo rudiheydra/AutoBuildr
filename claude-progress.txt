@@ -1897,3 +1897,61 @@ All 14 verification steps PASSED:
 - Continue with other error-handling features (#88, #89, etc.)
 - Related features: Complex cycle detection (#88), Missing dependency targets (#89)
 
+---
+
+## Session: 2026-01-27 (Coding Agent - Feature #86)
+
+### Feature #86: Core validate_dependency_graph function detects self-references - COMPLETED
+
+**Status:** PASSING
+
+**Category:** error-handling
+
+**Description:** The validate_dependency_graph() function should detect when a feature depends on itself (A -> A). Self-references are always invalid and should be flagged for auto-fix.
+
+**Implementation Summary:**
+
+Added `validate_dependency_graph()` function to api/dependency_resolver.py that:
+- Detects self-references (A -> A) in the dependency graph
+- Returns a structured ValidationResult with:
+  - is_valid: Boolean indicating overall graph health
+  - self_references: List of feature IDs with self-references
+  - cycles: List of cycle paths (separate from self-references)
+  - missing_targets: Dict of feature_id -> list of non-existent dep IDs
+  - issues: List of DependencyIssue objects with structured details
+  - summary: Human-readable summary string
+
+**Verification Steps Completed:**
+1. Created test feature with id=1 and dependencies=[1] (self-reference) - PASS
+2. Called validate_dependency_graph() with this feature - PASS
+3. Verified self_references list contains feature id 1 - PASS
+4. Verified error type is marked as auto_fixable=True - PASS
+
+**New Types Added:**
+- DependencyIssue (TypedDict): Structured issue with feature_id, issue_type, details, auto_fixable
+- ValidationResult (TypedDict): Complete validation result structure
+
+**Test Results:**
+- tests/test_validate_dependency_graph.py: 14/14 tests PASS
+- tests/verify_feature_86.py: All 4 verification steps PASS
+
+**Files Modified:**
+- api/dependency_resolver.py: Added validate_dependency_graph() and _detect_cycles_for_validation()
+- api/__init__.py: Exported new functions and types
+
+**Files Created:**
+- tests/test_validate_dependency_graph.py: 14 comprehensive unit tests
+- tests/verify_feature_86.py: Feature verification script
+
+**Commit:** 803d32b - "feat: Implement validate_dependency_graph() for self-reference detection (Feature #86)"
+
+---
+
+**Updated Progress:**
+- Total: 27/103 features passing (approximately 26.2%)
+- Feature #86: Core validate_dependency_graph function detects self-references - PASSING
+
+**Next Steps:**
+- Continue with other error-handling features
+- Feature #87 (simple cycles) and #88 (complex cycles) are related
+
