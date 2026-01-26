@@ -37,3 +37,39 @@
 **Next Steps:**
 - Continue with other assigned features
 - The agent_runs table is now ready for use by the HarnessKernel
+
+---
+
+### Feature #5: AgentEvent SQLite Table Schema - COMPLETED
+
+**Status:** PASSING
+
+**Description:** Create the agent_events table for immutable audit trail with all required columns, foreign keys, and indexes.
+
+**Verification Summary:**
+- Step 1: PRAGMA table_info(agent_events) - PASS (table exists with 9 columns)
+- Step 2: id column is INTEGER PRIMARY KEY AUTOINCREMENT - PASS
+- Step 3: run_id FK -> agent_runs.id ON DELETE CASCADE - PASS
+- Step 4: sequence column is INTEGER NOT NULL - PASS
+- Step 5: event_type column is VARCHAR(50) NOT NULL - PASS
+- Step 6: timestamp column is DATETIME NOT NULL - PASS
+- Step 7: payload column stores JSON nullable - PASS
+- Step 8: artifact_ref column is VARCHAR(36) nullable - PASS
+- Step 9: tool_name column is VARCHAR(100) nullable - PASS
+- Step 10: Indexes ix_event_run_sequence, ix_event_timestamp exist - PASS
+
+**Bug Fix:**
+- Fixed critical bug in `api/agentspec_models.py` - the `Artifact` class was using `metadata` as a column name, which conflicts with SQLAlchemy's reserved `metadata` attribute
+- Renamed to `artifact_metadata` while keeping API response key as `metadata` for backwards compatibility
+
+**Files Modified:**
+- `api/agentspec_models.py`: Renamed metadata column to artifact_metadata in Artifact class
+
+**Current Progress:**
+- Feature #3: AgentRun SQLite Table Schema - PASSING
+- Feature #5: AgentEvent SQLite Table Schema - PASSING
+- Total: 2/85 features passing (estimated)
+
+**Next Steps:**
+- Continue with remaining features
+- The agent_events table is now ready for use by the HarnessKernel for audit trail

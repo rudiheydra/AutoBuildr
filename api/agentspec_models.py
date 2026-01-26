@@ -12,6 +12,7 @@ AgentSpec is the core execution primitive in AutoBuildr. It defines:
 
 The harness kernel is agent-agnostic: it operates only on specs and run results.
 """
+from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
@@ -372,7 +373,7 @@ class Artifact(Base):
     size_bytes = Column(Integer, nullable=True)
 
     created_at = Column(DateTime, nullable=False, default=_utc_now)
-    metadata = Column(JSON, nullable=True)  # type-specific metadata
+    artifact_metadata = Column(JSON, nullable=True)  # type-specific metadata (renamed to avoid SQLAlchemy reserved word)
 
     # Relationship
     run = relationship("AgentRun", back_populates="artifacts")
@@ -388,7 +389,7 @@ class Artifact(Base):
             "content_hash": self.content_hash,
             "size_bytes": self.size_bytes,
             "created_at": self.created_at.isoformat() if self.created_at else None,
-            "metadata": self.metadata,
+            "metadata": self.artifact_metadata,  # Keep API response key as 'metadata' for backwards compat
             # Note: content_inline not included by default to avoid large responses
         }
 
