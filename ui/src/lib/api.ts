@@ -156,6 +156,20 @@ export async function createFeaturesBulk(
 // Dependency Graph API
 // ============================================================================
 
+export interface DependencyHealthResponse {
+  has_issues: boolean
+  count: number
+  is_valid: boolean
+  self_references: number
+  cycles: number
+  missing_targets: number
+  summary: string
+}
+
+export async function getDependencyHealth(projectName: string): Promise<DependencyHealthResponse> {
+  return fetchJSON(`/projects/${encodeURIComponent(projectName)}/features/dependency-health`)
+}
+
 export async function getDependencyGraph(projectName: string): Promise<DependencyGraph> {
   return fetchJSON(`/projects/${encodeURIComponent(projectName)}/features/graph`)
 }
@@ -497,4 +511,22 @@ export async function deleteSchedule(
 
 export async function getNextScheduledRun(projectName: string): Promise<NextRunResponse> {
   return fetchJSON(`/projects/${encodeURIComponent(projectName)}/schedules/next`)
+}
+
+// ============================================================================
+// Agent Runs / Artifacts API
+// ============================================================================
+
+import type { ArtifactListResponse, ArtifactType } from './types'
+
+export async function getRunArtifacts(
+  runId: string,
+  artifactType?: ArtifactType
+): Promise<ArtifactListResponse> {
+  const params = artifactType ? `?artifact_type=${artifactType}` : ''
+  return fetchJSON(`/agent-runs/${runId}/artifacts${params}`)
+}
+
+export function getArtifactContentUrl(artifactId: string): string {
+  return `/api/artifacts/${artifactId}/content`
 }

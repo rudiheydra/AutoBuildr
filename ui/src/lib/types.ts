@@ -670,3 +670,31 @@ export interface AgentEventListResponse {
   end_sequence: number | null
   has_more: boolean
 }
+
+// ============================================================================
+// Artifact Types (for Artifact List component)
+// ============================================================================
+
+// Artifact types from the backend model
+export type ArtifactType = 'file_change' | 'test_result' | 'log' | 'metric' | 'snapshot'
+
+// Single artifact in the list (without inline content for performance)
+export interface Artifact {
+  id: string
+  run_id: string
+  artifact_type: ArtifactType
+  path: string | null
+  content_ref: string | null
+  content_hash: string | null
+  size_bytes: number | null
+  created_at: string
+  metadata: Record<string, unknown> | null
+  has_inline_content: boolean
+}
+
+// Response from GET /api/agent-runs/:id/artifacts
+export interface ArtifactListResponse {
+  artifacts: Artifact[]
+  total: number
+  run_id: string
+}
