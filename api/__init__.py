@@ -55,6 +55,18 @@ from api.tool_policy import (
     extract_forbidden_patterns,
     record_blocked_tool_call_event,
     serialize_tool_arguments,
+    # Feature #57: Tool Policy Derivation from Task Type
+    derive_tool_policy,
+    get_tool_set,
+    get_standard_forbidden_patterns,
+    get_task_forbidden_patterns,
+    get_combined_forbidden_patterns,
+    get_tool_hints,
+    get_supported_task_types,
+    TOOL_SETS,
+    STANDARD_FORBIDDEN_PATTERNS,
+    TASK_SPECIFIC_FORBIDDEN_PATTERNS,
+    TASK_TOOL_HINTS,
 )
 from api.display_derivation import (
     derive_display_name,
@@ -78,6 +90,17 @@ from api.validators import (
     evaluate_acceptance_spec,
     evaluate_validator,
     get_validator,
+)
+from api.feature_compiler import (
+    CATEGORY_TO_TASK_TYPE,
+    FeatureCompiler,
+    compile_feature,
+    extract_task_type_from_category,
+    get_budget_for_task_type,
+    get_feature_compiler,
+    get_tools_for_task_type,
+    reset_feature_compiler,
+    slugify,
 )
 
 __all__ = [
@@ -129,6 +152,18 @@ __all__ = [
     "extract_forbidden_patterns",
     "record_blocked_tool_call_event",
     "serialize_tool_arguments",
+    # Feature #57: Tool Policy Derivation exports
+    "derive_tool_policy",
+    "get_tool_set",
+    "get_standard_forbidden_patterns",
+    "get_task_forbidden_patterns",
+    "get_combined_forbidden_patterns",
+    "get_tool_hints",
+    "get_supported_task_types",
+    "TOOL_SETS",
+    "STANDARD_FORBIDDEN_PATTERNS",
+    "TASK_SPECIFIC_FORBIDDEN_PATTERNS",
+    "TASK_TOOL_HINTS",
     # Display derivation exports
     "derive_display_name",
     "derive_display_properties",
@@ -150,4 +185,14 @@ __all__ = [
     "evaluate_acceptance_spec",
     "evaluate_validator",
     "get_validator",
+    # Feature compiler exports
+    "CATEGORY_TO_TASK_TYPE",
+    "FeatureCompiler",
+    "compile_feature",
+    "extract_task_type_from_category",
+    "get_budget_for_task_type",
+    "get_feature_compiler",
+    "get_tools_for_task_type",
+    "reset_feature_compiler",
+    "slugify",
 ]
