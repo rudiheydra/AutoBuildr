@@ -18,6 +18,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from .schemas import AGENT_MASCOTS
 from .services.dev_server_manager import get_devserver_manager
 from .services.process_manager import get_manager
+from .event_broadcaster import get_event_broadcaster
 
 # Lazy imports
 _count_passing_tests = None
@@ -723,6 +724,18 @@ async def project_websocket(websocket: WebSocket, project_name: str):
     # Register dev server callbacks
     devserver_manager.add_output_callback(on_dev_output)
     devserver_manager.add_status_callback(on_dev_status_change)
+
+    # Set up event broadcaster for agent_event_logged messages (Feature #62)
+    event_broadcaster = await get_event_broadcaster(project_name)
+
+    async def broadcast_event_to_websocket(message: dict):
+        """Forward agent_event_logged messages to this WebSocket."""
+        try:
+            await websocket.send_json(message)
+        except Exception:
+            pass  # Connection may be closed
+
+    event_broadcaster.set_broadcast_callback(broadcast_event_to_websocket)
 
     # Start progress polling task
     poll_task = asyncio.create_task(poll_progress(websocket, project_name, project_dir))
