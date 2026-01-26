@@ -901,3 +901,110 @@
 - Continue with DSPy SpecBuilder features (Phase 1)
 - Feature-to-AgentSpec compiler
 - Template selection based on task_type
+
+## Regression Test Session: 2026-01-27 03:06
+
+### Feature #51: Skill Template Registry - VERIFIED (No Regression)
+
+**Test Results:**
+- All 54 unit tests in tests/test_template_registry.py PASS
+- Step 1: Create TemplateRegistry class - PASS
+- Step 2: Scan prompts/ directory for template files - PASS (3 templates found)
+- Step 3: Parse template metadata (task_type, required_tools, etc.) - PASS
+- Step 4: Index templates by task_type - PASS (coding, documentation, testing)
+- Step 5: Implement get_template(task_type) -> Template - PASS
+- Step 6: Implement interpolate(template, variables) -> str - PASS
+- Step 7: Cache compiled templates for performance - PASS (same object returned)
+- Step 8: Handle missing template gracefully with fallback - PASS
+
+**Implementation Verified:**
+- api/template_registry.py: TemplateRegistry class with full functionality
+- tests/test_template_registry.py: 54 comprehensive tests
+- prompts/: 3 templates (coding_prompt.md, testing_prompt.md, initializer_prompt.md)
+
+**Conclusion:** Feature #51 passes all verification steps. No regression detected.
+
+[Testing] Feature #51 verified - still passing
+
+---
+
+## Session: 2026-01-27 03:15
+
+### Feature #43: Tool Hints System Prompt Injection - COMPLETED
+
+**Status:** PASSING
+
+**Category:** N. Feedback & Notification
+
+**Description:** Inject tool_hints from tool_policy into system prompt to guide agent tool usage.
+
+**Dependencies:** Feature #1 (AgentSpec SQLite Table), Feature #26 (AgentRun Status Transition) - both passing
+
+**Verification Summary:**
+- Step 1: Extract tool_hints dict from spec.tool_policy - PASS
+  - extract_tool_hints() extracts hints from tool_policy dict
+  - Handles None, empty dict, missing key gracefully
+  - Converts non-string values to strings
+  - Filters out None values
+- Step 2: Format hints as markdown guidelines - PASS
+  - format_tool_hints_as_markdown() creates formatted output
+  - Header: ## Tool Usage Guidelines
+  - Bullet points: - **{tool_name}**: {hint}
+  - Alphabetically sorted for consistency
+- Step 3: Append to system prompt in dedicated section - PASS
+  - build_system_prompt() includes hints after objective
+  - Proper section ordering: Objective -> Task Type -> Context -> Tool Usage Guidelines
+  - Optional via include_tool_hints parameter
+- Step 4: Example format verification - PASS
+  - Output matches: "- **feature_mark_passing**: Call only after verification"
+  - Markdown formatting verified
+
+**Implementation Details:**
+- New module: api/prompt_builder.py (~248 lines)
+- Functions:
+  - extract_tool_hints(tool_policy) -> dict[str, str]
+  - format_tool_hints_as_markdown(hints) -> str
+  - build_system_prompt(objective, context, tool_policy, task_type) -> str
+  - inject_tool_hints_into_prompt(base_prompt, tool_policy) -> str
+- All functions exported via api/__init__.py
+
+**Test Results:**
+- 36 unit tests in tests/test_prompt_builder.py - ALL PASS
+- Verification script tests/verify_feature_43.py - ALL PASS
+- Integration tests tests/verify_feature_43_integration.py - ALL PASS
+
+**Files Created:**
+- api/prompt_builder.py: Core prompt builder module
+- tests/test_prompt_builder.py: 36 comprehensive unit tests
+- tests/verify_feature_43.py: Feature verification script (5 steps)
+- tests/verify_feature_43_integration.py: Integration tests with AgentSpec
+
+**Files Modified:**
+- api/__init__.py: Added prompt_builder exports
+
+**Commit:** ad5230e - "feat: Implement Tool Hints System Prompt Injection (Feature #43)"
+
+---
+
+**Updated Progress:**
+- Feature #1: AgentSpec SQLite Table Schema - PASSING
+- Feature #2: AcceptanceSpec SQLite Table Schema - PASSING
+- Feature #3: AgentRun SQLite Table Schema - PASSING
+- Feature #4: Artifact SQLite Table Schema - PASSING
+- Feature #5: AgentEvent SQLite Table Schema - PASSING
+- Feature #7: AgentSpec Pydantic Request/Response Schemas - PASSING
+- Feature #8: AcceptanceSpec Pydantic Schemas - PASSING
+- Feature #9: AgentRun Pydantic Response Schema - PASSING
+- Feature #10: Artifact and AgentEvent Pydantic Schemas - PASSING
+- Feature #26: AgentRun Status Transition State Machine - PASSING
+- Feature #31: Artifact Storage with Content-Addressing - PASSING
+- Feature #43: Tool Hints System Prompt Injection - PASSING
+- Feature #51: Skill Template Registry - PASSING
+- Feature #65: AgentRun Status Color Coding - PASSING
+- Total: 14/85 features passing (approximately 16.5%)
+
+**Next Steps:**
+- Continue with Phase 0 Kernel Wiring features
+- HarnessKernel.execute() implementation
+- Tool policy enforcement features
+
