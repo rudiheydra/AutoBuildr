@@ -102,6 +102,14 @@ from api.feature_compiler import (
     reset_feature_compiler,
     slugify,
 )
+from api.websocket_events import (
+    AcceptanceUpdatePayload,
+    ValidatorResultPayload,
+    broadcast_acceptance_update,
+    broadcast_acceptance_update_sync,
+    build_acceptance_update_from_results,
+    create_validator_result_payload,
+)
 
 __all__ = [
     "Feature",
@@ -195,4 +203,11 @@ __all__ = [
     "get_tools_for_task_type",
     "reset_feature_compiler",
     "slugify",
+    # WebSocket event broadcasting exports (Feature #63)
+    "AcceptanceUpdatePayload",
+    "ValidatorResultPayload",
+    "broadcast_acceptance_update",
+    "broadcast_acceptance_update_sync",
+    "build_acceptance_update_from_results",
+    "create_validator_result_payload",
 ]
