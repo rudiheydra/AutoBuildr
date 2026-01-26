@@ -2152,3 +2152,71 @@ Added `validate_dependency_graph()` function to api/dependency_resolver.py that:
 - Total: 29/103 features passing (approximately 28.2%)
 - Feature #88: Core validate_dependency_graph function detects complex cycles - PASSING
 
+
+
+---
+
+## Session: 2026-01-27 (Coding Agent - Feature #89)
+
+### Feature #89: Core validate_dependency_graph function detects missing dependency targets - COMPLETED
+
+**Status:** PASSING
+
+**Category:** error-handling
+
+**Description:** The validate_dependency_graph() function should detect when a feature depends on a non-existent feature ID.
+
+**Dependencies:** None
+
+**Verification Summary (4 Steps):**
+
+- Step 1: Create feature A (id=1) with dependencies=[999] (non-existent) - PASS
+  - Test feature created with non-existent dependency ID 999
+
+- Step 2: Call validate_dependency_graph() with this feature - PASS
+  - Function called successfully
+  - Returns ValidationResult dict with all required keys:
+    - is_valid, self_references, cycles, missing_targets, issues, summary
+
+- Step 3: Verify the result includes missing_targets dict with {1: [999]} - PASS
+  - result["missing_targets"] == {1: [999]}
+  - Feature 1 correctly mapped to its missing dependency 999
+
+- Step 4: Verify the function returns structured ValidationResult with all issue types - PASS
+  - Issue found with correct structure:
+    - feature_id: 1
+    - issue_type: "missing_target"
+    - details: {"message": "Feature 1 depends on non-existent feature 999", "missing_id": 999}
+    - auto_fixable: True
+
+**Implementation Details:**
+- Function: api/dependency_resolver.py::validate_dependency_graph()
+- Builds set of all valid feature IDs from input features
+- For each feature, checks if dependencies reference non-existent IDs
+- Populates missing_targets dict with {feature_id: [missing_ids]}
+- Creates DependencyIssue entries with issue_type="missing_target"
+- Missing target issues are marked as auto_fixable=True
+
+**Test Results:**
+- tests/test_validate_dependency_graph_missing_targets.py: 21/21 tests PASS
+  - TestMissingDependencyTargetDetection: 4 tests (verification steps)
+  - TestMultipleMissingTargets: 4 tests
+  - TestMissingTargetIssueDetails: 5 tests
+  - TestMissingTargetEdgeCases: 5 tests
+  - TestMixedIssueTypes: 3 tests
+- tests/verify_feature_89.py: All 4 verification steps PASS
+
+**Files Created:**
+- tests/test_validate_dependency_graph_missing_targets.py: Comprehensive test suite (558 lines)
+- tests/verify_feature_89.py: Standalone verification script
+
+**Commit:** 7da9670 - "feat: Add comprehensive tests for missing dependency target detection (Feature #89)"
+
+---
+
+**Updated Progress:**
+- Total: 29/103 features passing (approximately 28.2%)
+- Feature #89: Core validate_dependency_graph function detects missing dependency targets - PASSING
+
+**Note:** The implementation was already complete in api/dependency_resolver.py (lines 289-302). This session added comprehensive verification tests and confirmed functionality.
+
