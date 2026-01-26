@@ -701,3 +701,65 @@ def build_graph_data(features: list[dict]) -> dict:
             edges.append({"source": dep_id, "target": f["id"]})
 
     return {"nodes": nodes, "edges": edges}
+
+
+def repair_self_references(session) -> list[int]:
+    """Remove self-referencing dependencies from all affected features.
+
+    This function queries all features, identifies those with self-references
+    (where a feature depends on itself), removes those self-references from
+    the dependencies list, and commits all changes in a single database
+    transaction.
+
+    Args:
+        session: SQLAlchemy session for database operations
+
+    Returns:
+        List of feature IDs that were repaired (had self-references removed)
+
+    Example:
+        >>> from api.database import create_database
+        >>> from api.dependency_resolver import repair_self_references
+        >>> engine, SessionMaker = create_database(project_dir)
+        >>> session = SessionMaker()
+        >>> repaired_ids = repair_self_references(session)
+        >>> print(f"Repaired {len(repaired_ids)} features: {repaired_ids}")
+    """
+    # Import Feature model here to avoid circular imports
+    from api.database import Feature
+
+    repaired_ids: list[int] = []
+
+    # Query all features from the database
+    features = session.query(Feature).all()
+
+    # Check each feature for self-references and remove them
+    for feature in features:
+        # Get dependencies safely (handle NULL and malformed data)
+        deps = feature.get_dependencies_safe()
+
+        # Check if feature depends on itself
+        if feature.id in deps:
+            # Remove self-reference from dependencies
+            new_deps = [d for d in deps if d != feature.id]
+            feature.dependencies = new_deps
+
+            # Track this feature as repaired
+            repaired_ids.append(feature.id)
+
+            # Log the repair
+            _logger.info(
+                "repair_self_references: Removed self-reference from Feature #%d "
+                "(original_deps=%s, new_deps=%s)",
+                feature.id, deps, new_deps
+            )
+
+    # Commit all changes in a single transaction
+    if repaired_ids:
+        session.commit()
+        _logger.info(
+            "repair_self_references: Committed repairs for %d feature(s): %s",
+            len(repaired_ids), repaired_ids
+        )
+
+    return repaired_ids
