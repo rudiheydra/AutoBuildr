@@ -70,6 +70,15 @@ from api.display_derivation import (
     TASK_TYPE_ICONS,
     DEFAULT_ICON,
 )
+from api.validators import (
+    FileExistsValidator,
+    Validator,
+    ValidatorResult,
+    VALIDATOR_REGISTRY,
+    evaluate_acceptance_spec,
+    evaluate_validator,
+    get_validator,
+)
 
 __all__ = [
     "Feature",
@@ -133,4 +142,12 @@ __all__ = [
     "MASCOT_POOL",
     "TASK_TYPE_ICONS",
     "DEFAULT_ICON",
+    # Validators exports
+    "FileExistsValidator",
+    "Validator",
+    "ValidatorResult",
+    "VALIDATOR_REGISTRY",
+    "evaluate_acceptance_spec",
+    "evaluate_validator",
+    "get_validator",
 ]
