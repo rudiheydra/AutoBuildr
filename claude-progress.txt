@@ -733,3 +733,89 @@
 - Feature #8: AcceptanceSpec Pydantic Schemas - PASSING
 - Total: 8/85 features passing (approximately 9.4%)
 
+
+## Regression Test Session: 2026-01-27 03:04
+
+### Feature #10: Artifact and AgentEvent Pydantic Schemas - VERIFIED (No Regression)
+
+**Test Results:**
+- All 6 verification steps PASS
+- Step 1: ArtifactResponse with all Artifact fields - PASS
+- Step 2: artifact_type field validator (5 valid types + rejection of invalid) - PASS
+- Step 3: has_inline_content computed property - PASS
+- Step 4: AgentEventResponse with all AgentEvent fields - PASS
+- Step 5: event_type field validator (9 valid types + rejection of invalid) - PASS
+- Step 6: AgentEventListResponse for timeline queries - PASS
+
+**Conclusion:** Feature #10 passes all verification steps. No regression detected.
+
+[Testing] Feature #10 verified - still passing
+
+---
+
+## Session: 2026-01-27 03:05
+
+### Feature #31: Artifact Storage with Content-Addressing - COMPLETED
+
+**Status:** PASSING
+
+**Category:** G. State & Persistence
+
+**Description:** Implement artifact storage service with SHA256 content-addressing, storing small content inline and large content in files.
+
+**Verification Summary (10 Steps):**
+- Step 1: Create ArtifactStorage class with store(run_id, type, content, path) method - PASS
+- Step 2: Compute SHA256 hash of content - PASS
+- Step 3: Check content size against ARTIFACT_INLINE_MAX_SIZE (4096 bytes) - PASS
+- Step 4: If small, store in content_inline field - PASS
+- Step 5: If large, write to file: .autobuildr/artifacts/{run_id}/{hash}.blob - PASS
+- Step 6: Create parent directories if needed - PASS
+- Step 7: Set content_ref to file path - PASS
+- Step 8: Set size_bytes to content length - PASS
+- Step 9: Check for existing artifact with same hash (deduplication) - PASS
+- Step 10: Return Artifact record - PASS
+
+**Implementation Details:**
+- Created api/artifact_storage.py with ArtifactStorage class
+- SHA256 hashing via hashlib.sha256()
+- Size threshold: ARTIFACT_INLINE_MAX_SIZE = 4096 bytes
+- Small content: stored in content_inline column (Text)
+- Large content: stored in .autobuildr/artifacts/{run_id}/{hash}.blob
+- Deduplication: finds existing artifacts with same hash in same run
+- Content-addressable file deduplication: same hash = same file (no duplicate writes)
+- Additional methods: retrieve(), retrieve_string(), delete_content(), get_storage_stats()
+
+**Files Created:**
+- api/artifact_storage.py - ArtifactStorage service class
+- tests/test_artifact_storage.py - 33 comprehensive unit tests
+- tests/verify_feature_31.py - Feature step verification script
+- tests/verify_feature_31_e2e.py - End-to-end verification with real DB
+
+**Test Results:**
+- All 33 unit tests pass
+- All 10 verification steps pass
+- E2E verification successful
+
+**Commit:** 87dee9d - "feat: Implement ArtifactStorage with content-addressing (Feature #31)"
+
+---
+
+**Updated Progress:**
+- Feature #1: AgentSpec SQLite Table Schema - PASSING
+- Feature #2: AcceptanceSpec SQLite Table Schema - PASSING
+- Feature #3: AgentRun SQLite Table Schema - PASSING
+- Feature #4: Artifact SQLite Table Schema - PASSING
+- Feature #5: AgentEvent SQLite Table Schema - PASSING
+- Feature #7: AgentSpec Pydantic Request/Response Schemas - PASSING
+- Feature #8: AcceptanceSpec Pydantic Schemas - PASSING
+- Feature #9: AgentRun Pydantic Response Schema - PASSING
+- Feature #10: Artifact and AgentEvent Pydantic Schemas - PASSING
+- Feature #26: AgentRun Status Transition State Machine - PASSING
+- Feature #31: Artifact Storage with Content-Addressing - PASSING
+- Feature #65: AgentRun Status Color Coding - PASSING
+- Total: 9/85 features passing (approximately 10.6%)
+
+**Next Steps:**
+- Continue with Phase 0 Kernel Wiring features
+- HarnessKernel.execute() implementation
+- API endpoints for AgentSpec CRUD operations
