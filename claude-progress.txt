@@ -1084,3 +1084,104 @@
 - GET /api/agent-runs/:id endpoint
 - AgentSpec CRUD endpoints
 
+## Regression Test Session: 2026-01-27 03:18
+
+### Feature #26: AgentRun Status Transition State Machine - VERIFIED (No Regression)
+
+**Test Results:**
+- All 64 unit tests in tests/test_agentrun_state_machine.py PASS
+
+**Verification Steps:**
+1. Define valid state transitions as adjacency map - PASS
+2. pending can transition to running only - PASS
+3. running can transition to paused, completed, failed, timeout - PASS
+4. paused can transition to running, failed (cancel) - PASS
+5. completed, failed, timeout are terminal states - PASS
+6. Implement transition validation in AgentRun model - PASS
+7. Raise InvalidStateTransition exception for invalid transitions - PASS
+8. Log all state transitions with timestamps - PASS
+9. Verify transitions are atomic (within transaction) - PASS
+
+**Implementation Verified:**
+- api/agentspec_models.py: VALID_STATE_TRANSITIONS adjacency map
+- api/agentspec_models.py: InvalidStateTransition exception class
+- api/agentspec_models.py: AgentRun.transition_to(), can_transition_to(), etc.
+- TERMINAL_STATUSES constant correctly defined
+- All convenience methods (start, pause, resume, complete, fail, timeout) working
+
+**Separate Issue Fixed:**
+During testing, found server couldn't start due to ImportError in
+server/schemas/__init__.py - legacy schemas from server/schemas.py
+were not being re-exported. Fixed by adding imports for:
+- AgentActionResponse, AgentStartRequest, AgentStatus
+- DevServer, Feature, Settings, Schedule, Project, Filesystem schemas
+- AGENT_MASCOTS constant
+
+**Commit:** 663890a - "Fix schema imports in server/schemas/__init__.py"
+
+**Conclusion:** Feature #26 passes all verification steps. No regression detected
+in the state machine itself. Server startup import issue was fixed.
+
+[Testing] Feature #26 verified - still passing. Server import fix committed.
+
+---
+
+## Session: 2026-01-27 (Coding Agent #18)
+
+### Feature #18: GET /api/agent-runs/:id Get Run Details - COMPLETED
+
+**Status:** PASSING
+
+**Category:** F. UI-Backend Integration
+
+**Description:** Implement GET /api/agent-runs/:id endpoint to retrieve full run details with spec info.
+
+**Verification Summary:**
+- Step 1: Define FastAPI route GET /api/agent-runs/{run_id} - PASS
+  - Route defined in server/routers/agent_runs.py
+- Step 2: Query AgentRun by id with eager load of agent_spec - PASS
+  - Uses joinedload(AgentRunModel.agent_spec) for eager loading
+- Step 3: Return 404 if not found - PASS
+  - Tested: `{"detail":"AgentRun non-existent-id-12345 not found"}` with HTTP 404
+- Step 4: Include spec display_name and icon in response - PASS
+  - Response includes `spec.display_name` and `spec.icon`
+- Step 5: Return AgentRunResponse with nested spec summary - PASS
+  - Returns AgentRunSummary with run, spec, event_count, artifact_count
+
+**Test Results:**
+- Created test data: AgentSpec and AgentRun
+- Verified endpoint returns full run with nested spec info
+- Verified 404 response for non-existent run IDs
+- Cleaned up test data after verification
+
+**Implementation Notes:**
+- The endpoint was already implemented in agent_runs.py
+- Fixed server startup to initialize global database session maker
+- Added database initialization in server/main.py lifespan function
+- Registered agent_runs_router and agent_specs_router in main.py
+- Added AGENT_MASCOTS export to server/schemas/__init__.py
+
+**Files Modified:**
+- `server/main.py`: Added database session maker initialization and router registration
+- `server/schemas/__init__.py`: Added AGENT_MASCOTS to __all__ exports
+
+**Commit:** 4ccb290 - "Implement GET /api/agent-runs/:id endpoint - verified end-to-end"
+
+---
+
+**Current Progress:**
+- Feature #1: AgentSpec SQLite Table Schema - PASSING
+- Feature #2: AcceptanceSpec SQLite Table Schema - PASSING
+- Feature #3: AgentRun SQLite Table Schema - PASSING
+- Feature #4: Artifact SQLite Table Schema - PASSING
+- Feature #5: AgentEvent SQLite Table Schema - PASSING
+- Feature #7: AgentSpec Pydantic Request/Response Schemas - PASSING
+- Feature #9: AgentRun Pydantic Response Schema - PASSING
+- Feature #18: GET /api/agent-runs/:id Get Run Details - PASSING
+- Feature #26: AgentRun Status Transition State Machine - PASSING
+- Total: 14/85 features passing (approximately 16.5%)
+
+**Next Steps:**
+- Continue with other UI-Backend Integration features
+- Implement remaining API endpoints for agent management
+
