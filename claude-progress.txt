@@ -3261,3 +3261,96 @@ Modified parallel_orchestrator.py:
 - Feature #102: Dependency health check produces clear formatted log output - PASSING
 
 **Session completed successfully.**
+[Testing] 2026-01-27 03:58:15 - Feature #2 regression test PASSED
+  - Feature: AcceptanceSpec SQLite Table Schema
+  - Database verification: All 10 steps pass
+    - Step 1: PRAGMA table_info(acceptance_specs) - PASS
+    - Step 2: id VARCHAR(36) primary key - PASS
+    - Step 3: agent_spec_id VARCHAR(36) NOT NULL UNIQUE - PASS
+    - Step 4: agent_spec_id FK CASCADE - PASS
+    - Step 5: validators JSON - PASS
+    - Step 6: gate_mode VARCHAR(20) - PASS
+    - Step 7: min_score FLOAT nullable - PASS
+    - Step 8: retry_policy VARCHAR(20) - PASS
+    - Step 9: max_retries INTEGER - PASS
+    - Step 10: fallback_spec_id FK nullable - PASS
+  - Migration tests: 34/34 pass
+  - Verification script: 6/6 steps pass
+  - No regression found - feature still working correctly
+
+
+---
+
+## Session: 2026-01-27 (Coding Agent - Feature #103)
+
+### Feature #103: Optional UI banner shows when dependency issues detected at startup - COMPLETED
+
+**Status:** PASSING
+
+**Category:** style
+
+**Description:** When the orchestrator detects dependency issues at startup, an optional warning banner can be shown in the UI with issue count.
+
+**Dependencies:** None
+
+**Verification Summary (5 Steps):**
+
+- Step 1: Add dependency_health endpoint to API that returns issue summary - PASS
+  - GET /api/projects/{project_name}/features/dependency-health endpoint exists
+  - Returns JSON with: has_issues, count, is_valid, self_references, cycles, missing_targets, summary
+
+- Step 2: If issues requiring attention exist, return {has_issues: true, count: N} - PASS
+  - API returns has_issues=true when issues found
+  - Count reflects total number of issues
+  - Response includes detailed breakdown by issue type
+
+- Step 3: UI can optionally display banner: Warning: N dependency issues detected - see logs - PASS
+  - DependencyHealthBanner.tsx component exists
+  - Displays "Warning: X dependency issue(s) detected - see logs"
+  - Uses healthData.count from API response
+
+- Step 4: Banner should be dismissible - PASS
+  - isDismissed state manages visibility
+  - handleDismiss handler on X button
+  - sessionStorage persists dismissed state per project
+
+- Step 5: Banner style: yellow/orange warning color, not blocking UI - PASS
+  - Uses Tailwind amber colors: bg-amber-100, border-amber-500, text-amber-800
+  - AlertTriangle warning icon
+  - Not a modal/overlay - integrates inline with layout
+
+**Implementation Details:**
+
+The feature was already implemented with:
+- Backend: server/routers/features.py - get_dependency_health() endpoint (lines 386-442)
+- Frontend API: ui/src/lib/api.ts - getDependencyHealth() function (lines 159-171)
+- UI Component: ui/src/components/DependencyHealthBanner.tsx
+- Integration: ui/src/App.tsx imports and uses DependencyHealthBanner
+
+**Test Results:**
+- tests/test_feature_103_dependency_health_banner.py: 27/27 tests PASS
+- tests/verify_feature_103.py: All 5 verification steps + integration PASS
+
+**Test Categories:**
+- TestDependencyHealthEndpoint: 2 tests (endpoint exists, returns correct JSON)
+- TestHasIssuesResponse: 2 tests (false when healthy, true when issues)
+- TestUIBannerComponent: 4 tests (exists, imports, message, count usage)
+- TestBannerDismissible: 4 tests (button, storage, state, hides)
+- TestBannerStyle: 4 tests (colors, classes, icon, not blocking)
+- TestAPIClientFunction: 3 tests (exists, endpoint, type)
+- TestBannerIntegration: 3 tests (imported, used, receives props)
+- TestVerificationSteps: 5 tests (all 5 feature steps)
+
+**Files Created:**
+- tests/test_feature_103_dependency_health_banner.py: 27 comprehensive tests
+- tests/verify_feature_103.py: Standalone verification script
+
+**Commit:** b3055ff - "feat: Add tests for Feature #103 - Dependency health banner verification"
+
+---
+
+**Updated Progress:**
+- Total: 44/103 features passing (approximately 42.7%)
+- Feature #103: Optional UI banner shows when dependency issues detected at startup - PASSING
+
+**Session completed successfully.**
