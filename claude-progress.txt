@@ -1,6 +1,76 @@
 # AutoBuildr Progress Log
 # ======================
 
+## Session: 2026-01-27 (Coding Agent - Feature #52)
+
+### Feature #52: Feature to AgentSpec Compiler - COMPLETED
+
+**Status:** PASSING
+
+**Category:** D. Workflow Completeness
+
+**Description:** Convert a Feature database record into an AgentSpec with derived tool_policy and acceptance validators.
+
+**Dependencies:** [1, 2, 7, 8, 51] - All passing
+- Feature #1: AgentSpec SQLite Table Schema
+- Feature #2: AcceptanceSpec SQLite Table Schema
+- Feature #7: AgentSpec Pydantic Request/Response Schemas
+- Feature #8: AcceptanceSpec Pydantic Schemas
+- Feature #51: Skill Template Registry
+
+**Implementation Summary:**
+
+Created `api/feature_compiler.py` with:
+
+1. **FeatureCompiler class** with `compile(feature) -> AgentSpec` method
+2. **Spec name generation**: `feature-{id}-{slug}` format
+3. **Display name**: Uses feature name directly
+4. **Objective generation**: Combines feature description + verification steps
+5. **Task type derivation**: Maps category to task_type (coding, testing, documentation, etc.)
+6. **Tool policy derivation**: Selects appropriate tools based on task type
+7. **Acceptance validators**: Creates validators from feature steps + feature_passing validator
+8. **Source feature ID**: Links AgentSpec back to Feature for traceability
+9. **Priority**: Copies from feature priority
+10. **Complete AgentSpec**: All fields populated for kernel execution
+
+**Key Functions:**
+- `slugify()`: URL-friendly slug generation
+- `extract_task_type_from_category()`: Category to task_type mapping
+- `get_tools_for_task_type()`: Tool set selection by task type
+- `get_budget_for_task_type()`: Budget (max_turns, timeout) selection
+- `compile_feature()`: Convenience function using default compiler
+- `get_feature_compiler()`: Singleton accessor
+
+**Category Mappings:**
+- Database/API/UI/Backend/Frontend -> coding
+- Testing/Verification/QA -> testing
+- Docs/Documentation -> documentation
+- Refactor/Cleanup -> refactoring
+- Audit/Security -> audit
+- Unknown -> coding (default)
+
+**Verification Results:**
+- tests/test_feature_52_feature_compiler.py: 66/66 tests PASS
+- tests/verify_feature_52.py: 21/21 checks PASS
+- Real database integration: Feature #52 compiled successfully
+
+**Files Created:**
+- api/feature_compiler.py: FeatureCompiler class (390+ lines)
+- tests/test_feature_52_feature_compiler.py: Comprehensive test suite (66 tests, 750+ lines)
+- tests/verify_feature_52.py: Verification script (180+ lines)
+
+**Commit:** fea1044 - "feat: Implement Feature to AgentSpec Compiler (Feature #52)"
+
+---
+
+**Updated Progress:**
+- Total: 54/103 features passing (approximately 52.4%)
+- Feature #52: Feature to AgentSpec Compiler - PASSING
+
+**Session completed successfully.**
+
+---
+
 ## Session: 2026-01-27 (Coding Agent - Feature #69)
 
 ### Feature #69: Artifact List Component - COMPLETED
@@ -4117,3 +4187,202 @@ Modified api/static_spec_adapter.py:
 
 **Session completed successfully.**
 
+[Testing] 2026-01-27 08:57:16 - Feature #86 regression test PASSED
+  - Feature: Core validate_dependency_graph function detects self-references
+  - Verification script: 4/4 steps pass
+  - Unit tests: 14/14 tests pass
+  - All verification steps confirmed working:
+    - Step 1: Create test feature with id=1 and dependencies=[1] (self-reference)
+    - Step 2: Call validate_dependency_graph() with this feature
+    - Step 3: Verify self_references list contains feature id 1
+    - Step 4: Verify error type is marked as auto_fixable=True
+  - No regression found - feature still working correctly
+
+
+---
+
+## Session: 2026-01-27 (Coding Agent - Feature #38)
+
+### Feature #38: StaticSpecAdapter for Legacy Testing Agent - COMPLETED
+
+**Status:** PASSING
+
+**Category:** K. Default & Reset
+
+**Description:** Wrap the existing testing agent as a static AgentSpec with read-only tool_policy.
+
+**Dependencies:** #1 (AgentSpec SQLite Table Schema), #2 (AcceptanceSpec SQLite Table Schema), #7 (AgentSpec Pydantic Schemas) - all passing
+
+**Verification Summary (11 Steps):**
+
+- Step 1: Define create_testing_spec(feature_id) method - PASS
+- Step 2: Load testing agent prompt from prompts/ - PASS
+- Step 3: Interpolate feature steps as test criteria - PASS
+- Step 4: Set task_type to testing - PASS
+- Step 5: Configure tool_policy with test execution tools - PASS
+- Step 6: Restrict to read-only file access - PASS
+- Step 7: Set max_turns appropriate for testing - PASS
+- Step 8: Create AcceptanceSpec based on feature steps - PASS
+- Step 9: Generate test_pass validators from feature steps - PASS
+- Step 10: Link source_feature_id to feature - PASS
+- Step 11: Return static AgentSpec - PASS
+
+**Implementation Details:**
+
+Enhanced api/static_spec_adapter.py:
+- Added feature_steps parameter to create_testing_spec()
+- Added steps interpolation into objective (Test Criteria section)
+- Enhanced _create_testing_acceptance_spec() to generate test_pass validators
+
+**Test Results:**
+- tests/test_feature_38_testing_spec_adapter.py: 54/54 tests PASS
+- tests/test_static_spec_adapter.py: 45/45 tests PASS (no regressions)
+- tests/verify_feature_38.py: All 11 verification steps PASS
+
+**Files Created:**
+- tests/test_feature_38_testing_spec_adapter.py: Comprehensive test suite (54 tests)
+- tests/verify_feature_38.py: Feature verification script
+
+**Files Modified:**
+- api/static_spec_adapter.py: Enhanced create_testing_spec() and _create_testing_acceptance_spec()
+
+**Commit:** a7e9053 - "feat: Implement StaticSpecAdapter for Legacy Testing Agent (Feature #38)"
+
+---
+
+**Updated Progress:**
+- Total: 51/103 features passing (approximately 49.5%)
+- Feature #38: StaticSpecAdapter for Legacy Testing Agent - PASSING
+
+**Session completed successfully.**
+
+[Testing] 2026-01-27 09:00:16 - Feature #19 regression test PASSED
+  - Feature: GET /api/agent-runs/:id/events Event Timeline
+  - Verification script: 6/6 steps pass
+  - API integration tests: 5/5 tests pass
+  - Pytest events API tests: 3/3 tests pass
+  - All verification steps confirmed working:
+    - Step 1: FastAPI route defined correctly
+    - Step 2: Query parameters (event_type, limit, offset) work
+    - Step 3: Events queried by run_id ordered by sequence
+    - Step 4: Filter by event_type works
+    - Step 5: Pagination applied correctly
+    - Step 6: AgentEventListResponse returned correctly
+  - No regression found - feature still working correctly
+[Testing] 2026-01-27 09:01:49 - Feature #86 regression test PASSED (2nd session)
+  - Feature: Core validate_dependency_graph function detects self-references
+  - Verification script: 4/4 steps pass
+  - Unit tests: 14/14 tests pass
+  - Direct Python test: All assertions pass
+  - All verification steps confirmed working:
+    - Step 1: Create test feature with id=1 and dependencies=[1] (self-reference)
+    - Step 2: Call validate_dependency_graph() with this feature
+    - Step 3: Verify self_references list contains feature id 1
+    - Step 4: Verify error type is marked as auto_fixable=True
+  - Note: Frontend build has unrelated TypeScript errors (RunInspector.tsx)
+  - No regression found in Feature #86 - backend function still working correctly
+
+---
+
+## Session: 2026-01-27 (Coding Agent - Feature #57)
+
+### Feature #57: Tool Policy Derivation from Task Type - COMPLETED
+
+**Status:** PASSING
+
+**Category:** A. Security & Access Control
+
+**Description:** Derive appropriate tool_policy based on task_type with standard tool sets and forbidden patterns.
+
+**Verification Summary (8 Steps - All Passed):**
+
+- Step 1: Define tool sets for each task_type - PASS
+- Step 2: coding: file edit, bash (restricted), feature tools - PASS
+- Step 3: testing: file read, bash (test commands), feature tools - PASS
+- Step 4: documentation: file write, read-only access - PASS
+- Step 5: audit: read-only everything - PASS
+- Step 6: Add standard forbidden_patterns for all types - PASS
+- Step 7: Add task-specific forbidden_patterns - PASS
+- Step 8: Return complete tool_policy structure - PASS
+
+**Implementation Details:**
+
+Added to api/tool_policy.py:
+- TOOL_SETS: dict mapping task_type -> list of allowed tools
+- STANDARD_FORBIDDEN_PATTERNS: security baseline patterns for all types
+- TASK_SPECIFIC_FORBIDDEN_PATTERNS: additional restrictions per task type
+- TASK_TOOL_HINTS: tool usage guidance per task type
+- derive_tool_policy(): Main function for policy derivation
+- Helper functions: get_tool_set(), get_standard_forbidden_patterns(), etc.
+
+**Test Results:**
+- tests/test_feature_57_tool_policy_derivation.py: 69/69 tests PASS
+- tests/test_tool_policy.py: 50/50 tests PASS (no regressions)
+- tests/verify_feature_57.py: All 8 verification steps PASS
+
+**Files Created:**
+- tests/test_feature_57_tool_policy_derivation.py
+- tests/verify_feature_57.py
+
+**Files Modified:**
+- api/tool_policy.py (~450 lines added)
+- api/__init__.py (exports added)
+
+**Commit:** 6e5c806
+
+**Updated Progress:** 54/103 features passing (approximately 52.4%)
+
+[Testing] 2026-01-27 09:03:14 - Feature #51 regression test PASSED
+  - Feature: Skill Template Registry
+  - Verification script: 8/8 steps pass
+  - Unit tests: 54/54 tests pass
+  - All verification steps confirmed working:
+    - Step 1: TemplateRegistry class created successfully
+    - Step 2: Scans prompts/ directory for .md template files
+    - Step 3: Parses template metadata (task_type, required_tools, default_max_turns, etc.)
+    - Step 4: Indexes templates by task_type (coding, testing, documentation)
+    - Step 5: get_template(task_type) and get_template(name) work correctly
+    - Step 6: interpolate(template, variables) substitutes {{var}} placeholders
+    - Step 7: Cache returns same object on repeated access, invalidates on file change
+    - Step 8: Missing templates return None or fallback template as configured
+  - Real prompts/ directory: Found 3 templates (coding_prompt, testing_prompt, initializer_prompt)
+  - No regression found - feature still working correctly
+
+## Session: Feature #42 - Directory Sandbox Restriction
+Date: 2026-01-27
+
+### Completed:
+- Implemented Feature #42: Directory Sandbox Restriction
+- All 9 verification steps implemented:
+  1. Extract allowed_directories from spec.tool_policy ✓
+  2. Resolve all allowed paths to absolute paths ✓
+  3. For file operation tools, extract target path from arguments ✓
+  4. Resolve target path to absolute ✓
+  5. Check if target is under any allowed directory ✓
+  6. Block path traversal attempts (..) ✓
+  7. If target is symlink, resolve and validate final target ✓
+  8. Record violation in event log ✓
+  9. Return permission denied error to agent ✓
+
+### Key Components Added:
+- DirectoryAccessBlocked exception
+- extract_allowed_directories() function
+- resolve_to_absolute_paths() function
+- extract_path_from_arguments() function
+- contains_path_traversal() function (with URL-encoded detection)
+- resolve_target_path() function (with symlink detection)
+- is_path_under_directories() function
+- validate_directory_access() function
+- record_directory_blocked_event() function
+- Extended ToolPolicyEnforcer with directory sandbox validation
+
+### Tests:
+- Created tests/test_feature_42_directory_sandbox.py with 66 tests
+- All 116 tests pass (66 new + 50 existing tool_policy tests)
+
+### Status:
+- Feature #42 marked as passing
+- Implementation already committed with Feature #57
+
+### Progress:
+- 51/103 features passing (49.5%)
