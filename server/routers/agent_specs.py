@@ -24,16 +24,19 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Query, Response, status
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from api.agentspec_models import AgentRun as AgentRunModel
 from api.agentspec_models import AgentSpec as AgentSpecModel
 from server.schemas.agentspec import (
+    AcceptanceSpecResponse,
     AgentRunResponse,
     AgentSpecCreate,
     AgentSpecListResponse,
     AgentSpecResponse,
     AgentSpecSummary,
+    AgentSpecUpdate,
+    AgentSpecWithAcceptanceResponse,
 )
 from ..utils.validation import validate_project_name
 
@@ -444,6 +447,137 @@ async def list_agent_specs(
     )
 
 
+def _is_valid_uuid(value: str) -> bool:
+    """Check if a string is a valid UUID format."""
+    try:
+        uuid.UUID(value, version=4)
+        return True
+    except ValueError:
+        return False
+
+
+@router.get(
+    "/{spec_id}",
+    response_model=AgentSpecWithAcceptanceResponse,
+    responses={
+        200: {
+            "description": "AgentSpec with nested AcceptanceSpec",
+            "model": AgentSpecWithAcceptanceResponse,
+        },
+        400: {
+            "description": "Invalid UUID format",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Invalid UUID format for spec_id: 'not-a-uuid'"}
+                }
+            },
+        },
+        404: {
+            "description": "AgentSpec not found",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "AgentSpec 'abc-123-...' not found"}
+                }
+            },
+        },
+    },
+)
+async def get_agent_spec(
+    project_name: str,
+    spec_id: str,
+) -> AgentSpecWithAcceptanceResponse:
+    """
+    Get a single AgentSpec by ID with its linked AcceptanceSpec.
+
+    Retrieves full details of an AgentSpec including:
+    - Identity (name, display_name, icon)
+    - Objective and task type
+    - Tool policy and execution budget
+    - Linked AcceptanceSpec with validators (if exists)
+
+    Args:
+        project_name: Name of the project
+        spec_id: UUID of the AgentSpec to retrieve
+
+    Returns:
+        AgentSpecWithAcceptanceResponse with full spec details and nested AcceptanceSpec
+
+    Raises:
+        400: If spec_id is not a valid UUID format
+        404: If the project or AgentSpec is not found
+    """
+    # Validate project name and get path
+    validate_project_name(project_name)
+    try:
+        project_dir = _get_project_path(project_name)
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Project '{project_name}' not found"
+        )
+
+    # Step 2: Validate spec_id is valid UUID format
+    if not _is_valid_uuid(spec_id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid UUID format for spec_id: '{spec_id}'"
+        )
+
+    with get_db_session(project_dir) as db:
+        # Step 3: Query AgentSpec by id with eager load of acceptance_spec relationship
+        spec = (
+            db.query(AgentSpecModel)
+            .options(joinedload(AgentSpecModel.acceptance_spec))
+            .filter(AgentSpecModel.id == spec_id)
+            .first()
+        )
+
+        # Step 4: Return 404 if not found
+        if not spec:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"AgentSpec '{spec_id}' not found"
+            )
+
+        # Convert to dict for response building
+        spec_dict = spec.to_dict()
+
+        # Step 5: Build response with nested AcceptanceSpec
+        acceptance_spec_data = None
+        if spec.acceptance_spec:
+            acceptance_dict = spec.acceptance_spec.to_dict()
+            acceptance_spec_data = AcceptanceSpecResponse(
+                id=acceptance_dict["id"],
+                agent_spec_id=acceptance_dict["agent_spec_id"],
+                validators=acceptance_dict["validators"],
+                gate_mode=acceptance_dict["gate_mode"],
+                min_score=acceptance_dict["min_score"],
+                retry_policy=acceptance_dict["retry_policy"],
+                max_retries=acceptance_dict["max_retries"],
+                fallback_spec_id=acceptance_dict["fallback_spec_id"],
+            )
+
+    return AgentSpecWithAcceptanceResponse(
+        id=spec_dict["id"],
+        name=spec_dict["name"],
+        display_name=spec_dict["display_name"],
+        icon=spec_dict["icon"],
+        spec_version=spec_dict["spec_version"],
+        objective=spec_dict["objective"],
+        task_type=spec_dict["task_type"],
+        context=spec_dict["context"],
+        tool_policy=spec_dict["tool_policy"],
+        max_turns=spec_dict["max_turns"],
+        timeout_seconds=spec_dict["timeout_seconds"],
+        parent_spec_id=spec_dict["parent_spec_id"],
+        source_feature_id=spec_dict["source_feature_id"],
+        created_at=spec_dict["created_at"],
+        priority=spec_dict["priority"],
+        tags=spec_dict["tags"],
+        acceptance_spec=acceptance_spec_data,
+    )
+
+
 # =============================================================================
 # Execution Task Store (in-memory for async background tasks)
 # =============================================================================
@@ -633,4 +767,195 @@ async def execute_agent_spec(
         error=run_dict["error"],
         retry_count=run_dict["retry_count"],
         created_at=run_dict["created_at"],
+    )
+
+
+@router.put(
+    "/{spec_id}",
+    response_model=AgentSpecResponse,
+    responses={
+        200: {
+            "description": "AgentSpec updated successfully",
+            "model": AgentSpecResponse,
+        },
+        400: {
+            "description": "Database constraint violation or validation error",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Database constraint violation: duplicate name"}
+                }
+            },
+        },
+        404: {
+            "description": "AgentSpec not found",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "AgentSpec 'abc-123' not found"}
+                }
+            },
+        },
+        422: {
+            "description": "Validation error",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": [
+                            {
+                                "loc": ["body", "max_turns"],
+                                "msg": "Input should be less than or equal to 500",
+                                "type": "less_than_equal",
+                            }
+                        ]
+                    }
+                }
+            },
+        },
+    },
+)
+async def update_agent_spec(
+    project_name: str,
+    spec_id: str,
+    spec_update: AgentSpecUpdate,
+) -> AgentSpecResponse:
+    """
+    Update an existing AgentSpec with partial updates.
+
+    Only provided fields (not None) will be updated. All fields in the request
+    body are optional - omit fields you don't want to change.
+
+    ## Field Constraints
+
+    - **name**: Must be lowercase with hyphens (e.g., "my-spec-name")
+    - **max_turns**: Must be between 1 and 500
+    - **timeout_seconds**: Must be between 60 and 7200 seconds
+    - **priority**: Must be between 1 and 9999
+
+    ## Example
+
+    To update only the display name and max_turns:
+    ```json
+    {
+        "display_name": "New Display Name",
+        "max_turns": 100
+    }
+    ```
+
+    Args:
+        project_name: Name of the project
+        spec_id: UUID of the AgentSpec to update
+        spec_update: AgentSpecUpdate with fields to update
+
+    Returns:
+        AgentSpecResponse with the updated spec
+
+    Raises:
+        404: If the AgentSpec is not found
+        400: If a database constraint is violated (e.g., duplicate name)
+        422: If validation fails (Pydantic handles this automatically)
+    """
+    # Step 1: Validate project name and get path
+    validate_project_name(project_name)
+    try:
+        project_dir = _get_project_path(project_name)
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Project '{project_name}' not found"
+        )
+
+    with get_db_session(project_dir) as db:
+        # Step 2: Query existing AgentSpec by id
+        spec = db.query(AgentSpecModel).filter(AgentSpecModel.id == spec_id).first()
+
+        # Step 3: Return 404 if not found
+        if not spec:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"AgentSpec '{spec_id}' not found"
+            )
+
+        # Step 4: Update only fields that are provided (not None)
+        update_data = spec_update.model_dump(exclude_unset=True)
+
+        # Step 5: Validate updated max_turns and timeout_seconds against constraints
+        # Note: Pydantic already validates these in the AgentSpecUpdate schema,
+        # but we add explicit checks here for clarity and custom error messages
+        if "max_turns" in update_data:
+            max_turns = update_data["max_turns"]
+            if max_turns is not None:
+                if max_turns < 1 or max_turns > 500:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="max_turns must be between 1 and 500"
+                    )
+
+        if "timeout_seconds" in update_data:
+            timeout = update_data["timeout_seconds"]
+            if timeout is not None:
+                if timeout < 60 or timeout > 7200:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="timeout_seconds must be between 60 and 7200"
+                    )
+
+        # Handle tool_policy specially - convert Pydantic model to dict if needed
+        if "tool_policy" in update_data and update_data["tool_policy"] is not None:
+            tool_policy = update_data["tool_policy"]
+            # Check if it's a Pydantic model or already a dict
+            if hasattr(tool_policy, 'model_dump'):
+                update_data["tool_policy"] = tool_policy.model_dump()
+            # Otherwise it's already a dict from model_dump(exclude_unset=True)
+
+        # Apply updates to the model
+        for field, value in update_data.items():
+            if value is not None:  # Only update non-None values
+                setattr(spec, field, value)
+
+        # Step 6: Commit transaction
+        try:
+            db.commit()
+            db.refresh(spec)
+        except IntegrityError as e:
+            db.rollback()
+            # Extract useful info from the error
+            error_msg = str(e.orig) if hasattr(e, 'orig') else str(e)
+
+            # Check for common constraint violations
+            if "UNIQUE constraint failed" in error_msg:
+                if "name" in error_msg:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Database constraint violation: duplicate name",
+                    )
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Database constraint violation: unique constraint failed",
+                )
+
+            # Generic constraint violation
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Database constraint violation: {error_msg}",
+            )
+
+        # Step 7: Return updated AgentSpecResponse
+        spec_dict = spec.to_dict()
+
+    return AgentSpecResponse(
+        id=spec_dict["id"],
+        name=spec_dict["name"],
+        display_name=spec_dict["display_name"],
+        icon=spec_dict["icon"],
+        spec_version=spec_dict["spec_version"],
+        objective=spec_dict["objective"],
+        task_type=spec_dict["task_type"],
+        context=spec_dict["context"],
+        tool_policy=spec_dict["tool_policy"],
+        max_turns=spec_dict["max_turns"],
+        timeout_seconds=spec_dict["timeout_seconds"],
+        parent_spec_id=spec_dict["parent_spec_id"],
+        source_feature_id=spec_dict["source_feature_id"],
+        created_at=spec_dict["created_at"],
+        priority=spec_dict["priority"],
+        tags=spec_dict["tags"],
     )
