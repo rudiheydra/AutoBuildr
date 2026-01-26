@@ -18,20 +18,26 @@ Key Design Principles:
 - Least-Privilege Tools: ToolPolicy restricts available tools
 - Deterministic Verification: Only deterministic validators in v1
 
-This module implements Feature #27: Max Turns Budget Enforcement.
+This module implements:
+- Feature #25: HarnessKernel.execute() Core Execution Loop
+- Feature #27: Max Turns Budget Enforcement
+- Feature #28: Timeout Seconds Enforcement
 """
 
 from __future__ import annotations
 
+import json
 import logging
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Optional
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from sqlalchemy.orm import Session
 
 if TYPE_CHECKING:
-    from api.agentspec_models import AgentEvent, AgentRun, AgentSpec
+    from api.agentspec_models import AgentEvent, AgentRun, AgentSpec, AcceptanceSpec
 
 
 # Setup logger
@@ -975,3 +981,534 @@ class HarnessKernel:
                 tokens_in=run.tokens_in,
                 tokens_out=run.tokens_out,
             )
+
+    # =========================================================================
+    # Feature #25: Core execute(spec) Method
+    # =========================================================================
+
+    def _record_tool_call_event(
+        self,
+        run_id: str,
+        tool_name: str,
+        arguments: dict[str, Any] | None,
+    ) -> "AgentEvent":
+        """
+        Record a tool_call event for each tool invocation.
+
+        Feature #25, Step 8: Record tool_call event for each tool invocation
+
+        Args:
+            run_id: ID of the AgentRun
+            tool_name: Name of the tool being called
+            arguments: Tool arguments dict
+
+        Returns:
+            The created AgentEvent
+        """
+        from api.agentspec_models import AgentEvent
+
+        self._event_sequence += 1
+
+        # Cap payload size at 4KB as per EVENT_PAYLOAD_MAX_SIZE
+        payload = {
+            "tool": tool_name,
+            "arguments": arguments or {},
+        }
+
+        # Serialize to check size
+        payload_str = json.dumps(payload, default=str)
+        payload_truncated = None
+        if len(payload_str) > 4096:
+            payload_truncated = len(payload_str)
+            # Truncate the arguments
+            payload["arguments"] = {"_truncated": True, "_original_size": len(payload_str)}
+
+        event = AgentEvent(
+            run_id=run_id,
+            sequence=self._event_sequence,
+            event_type="tool_call",
+            timestamp=_utc_now(),
+            payload=payload,
+            payload_truncated=payload_truncated,
+            tool_name=tool_name,
+        )
+
+        self.db.add(event)
+        _logger.debug("Recorded tool_call event: run=%s, tool=%s, seq=%d", run_id, tool_name, self._event_sequence)
+        return event
+
+    def _record_tool_result_event(
+        self,
+        run_id: str,
+        tool_name: str,
+        result: Any,
+        is_error: bool = False,
+    ) -> "AgentEvent":
+        """
+        Record a tool_result event for each tool response.
+
+        Feature #25, Step 9: Record tool_result event for each tool response
+
+        Args:
+            run_id: ID of the AgentRun
+            tool_name: Name of the tool
+            result: Tool execution result
+            is_error: Whether the result is an error
+
+        Returns:
+            The created AgentEvent
+        """
+        from api.agentspec_models import AgentEvent
+
+        self._event_sequence += 1
+
+        payload = {
+            "tool": tool_name,
+            "is_error": is_error,
+        }
+
+        # Handle result - may be string, dict, or other
+        if isinstance(result, str):
+            payload["result"] = result
+        elif isinstance(result, dict):
+            payload["result"] = result
+        else:
+            payload["result"] = str(result)
+
+        # Cap payload size at 4KB
+        payload_str = json.dumps(payload, default=str)
+        payload_truncated = None
+        if len(payload_str) > 4096:
+            payload_truncated = len(payload_str)
+            # Store reference to artifact instead of truncating inline
+            payload["result"] = {"_truncated": True, "_original_size": len(payload_str)}
+
+        event = AgentEvent(
+            run_id=run_id,
+            sequence=self._event_sequence,
+            event_type="tool_result",
+            timestamp=_utc_now(),
+            payload=payload,
+            payload_truncated=payload_truncated,
+            tool_name=tool_name,
+        )
+
+        self.db.add(event)
+        _logger.debug("Recorded tool_result event: run=%s, tool=%s, seq=%d", run_id, tool_name, self._event_sequence)
+        return event
+
+    def _record_acceptance_check_event(
+        self,
+        run_id: str,
+        results: list[dict[str, Any]],
+        final_verdict: str,
+        gate_mode: str,
+    ) -> "AgentEvent":
+        """
+        Record an acceptance_check event with validation results.
+
+        Feature #25, Steps 13-14: Record acceptance_check event with results
+
+        Args:
+            run_id: ID of the AgentRun
+            results: List of validator results
+            final_verdict: The determined verdict (passed/failed/partial)
+            gate_mode: The gate mode used (all_pass/any_pass/weighted)
+
+        Returns:
+            The created AgentEvent
+        """
+        from api.agentspec_models import AgentEvent
+
+        self._event_sequence += 1
+
+        payload = {
+            "final_verdict": final_verdict,
+            "gate_mode": gate_mode,
+            "validator_count": len(results),
+            "results": results,
+        }
+
+        event = AgentEvent(
+            run_id=run_id,
+            sequence=self._event_sequence,
+            event_type="acceptance_check",
+            timestamp=_utc_now(),
+            payload=payload,
+        )
+
+        self.db.add(event)
+        _logger.info(
+            "Recorded acceptance_check event: run=%s, verdict=%s, validators=%d",
+            run_id, final_verdict, len(results)
+        )
+        return event
+
+    def _record_completed_event(self, run_id: str, verdict: str | None) -> "AgentEvent":
+        """
+        Record a completed event on successful finish.
+
+        Feature #25, Step 17: Record completed event
+
+        Args:
+            run_id: ID of the AgentRun
+            verdict: Final verdict (passed/failed/partial or None)
+
+        Returns:
+            The created AgentEvent
+        """
+        from api.agentspec_models import AgentEvent
+
+        self._event_sequence += 1
+
+        event = AgentEvent(
+            run_id=run_id,
+            sequence=self._event_sequence,
+            event_type="completed",
+            timestamp=_utc_now(),
+            payload={
+                "final_verdict": verdict,
+                "message": "Execution completed successfully",
+            },
+        )
+
+        self.db.add(event)
+        _logger.info("Recorded completed event: run=%s, verdict=%s", run_id, verdict)
+        return event
+
+    def _record_failed_event(self, run_id: str, error_message: str) -> "AgentEvent":
+        """
+        Record a failed event on error.
+
+        Args:
+            run_id: ID of the AgentRun
+            error_message: Error description
+
+        Returns:
+            The created AgentEvent
+        """
+        from api.agentspec_models import AgentEvent
+
+        self._event_sequence += 1
+
+        event = AgentEvent(
+            run_id=run_id,
+            sequence=self._event_sequence,
+            event_type="failed",
+            timestamp=_utc_now(),
+            payload={
+                "error": error_message,
+            },
+        )
+
+        self.db.add(event)
+        _logger.error("Recorded failed event: run=%s, error=%s", run_id, error_message)
+        return event
+
+    def _run_acceptance_validators(
+        self,
+        run: "AgentRun",
+        spec: "AgentSpec",
+        context: dict[str, Any],
+    ) -> tuple[str, list[dict[str, Any]]]:
+        """
+        Run AcceptanceSpec validators after execution.
+
+        Feature #25, Steps 14-16:
+        - Step 14: Run AcceptanceSpec validators after execution
+        - Step 15: Record acceptance_check event with results
+        - Step 16: Determine final_verdict from validator results
+
+        Args:
+            run: The completed AgentRun
+            spec: The AgentSpec with acceptance_spec
+            context: Runtime context for validators
+
+        Returns:
+            Tuple of (final_verdict, validator_results)
+        """
+        from api.validators import evaluate_acceptance_spec
+
+        # Get acceptance spec if linked
+        acceptance_spec = spec.acceptance_spec
+        if acceptance_spec is None:
+            # No acceptance spec - default to passed
+            _logger.info("No AcceptanceSpec linked to spec %s, defaulting to passed", spec.id)
+            return "passed", []
+
+        # Get validator definitions and gate mode
+        validators = acceptance_spec.validators or []
+        gate_mode = acceptance_spec.gate_mode or "all_pass"
+
+        if not validators:
+            # No validators defined - default to passed
+            _logger.info("AcceptanceSpec has no validators, defaulting to passed")
+            return "passed", []
+
+        # Run validators
+        _logger.info(
+            "Running %d validators for run %s with gate_mode=%s",
+            len(validators), run.id, gate_mode
+        )
+
+        passed, results = evaluate_acceptance_spec(
+            validators=validators,
+            context=context,
+            gate_mode=gate_mode,
+            run=run,
+        )
+
+        # Convert results to dicts for storage
+        results_dicts = [r.to_dict() for r in results]
+
+        # Determine verdict
+        if passed:
+            final_verdict = "passed"
+        else:
+            # Check if any validators passed (partial)
+            any_passed = any(r.passed for r in results)
+            final_verdict = "partial" if any_passed else "failed"
+
+        _logger.info(
+            "Acceptance validation complete: verdict=%s, passed=%d/%d",
+            final_verdict, sum(1 for r in results if r.passed), len(results)
+        )
+
+        return final_verdict, results_dicts
+
+    def _create_run_for_spec(self, spec: "AgentSpec") -> "AgentRun":
+        """
+        Create a new AgentRun record for a spec.
+
+        Feature #25, Step 2: Create AgentRun record with status=running at execution start
+
+        Args:
+            spec: The AgentSpec to execute
+
+        Returns:
+            The created AgentRun with status=pending
+        """
+        from api.agentspec_models import AgentRun
+
+        run = AgentRun(
+            id=str(uuid.uuid4()),
+            agent_spec_id=spec.id,
+            status="pending",
+            turns_used=0,
+            tokens_in=0,
+            tokens_out=0,
+            retry_count=0,
+            created_at=_utc_now(),
+        )
+
+        self.db.add(run)
+        self.db.commit()
+        self.db.refresh(run)
+
+        _logger.info("Created AgentRun %s for spec %s", run.id, spec.id)
+        return run
+
+    def execute(
+        self,
+        spec: "AgentSpec",
+        turn_executor: Callable[["AgentRun", "AgentSpec"], tuple[bool, dict[str, Any], list[dict], int, int]] | None = None,
+        context: dict[str, Any] | None = None,
+    ) -> "AgentRun":
+        """
+        Execute an AgentSpec and return the finalized AgentRun.
+
+        This is the core execution method that implements the full lifecycle:
+        1. Create AgentRun record with status=running
+        2. Record started AgentEvent with sequence=1
+        3. Build system prompt from spec.objective and spec.context
+        4. Configure tools based on spec.tool_policy
+        5. Enter execution loop calling turn_executor
+        6. Record tool_call and tool_result events for each invocation
+        7. Record turn_complete event after each API turn
+        8. Check max_turns and timeout_seconds budgets
+        9. Handle graceful termination on budget exhaustion
+        10. Run AcceptanceSpec validators after execution
+        11. Record acceptance_check event with results
+        12. Determine final_verdict from validator results
+        13. Update AgentRun with completed status and verdict
+        14. Return finalized AgentRun
+
+        Feature #25: HarnessKernel.execute() Core Execution Loop
+
+        Args:
+            spec: The AgentSpec to execute
+            turn_executor: Optional callback that executes one turn.
+                Should return (completed: bool, turn_data: dict, tool_events: list, input_tokens: int, output_tokens: int)
+                - completed: True when agent signals completion
+                - turn_data: Data about the turn
+                - tool_events: List of {tool_name, arguments, result, is_error} for recording
+                - input_tokens: Input tokens from this turn
+                - output_tokens: Output tokens from this turn
+
+                If None, execution completes immediately after initialization (useful for testing).
+
+            context: Optional runtime context for validators. Should include:
+                - project_dir: Base project directory
+                - feature_id: Linked feature ID (if any)
+                - Additional context from spec.context
+
+        Returns:
+            The finalized AgentRun with:
+            - status: completed, failed, or timeout
+            - final_verdict: passed, failed, partial, or None
+            - turns_used: Number of turns executed
+            - tokens_in, tokens_out: Token usage
+            - acceptance_results: Validator results
+            - error: Error message if failed
+
+        Example:
+            # Simple execution without Claude (for testing)
+            kernel = HarnessKernel(db_session)
+            run = kernel.execute(spec)
+
+            # With custom turn executor
+            def my_executor(run, spec):
+                # Your Claude API logic here
+                completed = True
+                turn_data = {"response": "..."}
+                tool_events = [{"tool_name": "Read", "arguments": {"path": "/file"}, "result": "content"}]
+                return completed, turn_data, tool_events, 100, 50
+
+            run = kernel.execute(spec, turn_executor=my_executor)
+        """
+        # Step 1: Create AgentRun record (status=pending initially)
+        run = self._create_run_for_spec(spec)
+
+        # Build context for validators
+        validator_context = context or {}
+        if spec.context:
+            validator_context.update(spec.context)
+        if spec.source_feature_id:
+            validator_context["feature_id"] = spec.source_feature_id
+
+        try:
+            # Step 2: Initialize run (sets status=running, starts budget tracker)
+            self.initialize_run(run, spec)
+
+            # If no turn executor provided, complete immediately
+            # This is useful for testing the infrastructure
+            if turn_executor is None:
+                _logger.info("No turn executor provided, completing immediately")
+                run.complete()
+                self.db.commit()
+
+                # Run acceptance validators
+                final_verdict, acceptance_results = self._run_acceptance_validators(
+                    run, spec, validator_context
+                )
+
+                # Record acceptance check event
+                acceptance_spec = spec.acceptance_spec
+                gate_mode = acceptance_spec.gate_mode if acceptance_spec else "all_pass"
+                self._record_acceptance_check_event(
+                    run.id, acceptance_results, final_verdict, gate_mode
+                )
+
+                # Update run with verdict
+                run.final_verdict = final_verdict
+                run.acceptance_results = acceptance_results
+
+                # Record completed event
+                self._record_completed_event(run.id, final_verdict)
+
+                self.db.commit()
+                return run
+
+            # Step 5-11: Execution loop
+            while True:
+                # Check budget before turn
+                try:
+                    self.check_budget_before_turn(run)
+                except MaxTurnsExceeded as e:
+                    self.handle_budget_exceeded(run, e)
+                    return run
+                except TimeoutSecondsExceeded as e:
+                    self.handle_timeout_exceeded(run, e)
+                    return run
+
+                # Execute one turn
+                try:
+                    completed, turn_data, tool_events, input_tokens, output_tokens = turn_executor(run, spec)
+                except Exception as e:
+                    _logger.error("Turn executor error: %s", e)
+                    self._record_failed_event(run.id, str(e))
+                    run.fail(error_message=str(e))
+                    self.db.commit()
+                    return run
+
+                # Record tool events (tool_call and tool_result pairs)
+                for event in tool_events:
+                    tool_name = event.get("tool_name", "unknown")
+                    arguments = event.get("arguments")
+                    result = event.get("result")
+                    is_error = event.get("is_error", False)
+
+                    self._record_tool_call_event(run.id, tool_name, arguments)
+                    self._record_tool_result_event(run.id, tool_name, result, is_error)
+
+                # Record turn completion with token counts
+                self.record_turn_complete(run, turn_data, input_tokens, output_tokens)
+
+                # Check timeout after turn
+                try:
+                    self._budget_tracker.check_timeout_or_raise()
+                except TimeoutSecondsExceeded as e:
+                    self.handle_timeout_exceeded(run, e)
+                    return run
+
+                # Check if agent signaled completion
+                if completed:
+                    break
+
+            # Step 12-14: Run acceptance validators
+            final_verdict, acceptance_results = self._run_acceptance_validators(
+                run, spec, validator_context
+            )
+
+            # Step 15: Record acceptance check event
+            acceptance_spec = spec.acceptance_spec
+            gate_mode = acceptance_spec.gate_mode if acceptance_spec else "all_pass"
+            self._record_acceptance_check_event(
+                run.id, acceptance_results, final_verdict, gate_mode
+            )
+
+            # Step 16: Update run with verdict and results
+            run.final_verdict = final_verdict
+            run.acceptance_results = acceptance_results
+
+            # Step 17: Complete the run
+            run.complete()
+            self._record_completed_event(run.id, final_verdict)
+            self.db.commit()
+
+            _logger.info(
+                "Execution completed: run=%s, verdict=%s, turns=%d",
+                run.id, final_verdict, run.turns_used
+            )
+
+            # Step 18: Return finalized AgentRun
+            return run
+
+        except MaxTurnsExceeded as e:
+            self.handle_budget_exceeded(run, e)
+            return run
+        except TimeoutSecondsExceeded as e:
+            self.handle_timeout_exceeded(run, e)
+            return run
+        except Exception as e:
+            _logger.exception("Execution error for run %s: %s", run.id, e)
+            self._record_failed_event(run.id, str(e))
+
+            # Ensure token counts are persisted
+            if self._budget_tracker is not None:
+                run.tokens_in = self._budget_tracker.tokens_in
+                run.tokens_out = self._budget_tracker.tokens_out
+
+            run.fail(error_message=str(e))
+            self.db.commit()
+            return run

@@ -676,5 +676,308 @@ class TestExecutionResult:
         assert result.is_timeout is False
 
 
+# =============================================================================
+# Feature #25: execute() Method Tests
+# =============================================================================
+
+class TestHarnessKernelExecute:
+    """Tests for HarnessKernel.execute() method (Feature #25)."""
+
+    def test_execute_creates_run_record(self, db_session, sample_spec):
+        """Test execute() creates an AgentRun record."""
+        kernel = HarnessKernel(db_session)
+
+        run = kernel.execute(sample_spec)
+
+        assert run is not None
+        assert run.id is not None
+        assert run.agent_spec_id == sample_spec.id
+        assert run.status == "completed"
+        assert run.turns_used == 0  # No turn executor
+
+    def test_execute_records_started_event(self, db_session, sample_spec):
+        """Test execute() records a 'started' event."""
+        kernel = HarnessKernel(db_session)
+
+        run = kernel.execute(sample_spec)
+
+        # Query events
+        events = (
+            db_session.query(AgentEvent)
+            .filter(AgentEvent.run_id == run.id)
+            .order_by(AgentEvent.sequence)
+            .all()
+        )
+
+        # First event should be 'started'
+        assert len(events) >= 1
+        assert events[0].event_type == "started"
+        assert events[0].sequence == 1
+
+    def test_execute_without_turn_executor_completes_immediately(self, db_session, sample_spec):
+        """Test execute() without turn_executor completes immediately."""
+        kernel = HarnessKernel(db_session)
+
+        run = kernel.execute(sample_spec)
+
+        assert run.status == "completed"
+        assert run.turns_used == 0
+        # Default verdict when no acceptance spec
+        assert run.final_verdict == "passed"
+
+    def test_execute_with_simple_turn_executor(self, db_session, sample_spec):
+        """Test execute() with a simple turn executor."""
+        kernel = HarnessKernel(db_session)
+
+        # Turn executor that completes after one turn
+        def simple_executor(run, spec):
+            completed = True
+            turn_data = {"response": "Task complete"}
+            tool_events = []
+            return completed, turn_data, tool_events, 100, 50
+
+        run = kernel.execute(sample_spec, turn_executor=simple_executor)
+
+        assert run.status == "completed"
+        assert run.turns_used == 1
+        assert run.tokens_in == 100
+        assert run.tokens_out == 50
+        assert run.final_verdict == "passed"
+
+    def test_execute_with_multi_turn_executor(self, db_session, sample_spec):
+        """Test execute() with multiple turns."""
+        kernel = HarnessKernel(db_session)
+
+        turn_count = [0]
+
+        def multi_turn_executor(run, spec):
+            turn_count[0] += 1
+            completed = turn_count[0] >= 3  # Complete after 3 turns
+            turn_data = {"turn": turn_count[0]}
+            tool_events = []
+            return completed, turn_data, tool_events, 50, 25
+
+        run = kernel.execute(sample_spec, turn_executor=multi_turn_executor)
+
+        assert run.status == "completed"
+        assert run.turns_used == 3
+        assert run.tokens_in == 150  # 3 * 50
+        assert run.tokens_out == 75   # 3 * 25
+
+    def test_execute_records_tool_events(self, db_session, sample_spec):
+        """Test execute() records tool_call and tool_result events."""
+        kernel = HarnessKernel(db_session)
+
+        def tool_executor(run, spec):
+            completed = True
+            turn_data = {}
+            tool_events = [
+                {
+                    "tool_name": "Read",
+                    "arguments": {"path": "/test/file.txt"},
+                    "result": "file content here",
+                    "is_error": False,
+                },
+                {
+                    "tool_name": "Write",
+                    "arguments": {"path": "/test/output.txt", "content": "new content"},
+                    "result": "ok",
+                    "is_error": False,
+                },
+            ]
+            return completed, turn_data, tool_events, 100, 50
+
+        run = kernel.execute(sample_spec, turn_executor=tool_executor)
+
+        # Query events
+        events = (
+            db_session.query(AgentEvent)
+            .filter(AgentEvent.run_id == run.id)
+            .order_by(AgentEvent.sequence)
+            .all()
+        )
+
+        # Should have: started, tool_call, tool_result, tool_call, tool_result, turn_complete, acceptance_check, completed
+        event_types = [e.event_type for e in events]
+        assert "started" in event_types
+        assert "tool_call" in event_types
+        assert "tool_result" in event_types
+        assert "turn_complete" in event_types
+
+        # Check tool events
+        tool_calls = [e for e in events if e.event_type == "tool_call"]
+        assert len(tool_calls) == 2
+        assert tool_calls[0].tool_name == "Read"
+        assert tool_calls[1].tool_name == "Write"
+
+    def test_execute_records_acceptance_check_event(self, db_session, sample_spec):
+        """Test execute() records acceptance_check event."""
+        kernel = HarnessKernel(db_session)
+
+        run = kernel.execute(sample_spec)
+
+        # Query events
+        events = (
+            db_session.query(AgentEvent)
+            .filter(AgentEvent.run_id == run.id, AgentEvent.event_type == "acceptance_check")
+            .all()
+        )
+
+        assert len(events) == 1
+        assert events[0].payload["final_verdict"] == "passed"
+
+    def test_execute_records_completed_event(self, db_session, sample_spec):
+        """Test execute() records completed event on success."""
+        kernel = HarnessKernel(db_session)
+
+        run = kernel.execute(sample_spec)
+
+        # Query events
+        events = (
+            db_session.query(AgentEvent)
+            .filter(AgentEvent.run_id == run.id, AgentEvent.event_type == "completed")
+            .all()
+        )
+
+        assert len(events) == 1
+        assert events[0].payload["final_verdict"] == "passed"
+
+    def test_execute_handles_max_turns_exceeded(self, db_session, sample_spec):
+        """Test execute() handles max_turns budget exhaustion."""
+        # Set a low max_turns
+        sample_spec.max_turns = 2
+        db_session.commit()
+
+        kernel = HarnessKernel(db_session)
+
+        turn_count = [0]
+
+        def infinite_executor(run, spec):
+            turn_count[0] += 1
+            completed = False  # Never completes
+            turn_data = {}
+            tool_events = []
+            return completed, turn_data, tool_events, 50, 25
+
+        run = kernel.execute(sample_spec, turn_executor=infinite_executor)
+
+        assert run.status == "timeout"
+        assert run.turns_used == 2
+        assert run.error is not None
+        assert "max_turns" in run.error.lower() or "budget" in run.error.lower()
+
+    def test_execute_handles_turn_executor_error(self, db_session, sample_spec):
+        """Test execute() handles errors from turn executor."""
+        kernel = HarnessKernel(db_session)
+
+        def error_executor(run, spec):
+            raise RuntimeError("Test executor error")
+
+        run = kernel.execute(sample_spec, turn_executor=error_executor)
+
+        assert run.status == "failed"
+        assert run.error is not None
+        assert "Test executor error" in run.error
+
+    def test_execute_records_failed_event_on_error(self, db_session, sample_spec):
+        """Test execute() records failed event on error."""
+        kernel = HarnessKernel(db_session)
+
+        def error_executor(run, spec):
+            raise RuntimeError("Executor failed")
+
+        run = kernel.execute(sample_spec, turn_executor=error_executor)
+
+        # Query failed events
+        events = (
+            db_session.query(AgentEvent)
+            .filter(AgentEvent.run_id == run.id, AgentEvent.event_type == "failed")
+            .all()
+        )
+
+        assert len(events) == 1
+        assert "Executor failed" in events[0].payload["error"]
+
+    def test_execute_with_context(self, db_session, sample_spec):
+        """Test execute() passes context to validators."""
+        kernel = HarnessKernel(db_session)
+
+        context = {
+            "project_dir": "/test/project",
+            "custom_key": "custom_value",
+        }
+
+        run = kernel.execute(sample_spec, context=context)
+
+        # Should complete successfully
+        assert run.status == "completed"
+
+    def test_execute_merges_spec_context(self, db_session, sample_spec):
+        """Test execute() merges spec.context with provided context."""
+        # Set context on spec
+        sample_spec.context = {"spec_key": "spec_value"}
+        sample_spec.source_feature_id = 42
+        db_session.commit()
+
+        kernel = HarnessKernel(db_session)
+
+        run = kernel.execute(sample_spec, context={"runtime_key": "runtime_value"})
+
+        # Should complete successfully
+        assert run.status == "completed"
+
+    def test_execute_returns_finalized_run(self, db_session, sample_spec):
+        """Test execute() returns a fully populated AgentRun."""
+        kernel = HarnessKernel(db_session)
+
+        def simple_executor(run, spec):
+            return True, {}, [], 100, 50
+
+        run = kernel.execute(sample_spec, turn_executor=simple_executor)
+
+        # Check all expected fields are populated
+        assert run.id is not None
+        assert run.agent_spec_id == sample_spec.id
+        assert run.status == "completed"
+        assert run.turns_used == 1
+        assert run.tokens_in == 100
+        assert run.tokens_out == 50
+        assert run.final_verdict == "passed"
+        assert run.acceptance_results is not None
+        assert run.completed_at is not None
+
+    def test_execute_truncates_large_tool_payloads(self, db_session, sample_spec):
+        """Test execute() truncates tool payloads larger than 4KB."""
+        kernel = HarnessKernel(db_session)
+
+        large_result = "x" * 10000  # More than 4KB
+
+        def large_payload_executor(run, spec):
+            completed = True
+            turn_data = {}
+            tool_events = [
+                {
+                    "tool_name": "Read",
+                    "arguments": {"path": "/big/file"},
+                    "result": large_result,
+                    "is_error": False,
+                },
+            ]
+            return completed, turn_data, tool_events, 100, 50
+
+        run = kernel.execute(sample_spec, turn_executor=large_payload_executor)
+
+        # Query tool_result events
+        events = (
+            db_session.query(AgentEvent)
+            .filter(AgentEvent.run_id == run.id, AgentEvent.event_type == "tool_result")
+            .all()
+        )
+
+        assert len(events) == 1
+        # Payload should be truncated
+        assert events[0].payload_truncated is not None
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
