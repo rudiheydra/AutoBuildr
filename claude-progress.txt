@@ -2780,3 +2780,211 @@ All graph traversal functions in api/dependency_resolver.py have proper cycle pr
 
 **Session completed successfully.**
 
+
+## Session: 2026-01-27 (Coding Agent - Feature #99)
+
+### Feature #99: Auto-repair function removes self-references from features - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Description:** Implement repair_self_references() function that removes self-referencing dependencies from all affected features in a single database transaction.
+
+**Dependencies:** None
+
+**Verification Summary (5 Steps):**
+
+- Step 1: Create repair_self_references(session) function - PASS
+  - Function exists in api/dependency_resolver.py
+  - Function is callable with 'session' parameter
+
+- Step 2: Query all features and check for self-references - PASS
+  - Queries all features from database via session.query(Feature).all()
+  - Identifies features where feature.id is in feature.dependencies
+
+- Step 3: Remove self-reference from each affected feature's dependencies list - PASS
+  - Removes self-reference while preserving valid dependencies
+  - Example: [102, 100, 101] -> [100, 101] (self-ref 102 removed)
+
+- Step 4: Commit changes in a single transaction - PASS
+  - All changes committed in single session.commit() call
+  - No commit made when no repairs needed
+
+- Step 5: Return list of repaired feature IDs for logging - PASS
+  - Returns list[int] of repaired feature IDs
+  - Returns empty list when no self-references found
+
+**Implementation Details:**
+
+Function added to api/dependency_resolver.py:
+- repair_self_references(session) -> list[int]
+- Uses Feature.get_dependencies_safe() for safe dependency extraction
+- Logs each repair operation via _logger.info()
+- Logs summary after all repairs committed
+
+**Test Results:**
+- tests/test_repair_self_references.py: 19/19 tests PASS
+- tests/verify_feature_99.py: 5/5 verification steps PASS
+- Existing dependency graph tests: 67/67 tests PASS (no regressions)
+
+**Test Categories:**
+- TestRepairSelfReferencesFunction: 2 tests
+- TestRepairSelfReferencesQueryAll: 1 test
+- TestRepairSelfReferencesRemoval: 3 tests
+- TestRepairSelfReferencesTransaction: 3 tests
+- TestRepairSelfReferencesReturnValue: 3 tests
+- TestRepairSelfReferencesEdgeCases: 5 tests
+- TestRepairSelfReferencesLogging: 2 tests
+
+**Files Modified:**
+- api/dependency_resolver.py: Added repair_self_references() function (62 lines)
+
+**Files Created:**
+- tests/test_repair_self_references.py: Comprehensive test suite (580 lines)
+- tests/verify_feature_99.py: Feature verification script (200 lines)
+
+**Commit:** 1888951 - "feat: Implement repair_self_references() function for Feature #99"
+
+---
+
+**Updated Progress:**
+- Total: 36/103 features passing (approximately 35.0%)
+- Feature #99: Auto-repair function removes self-references from features - PASSING
+
+**Session completed successfully.**
+
+
+---
+
+## Session: 2026-01-27 (Coding Agent - Feature #98)
+
+### Feature #98: Startup health check auto-removes orphaned dependency references - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Description:** On startup, if features reference non-existent dependency IDs (orphaned refs from deleted features), automatically remove them with a warning.
+
+**Dependencies:** None
+
+**Verification Summary (5 Steps):**
+
+- Step 1: Insert a feature with dependencies=[999] where 999 does not exist - PASS
+  - Created MockFeature with dependencies=[999]
+  - Only 1 feature exists (999 doesn't exist)
+
+- Step 2: Start the orchestrator (run health check) - PASS
+  - Health check ran successfully
+  - Returned True indicating successful completion
+
+- Step 3: Verify the orphaned dependency reference is removed - PASS
+  - After health check: dependencies=[]
+  - Orphaned dependency 999 was removed
+  - session.commit() was called to persist changes
+
+- Step 4: Verify a WARNING level log is emitted with details - PASS
+  - WARNING log captured: "Auto-fixed orphaned dependency reference: Feature #1 removed non-existent dependency IDs [999] (original_deps=[999], new_deps=[])"
+  - Log contains: feature ID, orphaned IDs, original deps, new deps
+
+- Step 5: Verify orchestrator continues to normal operation - PASS
+  - Health check returned True
+  - Session properly closed
+  - Orchestrator can continue to run_loop
+
+**Implementation Details:**
+
+Modified parallel_orchestrator.py:
+- Added _logger.warning() call in the missing_targets handling block (lines 292-297)
+- Log message includes: feature_id, missing_ids, original_deps, new_deps
+- Complements existing WARNING log for self-reference auto-fix (lines 269-273)
+
+**Test Results:**
+- tests/test_feature_98_orphaned_dependency_auto_removal.py: 15/15 tests PASS
+- tests/verify_feature_98.py: All 5 verification steps PASS
+- Related tests (Feature #95): 3/3 tests PASS (no regression)
+
+**Files Modified:**
+- parallel_orchestrator.py: Added _logger.warning() for orphaned dependency auto-fix
+
+**Files Created:**
+- tests/test_feature_98_orphaned_dependency_auto_removal.py: Comprehensive test suite (380+ lines)
+- tests/verify_feature_98.py: Standalone verification script
+
+**Commit:** 7e0c033 - "feat: Add WARNING log for orphaned dependency auto-removal (Feature #98)"
+
+---
+
+**Updated Progress:**
+- Total: 36/103 features passing (approximately 35.0%)
+- Feature #98: Startup health check auto-removes orphaned dependency references - PASSING
+
+**Session completed successfully.**
+
+
+---
+
+## Session: 2026-01-27 (Coding Agent - Feature #95)
+
+### Feature #95: Orchestrator runs validate_dependency_graph on startup - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Description:** The orchestrator should call validate_dependency_graph() on startup before processing any features, to detect corrupted dependency data.
+
+**Dependencies:** None
+
+**Verification Summary (5 Steps):**
+
+1. **Add startup hook in orchestrator initialization** - PASS
+   - `_run_dependency_health_check()` method added to ParallelOrchestrator
+   - Method is called in `run_loop()` before the feature processing loop
+
+2. **Load all features from database** - PASS
+   - Health check loads all features via `session.query(Feature).all()`
+   - Features are converted to dicts for validation
+
+3. **Call validate_dependency_graph() with loaded features** - PASS
+   - `validate_dependency_graph()` imported from api.dependency_resolver
+   - Called with all feature dicts, returns ValidationResult
+
+4. **If issues found, handle according to issue type before proceeding** - PASS
+   - Self-references: Auto-fixed (removed from dependencies), continues
+   - Missing targets: Auto-fixed (removed from dependencies), continues  
+   - Cycles: BLOCKS startup (returns False), does NOT auto-fix
+
+5. **Log summary of dependency health check results** - PASS
+   - Prints "Running dependency health check..." at start
+   - Prints healthy/issues found summary
+   - Debug log captures all validation results
+
+**Implementation Details:**
+
+The `_run_dependency_health_check()` method in parallel_orchestrator.py:
+- Loads all features from the database
+- Converts them to dicts and calls `validate_dependency_graph()`
+- Auto-fixes self-references with WARNING log (Feature #96)
+- Auto-fixes missing targets with WARNING log (Feature #98)
+- Blocks startup on cycles with clear error message (Feature #97)
+- Returns True if healthy or auto-fixed, False if cycles detected
+
+**Test Results:**
+- tests/test_feature_95_orchestrator_startup_health_check.py: 18/18 tests PASS
+- tests/verify_feature_95.py: All 5 verification steps PASS
+
+**Files Created:**
+- tests/test_feature_95_orchestrator_startup_health_check.py: Comprehensive test suite
+- tests/verify_feature_95.py: Feature verification script
+
+**Commit:** 4de028b - "feat: Add comprehensive tests for Feature #95 - Orchestrator startup health check"
+
+---
+
+**Updated Progress:**
+- Total: 32/103 features passing (approximately 31.1%)
+- Feature #95: Orchestrator runs validate_dependency_graph on startup - PASSING
+
+**Session completed successfully.**
