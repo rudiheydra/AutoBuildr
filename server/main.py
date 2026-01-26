@@ -31,6 +31,7 @@ from .routers import (
     agent_router,
     agent_runs_router,
     agent_specs_router,
+    artifacts_router,
     assistant_chat_router,
     devserver_router,
     expand_project_router,
@@ -149,6 +150,7 @@ app.include_router(features_router)
 app.include_router(agent_router)
 app.include_router(agent_runs_router)
 app.include_router(agent_specs_router)
+app.include_router(artifacts_router)
 app.include_router(schedules_router)
 app.include_router(devserver_router)
 app.include_router(spec_creation_router)
