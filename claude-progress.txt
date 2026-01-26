@@ -4545,3 +4545,91 @@ Date: 2026-01-27
   - Note: Browser automation unavailable - verified via unit tests (backend feature)
   - No regression found - feature still working correctly
 
+[Testing] 2026-01-27 09:08:12 - Feature #93 regression test PASSED
+  - Feature: All graph traversal functions have cycle protection
+  - Verification script: 5/5 steps pass
+  - Unit tests: 33/33 tests pass
+  - API integration verified:
+    - /api/projects/AutoBuildr/features/graph - Returns valid dependency graph
+    - /api/projects/AutoBuildr/features?status=ready - Features sorted by scheduling scores
+  - All verification steps confirmed working:
+    - Step 1: resolve_dependencies() uses Kahn's algorithm with in_degree tracking
+    - Step 2: _detect_cycles() uses visited and rec_stack sets with iteration limit
+    - Step 3: compute_scheduling_scores() uses visited set in BFS with iteration limit
+    - Step 4: would_create_circular_dependency() uses visited set in DFS with depth limit
+    - Step 5: All functions have iteration limits (_detect_cycles, _detect_cycles_for_validation, compute_scheduling_scores, would_create_circular_dependency)
+  - Note: Browser automation unavailable - verified via unit tests and API (backend feature)
+  - No regression found - feature still working correctly
+
+---
+
+## Session: 2026-01-27 (Coding Agent - Feature #62)
+
+### Feature #62: WebSocket agent_event_logged Event - COMPLETED
+
+**Status:** PASSING
+
+**Category:** F. UI-Backend Integration
+
+**Description:** Broadcast WebSocket message for significant events to enable real-time progress tracking.
+
+**Dependencies:** [31] - Artifact Storage with Content-Addressing (PASSING)
+
+**Verification Summary (5 Steps - All Passed):**
+
+- Step 1: Filter events to only broadcast significant types - PASS
+  - Significant types: tool_call, turn_complete, acceptance_check
+  - Non-significant types filtered: started, tool_result, completed, failed, paused, resumed
+
+- Step 2: Message type: agent_event_logged - PASS
+  - Message format validated with correct type field
+
+- Step 3: Payload: run_id, event_type, sequence - PASS
+  - All required fields present in payload
+  - Timestamp included in ISO format
+
+- Step 4: tool_name (if applicable) - PASS
+  - Included for tool_call events
+  - Omitted for turn_complete and acceptance_check events
+
+- Step 5: Throttle to max 10 events/second per run - PASS
+  - EventThrottler class with sliding window approach
+  - Independent throttling per run_id
+  - Throttle resets after time window passes
+
+**Implementation Details:**
+
+Created server/event_broadcaster.py:
+- EventThrottler: Sliding window rate limiter (10 events/sec per run)
+- AgentEventBroadcaster: Main broadcaster class
+  - Filters events to significant types only
+  - Creates agent_event_logged messages
+  - Integrates with throttler
+  - Supports async/sync callbacks
+- Global broadcaster management (get_event_broadcaster, cleanup_event_broadcasters)
+
+Modified server/websocket.py:
+- Added import for get_event_broadcaster
+- Set up event broadcaster callback in project_websocket function
+
+**Test Results:**
+- tests/test_feature_62_event_broadcaster.py: 51/51 tests PASS
+- tests/verify_feature_62.py: All 6 verification steps PASS
+
+**Files Created:**
+- server/event_broadcaster.py: Event broadcaster module (~350 lines)
+- tests/test_feature_62_event_broadcaster.py: Comprehensive test suite (51 tests)
+- tests/verify_feature_62.py: Feature verification script
+
+**Files Modified:**
+- server/websocket.py: Added event broadcaster integration
+
+**Commit:** 44eabdd - "feat: Implement WebSocket agent_event_logged Event (Feature #62)"
+
+---
+
+**Updated Progress:**
+- Total: 59/103 features passing (approximately 57.3%)
+- Feature #62: WebSocket agent_event_logged Event - PASSING
+
+**Session completed successfully.**
