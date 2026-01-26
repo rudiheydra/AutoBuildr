@@ -14,9 +14,13 @@ The harness kernel is agent-agnostic: it operates only on specs and run results.
 """
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Any
+
+# Setup logger for state transitions
+_logger = logging.getLogger(__name__)
 
 from sqlalchemy import (
     CheckConstraint,
@@ -88,6 +92,62 @@ EVENT_PAYLOAD_MAX_SIZE = 4096
 
 # Inline content size limit for artifacts (bytes) - larger content goes to files
 ARTIFACT_INLINE_MAX_SIZE = 4096
+
+# Terminal run statuses - no transitions allowed from these states
+TERMINAL_STATUSES = frozenset({"completed", "failed", "timeout"})
+
+# Valid state transitions adjacency map
+# Key: current state, Value: set of valid next states
+VALID_STATE_TRANSITIONS: dict[str, frozenset[str]] = {
+    "pending": frozenset({"running"}),  # Can only start running
+    "running": frozenset({"paused", "completed", "failed", "timeout"}),  # Running can pause, complete, fail, or timeout
+    "paused": frozenset({"running", "failed"}),  # Paused can resume or be cancelled (failed)
+    "completed": frozenset(),  # Terminal - no transitions out
+    "failed": frozenset(),  # Terminal - no transitions out
+    "timeout": frozenset(),  # Terminal - no transitions out
+}
+
+
+# =============================================================================
+# Exceptions
+# =============================================================================
+
+class InvalidStateTransition(Exception):
+    """
+    Raised when an invalid state transition is attempted on an AgentRun.
+
+    This exception provides detailed information about the attempted transition
+    to aid in debugging and error handling.
+    """
+
+    def __init__(
+        self,
+        run_id: str,
+        current_state: str,
+        target_state: str,
+        message: str | None = None
+    ):
+        self.run_id = run_id
+        self.current_state = current_state
+        self.target_state = target_state
+
+        if message is None:
+            valid_targets = VALID_STATE_TRANSITIONS.get(current_state, frozenset())
+            if valid_targets:
+                valid_str = ", ".join(sorted(valid_targets))
+                message = (
+                    f"Invalid state transition for AgentRun {run_id}: "
+                    f"'{current_state}' -> '{target_state}'. "
+                    f"Valid transitions from '{current_state}': {valid_str}"
+                )
+            else:
+                message = (
+                    f"Invalid state transition for AgentRun {run_id}: "
+                    f"'{current_state}' -> '{target_state}'. "
+                    f"'{current_state}' is a terminal state with no valid transitions."
+                )
+
+        super().__init__(message)
 
 
 # =============================================================================
@@ -328,6 +388,184 @@ class AgentRun(Base):
             "retry_count": self.retry_count,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
+
+    # -------------------------------------------------------------------------
+    # State Machine Methods
+    # -------------------------------------------------------------------------
+
+    @property
+    def is_terminal(self) -> bool:
+        """Check if the run is in a terminal state."""
+        return self.status in TERMINAL_STATUSES
+
+    def can_transition_to(self, target_status: str) -> bool:
+        """
+        Check if a transition to the target status is valid.
+
+        Args:
+            target_status: The status to transition to
+
+        Returns:
+            True if the transition is valid, False otherwise
+        """
+        valid_targets = VALID_STATE_TRANSITIONS.get(self.status, frozenset())
+        return target_status in valid_targets
+
+    def get_valid_transitions(self) -> frozenset[str]:
+        """
+        Get all valid transition targets from the current state.
+
+        Returns:
+            Set of valid target statuses
+        """
+        return VALID_STATE_TRANSITIONS.get(self.status, frozenset())
+
+    def transition_to(self, target_status: str, *, error_message: str | None = None) -> datetime:
+        """
+        Transition the run to a new status with validation.
+
+        This method enforces the state machine rules and updates relevant
+        timestamps. It should be called within a database transaction to
+        ensure atomicity.
+
+        Args:
+            target_status: The status to transition to
+            error_message: Optional error message (for failed/timeout transitions)
+
+        Returns:
+            The timestamp of the transition
+
+        Raises:
+            InvalidStateTransition: If the transition is not valid
+            ValueError: If target_status is not a recognized status
+        """
+        # Validate target status is a known status
+        if target_status not in RUN_STATUS:
+            raise ValueError(
+                f"Unknown status '{target_status}'. "
+                f"Valid statuses: {', '.join(RUN_STATUS)}"
+            )
+
+        # Check if transition is valid
+        if not self.can_transition_to(target_status):
+            raise InvalidStateTransition(
+                run_id=self.id,
+                current_state=self.status,
+                target_state=target_status
+            )
+
+        # Record transition timestamp
+        transition_time = _utc_now()
+        old_status = self.status
+
+        # Perform the transition
+        self.status = target_status
+
+        # Handle status-specific timestamp updates
+        if target_status == "running" and old_status == "pending":
+            # Starting execution - set started_at
+            self.started_at = transition_time
+
+        if target_status in TERMINAL_STATUSES:
+            # Terminal state - set completed_at
+            self.completed_at = transition_time
+
+            # Set error message for failure states
+            if error_message and target_status in ("failed", "timeout"):
+                self.error = error_message
+
+        # Log the transition
+        _logger.info(
+            "AgentRun %s: status transition '%s' -> '%s' at %s",
+            self.id,
+            old_status,
+            target_status,
+            transition_time.isoformat()
+        )
+
+        return transition_time
+
+    def start(self) -> datetime:
+        """
+        Start the run (transition from pending to running).
+
+        Returns:
+            The timestamp when the run started
+
+        Raises:
+            InvalidStateTransition: If the run is not in pending state
+        """
+        return self.transition_to("running")
+
+    def pause(self) -> datetime:
+        """
+        Pause the run (transition from running to paused).
+
+        Returns:
+            The timestamp when the run was paused
+
+        Raises:
+            InvalidStateTransition: If the run is not in running state
+        """
+        return self.transition_to("paused")
+
+    def resume(self) -> datetime:
+        """
+        Resume the run (transition from paused to running).
+
+        Returns:
+            The timestamp when the run was resumed
+
+        Raises:
+            InvalidStateTransition: If the run is not in paused state
+        """
+        return self.transition_to("running")
+
+    def complete(self) -> datetime:
+        """
+        Complete the run successfully (transition from running to completed).
+
+        Returns:
+            The timestamp when the run completed
+
+        Raises:
+            InvalidStateTransition: If the run is not in running state
+        """
+        return self.transition_to("completed")
+
+    def fail(self, error_message: str | None = None) -> datetime:
+        """
+        Mark the run as failed.
+
+        Can be called from running or paused state (for cancellation).
+
+        Args:
+            error_message: Optional error message describing the failure
+
+        Returns:
+            The timestamp when the run failed
+
+        Raises:
+            InvalidStateTransition: If the run cannot transition to failed
+        """
+        return self.transition_to("failed", error_message=error_message)
+
+    def timeout(self, error_message: str | None = None) -> datetime:
+        """
+        Mark the run as timed out (transition from running to timeout).
+
+        Args:
+            error_message: Optional message describing the timeout
+
+        Returns:
+            The timestamp when the run timed out
+
+        Raises:
+            InvalidStateTransition: If the run is not in running state
+        """
+        if error_message is None:
+            error_message = "Execution exceeded time or turn budget"
+        return self.transition_to("timeout", error_message=error_message)
 
 
 # =============================================================================
