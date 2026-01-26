@@ -819,3 +819,85 @@
 - Continue with Phase 0 Kernel Wiring features
 - HarnessKernel.execute() implementation
 - API endpoints for AgentSpec CRUD operations
+
+---
+
+### Feature #51: Skill Template Registry - COMPLETED
+
+**Status:** PASSING
+
+**Category:** G. State & Persistence
+
+**Description:** Implement template registry that loads skill templates from prompts/ directory with interpolation support.
+
+**Verification Summary:**
+- Step 1: Create TemplateRegistry class - PASS
+  - TemplateRegistry class implemented in api/template_registry.py
+  - Supports auto_scan and cache_enabled configuration
+- Step 2: Scan prompts/ directory for template files - PASS
+  - Scans for *.md files, ignores hidden files
+  - Found 3 templates in real prompts/ directory
+- Step 3: Parse template metadata (task_type, required_tools, etc.) - PASS
+  - YAML front matter parsing (with fallback parser)
+  - Extracts task_type, required_tools, default_max_turns, etc.
+- Step 4: Index templates by task_type - PASS
+  - Templates indexed by task_type (coding, testing, documentation)
+  - Also indexed by filename (with/without _prompt suffix)
+- Step 5: Implement get_template(task_type) -> Template - PASS
+  - Get by task_type: registry.get_template(task_type="coding")
+  - Get by name: registry.get_template(name="coding_prompt")
+- Step 6: Implement interpolate(template, variables) -> str - PASS
+  - Variable interpolation with {{var}} or {var} syntax
+  - find_variables() to discover variables in template
+  - Supports strict mode (raise on missing) or lenient (leave as-is)
+- Step 7: Cache compiled templates for performance - PASS
+  - File modification time tracking for cache invalidation
+  - Thread-safe caching with RLock
+  - clear_cache() and refresh() methods
+- Step 8: Handle missing template gracefully with fallback - PASS
+  - Returns None when use_fallback=True and template not found
+  - Raises TemplateNotFoundError when use_fallback=False
+  - set_fallback_template() for default fallback
+
+**Implementation Details:**
+- New module: api/template_registry.py (~550 lines)
+- Data classes: TemplateMetadata, Template
+- Exceptions: TemplateError, TemplateNotFoundError, TemplateParseError, InterpolationError
+- Module-level singleton: get_template_registry() / reset_template_registry()
+- Comprehensive test suite: 54 tests in tests/test_template_registry.py
+- Verification script: tests/verify_feature_51.py
+
+**Test Results:**
+- All 54 unit tests pass
+- All 8 verification steps pass
+- Successfully loads real templates from prompts/ directory
+
+**Files Created:**
+- `api/template_registry.py`: Template registry implementation
+- `tests/test_template_registry.py`: 54 comprehensive tests
+- `tests/verify_feature_51.py`: Feature verification script
+
+**Commit:** fc3c050 - "Implement Skill Template Registry (Feature #51)"
+
+---
+
+**Updated Progress:**
+- Feature #1: AgentSpec SQLite Table Schema - PASSING
+- Feature #2: AcceptanceSpec SQLite Table Schema - PASSING
+- Feature #3: AgentRun SQLite Table Schema - PASSING
+- Feature #4: Artifact SQLite Table Schema - PASSING
+- Feature #5: AgentEvent SQLite Table Schema - PASSING
+- Feature #7: AgentSpec Pydantic Request/Response Schemas - PASSING
+- Feature #8: AcceptanceSpec Pydantic Schemas - PASSING
+- Feature #9: AgentRun Pydantic Response Schema - PASSING
+- Feature #10: Artifact and AgentEvent Pydantic Schemas - PASSING
+- Feature #26: AgentRun Status Transition State Machine - PASSING
+- Feature #31: Artifact Storage with Content-Addressing - PASSING
+- Feature #51: Skill Template Registry - PASSING
+- Feature #65: AgentRun Status Color Coding - PASSING
+- Total: 10/85 features passing (approximately 11.8%)
+
+**Next Steps:**
+- Continue with DSPy SpecBuilder features (Phase 1)
+- Feature-to-AgentSpec compiler
+- Template selection based on task_type
