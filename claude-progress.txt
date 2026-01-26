@@ -3668,3 +3668,203 @@ Added type check to handle both Pydantic model and dict cases.
     - Step 4: Example format matches specification exactly
     - Bonus: inject_tool_hints_into_prompt() works with existing templates
   - No regression found - feature still working correctly
+[Testing] 2026-01-27 08:52:06 - Feature #89 regression test PASSED
+  - Feature: Core validate_dependency_graph function detects missing dependency targets
+  - Verification script: 4/4 steps pass
+  - Unit tests: 21/21 tests pass
+  - All verification steps confirmed working:
+    - Step 1: Feature created with dependencies=[999] (non-existent ID)
+    - Step 2: validate_dependency_graph() returns structured ValidationResult
+    - Step 3: missing_targets dict correctly shows {1: [999]}
+    - Step 4: DependencyIssue has correct structure (feature_id, issue_type, details, auto_fixable)
+  - API endpoint /dependency-health working correctly
+  - No regression found - feature still working correctly
+
+
+---
+
+## Session: 2026-01-27 (Coding Agent - Feature #33)
+
+### Feature #33: file_exists Acceptance Validator - COMPLETED
+
+**Status:** PASSING
+
+**Category:** D. Workflow Completeness
+
+**Description:** Implement file_exists validator that verifies a file path exists with variable interpolation support.
+
+**Dependencies:** #2 (AcceptanceSpec SQLite Table Schema), #26 (AgentRun Status Transition State Machine) - both passing
+
+**Verification Summary (7 Steps):**
+
+- Step 1: Create FileExistsValidator class implementing Validator interface - PASS
+  - Created api/validators.py with Validator base class and FileExistsValidator
+  - FileExistsValidator inherits from Validator ABC
+  - Has evaluate() method and validator_type = "file_exists"
+
+- Step 2: Extract path from validator config - PASS
+  - Extracts 'path' key from config dictionary
+  - Returns error ValidatorResult when 'path' is missing
+  - Handles various path formats (absolute, relative)
+
+- Step 3: Interpolate variables in path (e.g., {project_dir}) - PASS
+  - Supports {project_dir}, {feature_id}, {run_id} variables
+  - Handles multiple variables in single path
+  - Gracefully handles missing context variables
+
+- Step 4: Extract config option for expected existence (default true) - PASS
+  - Defaults to True when not specified
+  - Accepts boolean True/False values
+  - Converts string "true"/"false" to boolean
+
+- Step 5: Check if path exists using Path.exists() - PASS
+  - Detects existing files and directories
+  - Detects non-existent paths
+  - Resolves relative paths against project_dir context
+
+- Step 6: Return passed = exists == expected - PASS
+  - exists and expected => passed=True, score=1.0
+  - exists and not expected => passed=False, score=0.0
+  - not exists and expected => passed=False, score=0.0
+  - not exists and not expected => passed=True, score=1.0
+
+- Step 7: Include file path in result message - PASS
+  - Message includes interpolated file path
+  - Indicates existence status ("exists" / "does not exist")
+  - Appends description from config if provided
+
+**Implementation Details:**
+
+New file: api/validators.py (~350 lines)
+- ValidatorResult dataclass with passed, message, score, details, validator_type
+- Validator ABC with abstract evaluate() method and interpolate_path() helper
+- FileExistsValidator implementing full validation logic
+- VALIDATOR_REGISTRY for validator type lookup
+- evaluate_validator() convenience function
+- evaluate_acceptance_spec() for batch validation
+
+**Test Results:**
+- tests/test_feature_33_file_exists_validator.py: 43/43 tests PASS
+  - TestStep1ValidatorInterface: 6 tests
+  - TestStep2ExtractPathFromConfig: 3 tests
+  - TestStep3InterpolateVariables: 6 tests
+  - TestStep4ExtractExpectedExistence: 5 tests
+  - TestStep5CheckPathExists: 4 tests
+  - TestStep6ReturnPassedEqualsExistsEqualsExpected: 4 tests
+  - TestStep7IncludePathInMessage: 5 tests
+  - TestIntegration: 5 tests
+  - TestEdgeCases: 5 tests
+
+**Files Created:**
+- api/validators.py: Validator interface and FileExistsValidator implementation
+- tests/test_feature_33_file_exists_validator.py: Comprehensive test suite (43 tests)
+
+**Files Modified:**
+- api/__init__.py: Added exports for validators module
+
+**Commit:** f22a429 - "feat: Implement FileExistsValidator for acceptance validation (Feature #33)"
+
+---
+
+**Updated Progress:**
+- Total: 47/103 features passing (approximately 45.6%)
+- Feature #33: file_exists Acceptance Validator - PASSING
+
+**Session completed successfully.**
+[Testing] 2026-01-27 08:53:19 - Feature #100 regression test PASSED
+  - Feature: Auto-repair function removes orphaned dependency references
+  - Verification script: 5/5 steps pass
+  - Unit tests: 21/21 tests pass
+  - All verification steps confirmed working:
+    - Step 1: repair_orphaned_dependencies(session) function exists with correct signature
+    - Step 2: Gets set of all valid feature IDs correctly
+    - Step 3: Filters dependencies to only valid IDs (removes orphans)
+    - Step 4: Updates features with orphaned refs in single transaction
+    - Step 5: Returns dict of {feature_id: [removed_orphan_ids]} for logging
+  - No regression found - feature still working correctly
+
+---
+
+## Session: Feature #29 - Token Usage Tracking
+
+**Date:** 2026-01-27
+
+**Feature:** Token Usage Tracking (Feature #29)
+
+**Objective:** Track input and output token usage during kernel execution for cost visibility by extracting from Claude API response.
+
+**Dependencies:**
+- Feature #3: AgentRun SQLite Table Schema - PASSING
+- Feature #26: AgentRun Status Transition State Machine - PASSING
+
+**Implementation Steps Completed:**
+
+1. **Step 1: Initialize tokens_in and tokens_out to 0 at run start** - PASS
+   - Added tokens_in, tokens_out fields to BudgetTracker dataclass
+   - HarnessKernel.initialize_run() sets both to 0
+   - Persisted to database on commit
+
+2. **Steps 2-3: Extract input_tokens and output_tokens from Claude API response** - PASS
+   - Added accumulate_tokens(input_tokens, output_tokens) method to BudgetTracker
+   - Method takes token counts from Claude API response.usage field
+
+3. **Step 4: Accumulate totals across all turns** - PASS
+   - accumulate_tokens() adds to running total
+   - Logging tracks incremental and cumulative counts
+
+4. **Step 5: Update AgentRun.tokens_in and tokens_out after each turn** - PASS
+   - HarnessKernel.record_turn_complete() accepts input_tokens, output_tokens params
+   - Updates AgentRun model and persists to database
+
+5. **Step 6: Persist token counts even on failure/timeout** - PASS
+   - handle_budget_exceeded() persists tokens before timeout transition
+   - handle_timeout_exceeded() persists tokens before timeout transition
+   - execute_with_budget() exception handler persists tokens on failure
+
+6. **Step 7: Include token counts in run response** - PASS
+   - ExecutionResult dataclass has tokens_in, tokens_out fields (default 0)
+   - Added total_tokens property for convenience
+   - All ExecutionResult returns include token counts
+
+**Implementation Details:**
+
+Modified: api/harness_kernel.py
+- BudgetTracker: Added tokens_in, tokens_out, _last_persisted_tokens_* fields
+- BudgetTracker: Added accumulate_tokens() method
+- BudgetTracker: Updated mark_persisted(), is_persisted(), to_payload() for tokens
+- ExecutionResult: Added tokens_in, tokens_out fields with total_tokens property
+- HarnessKernel.initialize_run(): Set run.tokens_in/out = 0
+- HarnessKernel.record_turn_complete(): Added input_tokens, output_tokens params
+- HarnessKernel.handle_budget_exceeded/timeout: Persist tokens before transition
+- HarnessKernel.execute_with_budget(): Include tokens in all ExecutionResult returns
+
+**Test Results:**
+- tests/test_feature_29_token_tracking.py: 27/27 tests PASS
+  - TestTokenInitialization: 3 tests
+  - TestTokenAccumulation: 3 tests
+  - TestTokenUpdatePerTurn: 4 tests
+  - TestTokenPersistenceOnFailure: 2 tests
+  - TestTokensInExecutionResult: 4 tests
+  - TestBudgetTrackerTokenIntegration: 3 tests
+  - TestEventRecordingWithTokens: 2 tests
+  - TestFeature29VerificationSteps: 6 tests (all 7 feature steps verified)
+
+- tests/verify_feature_29.py: All 7 steps PASS (standalone verification)
+- tests/test_harness_kernel.py: 41/41 tests PASS (no regressions)
+- Total test suite: 92 tests PASS
+
+**Files Created:**
+- tests/test_feature_29_token_tracking.py: Comprehensive test suite (27 tests, 586 lines)
+- tests/verify_feature_29.py: Standalone verification script (300 lines)
+
+**Commit:** 35df6ec - "feat: Implement Token Usage Tracking for Feature #29"
+
+**Feature Status:** PASSING
+
+---
+
+**Updated Progress:**
+- Total: 45/103 features passing (approximately 43.7%)
+- Feature #29: Token Usage Tracking - PASSING
+
+**Session completed successfully.**
