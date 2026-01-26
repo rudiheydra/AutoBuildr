@@ -1955,3 +1955,77 @@ Added `validate_dependency_graph()` function to api/dependency_resolver.py that:
 - Continue with other error-handling features
 - Feature #87 (simple cycles) and #88 (complex cycles) are related
 
+---
+
+## Session: 2026-01-27 (Coding Agent #53)
+
+### Feature #53: Display Name and Icon Derivation - COMPLETED
+
+**Status:** PASSING
+
+**Category:** N. Feedback & Notification
+
+**Description:** Derive display_name and icon from AgentSpec objective and task_type for human-friendly presentation.
+
+**Dependencies:** Feature #7 (AgentSpec Pydantic Request/Response Schemas) - PASSING
+
+**Verification Summary (5 Steps):**
+- Step 1: Extract first sentence of objective as display_name base - PASS
+  - extract_first_sentence() handles period, exclamation, question mark, and newline
+  - Properly handles edge cases: empty strings, whitespace, no punctuation
+- Step 2: Truncate to max 100 chars with ellipsis if needed - PASS
+  - DISPLAY_NAME_MAX_LENGTH = 100
+  - truncate_with_ellipsis() adds "..." when truncating
+  - Preserves start of text for readability
+- Step 3: Map task_type to icon: coding->hammer, testing->flask, etc. - PASS
+  - coding -> hammer
+  - testing -> flask
+  - refactoring -> recycle
+  - documentation -> book
+  - audit -> shield
+  - custom -> gear (default)
+  - Case-insensitive matching
+- Step 4: Allow icon override in spec context - PASS
+  - context["icon"] takes precedence when non-empty
+  - Empty string, whitespace, None, or missing key falls back to task_type mapping
+- Step 5: Select mascot name from existing pool if needed - PASS
+  - MASCOT_POOL: 20 mascot names (Spark, Fizz, Octo, etc.)
+  - context["mascot"] override supported
+  - spec_id hash-based selection (deterministic)
+  - feature_id modulo-based selection
+  - Fallback to first mascot
+
+**Implementation Details:**
+- New module: api/display_derivation.py (~300 lines)
+- Functions:
+  - extract_first_sentence(text) -> str
+  - truncate_with_ellipsis(text, max_length) -> str
+  - derive_display_name(objective, max_length) -> str
+  - derive_icon(task_type, context) -> str
+  - derive_mascot_name(feature_id, spec_id, context) -> str
+  - derive_display_properties(objective, task_type, context, feature_id, spec_id) -> dict
+  - get_task_type_icons() -> dict[str, str]
+  - get_mascot_pool() -> list[str]
+- Constants exported: DISPLAY_NAME_MAX_LENGTH, MASCOT_POOL, TASK_TYPE_ICONS, DEFAULT_ICON
+
+**Test Results:**
+- tests/test_display_derivation.py: 79 unit tests - ALL PASS
+- tests/verify_feature_53.py: All 6 verification steps PASS
+
+**Files Created:**
+- api/display_derivation.py: Core display derivation module
+- tests/test_display_derivation.py: 79 comprehensive unit tests
+- tests/verify_feature_53.py: Feature verification script
+
+**Files Modified:**
+- api/__init__.py: Added display_derivation exports
+
+**Commit:** 645e93f (bundled with Feature #6 verification tests)
+
+---
+
+**Updated Progress:**
+- Feature #53: Display Name and Icon Derivation - PASSING
+- Total: 26/103 features passing (approximately 25.2%)
+
+**Session completed successfully.**
