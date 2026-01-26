@@ -1,6 +1,76 @@
 # AutoBuildr Progress Log
 # ======================
 
+## Session: 2026-01-27 (Feature #27)
+
+### Feature #27: Max Turns Budget Enforcement - COMPLETED
+
+**Status:** PASSING
+
+**Category:** A. Security & Access Control
+
+**Description:** Enforce max_turns budget during kernel execution. Increment turns_used after each Claude API call and terminate gracefully when exhausted.
+
+**Dependencies:** Feature #3 (AgentRun SQLite Table), Feature #26 (AgentRun Status Transition State Machine) - both PASSING
+
+**Verification Summary (8 Steps):**
+
+- Step 1: Initialize turns_used to 0 at run start - PASS
+  - HarnessKernel.initialize_run() resets turns_used to 0
+  - Transitions run status from pending to running
+
+- Step 2: Increment turns_used after each Claude API response - PASS
+  - HarnessKernel.record_turn_complete() increments counter
+  - BudgetTracker.increment_turns() handles the logic
+
+- Step 3: Check turns_used < spec.max_turns before each turn - PASS
+  - HarnessKernel.check_budget_before_turn() validates budget
+  - BudgetTracker.check_budget_or_raise() enforces with exception
+
+- Step 4: When budget reached, set status to timeout - PASS
+  - HarnessKernel.handle_budget_exceeded() transitions status
+  - Uses AgentRun.timeout() method for proper state transition
+
+- Step 5: Set error message to max_turns_exceeded - PASS
+  - Both ExecutionResult.error and AgentRun.error set to "max_turns_exceeded"
+
+- Step 6: Record timeout event with turns_used in payload - PASS
+  - AgentEvent created with event_type="timeout"
+  - Payload includes: reason, turns_used, max_turns, remaining_turns, is_exhausted
+
+- Step 7: Ensure partial work is committed before termination - PASS
+  - All turn_complete events preserved in database
+  - db.commit() called before returning ExecutionResult
+
+- Step 8: Verify turns_used is persisted after each turn - PASS
+  - db.commit() after each record_turn_complete() call
+  - Fresh database query confirms persisted value
+
+**Implementation Details:**
+
+New module: api/harness_kernel.py (~650 lines)
+
+Classes:
+- HarnessKernel: Main execution kernel with budget enforcement
+- BudgetTracker: Tracks turn consumption and persistence state
+- ExecutionResult: Container for execution results
+- BudgetExceeded: Base exception for budget violations
+- MaxTurnsExceeded: Specific exception for turn budget exhaustion
+
+**Test Results:**
+- 41 unit and integration tests in tests/test_harness_kernel.py - ALL PASS
+- 8/8 verification steps in tests/verify_feature_27.py - ALL PASS
+
+**Files Created:**
+- api/harness_kernel.py: HarnessKernel implementation
+- tests/test_harness_kernel.py: 41 comprehensive tests
+- tests/verify_feature_27.py: Feature verification script
+
+**Files Modified:**
+- api/__init__.py: Added harness kernel exports
+
+---
+
 ## Session: 2026-01-27 (Feature #36)
 
 ### Feature #36: StaticSpecAdapter for Legacy Initializer - COMPLETED
