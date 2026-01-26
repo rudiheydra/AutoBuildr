@@ -3099,3 +3099,165 @@ The `_run_dependency_health_check()` method in parallel_orchestrator.py:
 - Feature #100: Auto-repair function removes orphaned dependency references - PASSING
 
 **Session completed successfully.**
+[Testing] 2026-01-27 03:54:37 - Feature #92 regression test PASSED
+  - Feature: Iteration limit exceeded logs specific algorithm name and context
+  - Verification script: All 5 steps pass
+  - Unit tests: 17/17 tests pass
+  - No regression found - feature still working correctly
+
+---
+
+## Session: 2026-01-27 (Coding Agent - Feature #97)
+
+### Feature #97: Startup health check blocks on cycles and lists cycle path - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Description:** On startup, if circular dependencies are detected (not self-references), the orchestrator should block startup and display the cycle path for user resolution.
+
+**Dependencies:** None
+
+**Verification Summary (5 Steps):**
+
+- Step 1: Insert features A -> B -> A into database - PASS
+  - Created MockFeature A (id=1) with dependencies=[2]
+  - Created MockFeature B (id=2) with dependencies=[1]
+  - Verified cycle exists: A -> B -> A
+
+- Step 2: Attempt to start the orchestrator - PASS
+  - Called _run_dependency_health_check()
+  - Returns False when cycles are detected (blocking behavior)
+
+- Step 3: Verify startup is blocked with clear error message - PASS
+  - Output contains "CYCLES FOUND" or "CIRCULAR DEPENDENCIES"
+  - Output contains "STARTUP BLOCKED"
+
+- Step 4: Verify error message includes the cycle path: [A, B, A] - PASS
+  - Cycle path uses arrow notation: "1 -> 2 -> 1"
+  - Cycle path enclosed in brackets: "[1 -> 2 -> 1]"
+  - Both feature IDs (1 and 2) visible in output
+
+- Step 5: Verify error message instructs user to remove one dependency - PASS
+  - Contains "To fix:" instruction
+  - Contains "remove" instruction
+  - Contains "dependency" reference
+
+**Implementation Details:**
+
+Modified parallel_orchestrator.py:
+- _run_dependency_health_check(): Returns False when cycles detected (lines 352-380)
+- run_loop(): Checks health check return value and exits early if False (lines 1112-1118)
+
+**Test Results:**
+- tests/test_feature_97_cycle_blocks_startup.py: 13/13 tests PASS
+  - TestFeature97VerificationSteps: 5 tests (verification steps 1-5)
+  - TestCycleBlocksStartupIntegration: 2 tests (run_loop integration)
+  - TestComplexCycleScenarios: 4 tests (3-node, multiple, self-ref, mixed)
+  - TestCyclePathFormatting: 2 tests (arrow notation, brackets)
+
+- tests/verify_feature_97.py: All 5 verification steps PASS
+
+- tests/test_feature_95_orchestrator_startup_health_check.py: 18/18 tests PASS
+  - Updated to expect blocking behavior on cycles (Feature #97 requirement)
+
+**Files Modified:**
+- parallel_orchestrator.py: Cycle blocking implementation
+
+**Files Created:**
+- tests/test_feature_97_cycle_blocks_startup.py: 13 comprehensive unit tests
+- tests/verify_feature_97.py: Feature verification script
+
+**Commit:** 57e477e - "feat: Implement Feature #97 - Startup health check blocks on cycles"
+
+---
+
+**Updated Progress:**
+- Total: 36/103 features passing (approximately 35.0%)
+- Feature #97: Startup health check blocks on cycles and lists cycle path - PASSING
+
+**Session completed successfully.**
+
+
+---
+
+## Session: 2026-01-27 (Coding Agent - Feature #102)
+
+### Feature #102: Dependency health check produces clear formatted log output - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Description:** The startup health check should produce clear, formatted log output summarizing all detected issues and actions taken.
+
+**Dependencies:** None
+
+**Verification Summary (6 Steps):**
+
+- Step 1: Create formatted log header: === DEPENDENCY HEALTH CHECK === - PASS
+  - Header is now displayed at the start of health check
+  - Surrounded by decorative "=" lines for visibility
+
+- Step 2: List self-references found and auto-fixed (if any) - PASS
+  - Section header: "SELF-REFERENCES FOUND (auto-fixing):"
+  - Lists each feature with self-reference and the fix applied
+  - Shows original and new dependencies
+
+- Step 3: List orphaned references found and auto-removed (if any) - PASS
+  - Section header: "ORPHANED REFERENCES FOUND (auto-removing):"
+  - Lists each feature with orphaned references and the removal
+  - Shows original and new dependencies
+
+- Step 4: List cycles found requiring user action (if any) - PASS
+  - Section header: "CYCLES FOUND (requires user action):"
+  - Lists all cycles with arrow notation (e.g., 1 -> 2 -> 1)
+  - Provides instructions for fixing
+  - Returns False to block startup
+
+- Step 5: End with summary: X issues auto-fixed, Y issues require attention - PASS
+  - Summary line format: "Summary: X issues auto-fixed, Y issues require attention"
+  - Shows count of auto-fixed issues (self-refs + orphaned refs)
+  - Shows count of issues requiring attention (cycles)
+
+- Step 6: If no issues: Dependency graph is healthy - PASS
+  - Shows "Result: Dependency graph is healthy" when valid
+  - Includes feature count: "Scanned N features, no issues found."
+  - Returns True to allow startup
+
+**Implementation Details:**
+- Modified _run_dependency_health_check() in parallel_orchestrator.py
+- Added formatted header with decorative lines
+- Added section headers for each issue type
+- Added summary line with auto-fixed and requires-attention counts
+- Added healthy message when no issues found
+
+**Test Results:**
+- tests/test_feature_102_formatted_log_output.py: 12/12 tests PASS
+- tests/verify_feature_102.py: All 6 verification steps PASS
+- Related feature tests (95, 96, 98): 42/42 tests PASS (no regressions)
+
+**Test Categories:**
+- TestFormattedLogHeader: 2 tests (header, decorative lines)
+- TestSelfReferencesLogging: 1 test (section format)
+- TestOrphanedReferencesLogging: 1 test (section format)
+- TestCyclesLogging: 2 tests (section format, blocks startup)
+- TestSummaryLine: 2 tests (auto-fixed, requires attention)
+- TestHealthyGraph: 2 tests (message, returns True)
+- TestEmptyDatabase: 1 test (skip message)
+- TestMultipleIssueTypes: 1 test (multiple issues handled)
+
+**Files Created:**
+- tests/test_feature_102_formatted_log_output.py: 12 comprehensive unit tests (~450 lines)
+- tests/verify_feature_102.py: Feature verification script (~280 lines)
+
+**Commit:** 517336a - "feat: Add comprehensive tests for Feature #102 - Formatted log output"
+
+---
+
+**Updated Progress:**
+- Total: 40/103 features passing (approximately 38.8%)
+- Feature #102: Dependency health check produces clear formatted log output - PASSING
+
+**Session completed successfully.**
