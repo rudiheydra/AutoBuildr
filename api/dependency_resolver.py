@@ -703,6 +703,80 @@ def build_graph_data(features: list[dict]) -> dict:
     return {"nodes": nodes, "edges": edges}
 
 
+def repair_orphaned_dependencies(session) -> dict[int, list[int]]:
+    """Remove references to non-existent feature IDs from all affected features.
+
+    This function queries all features, identifies those with dependencies that
+    reference non-existent feature IDs (orphaned references), removes those
+    orphaned references from the dependencies list, and commits all changes
+    in a single database transaction.
+
+    Args:
+        session: SQLAlchemy session for database operations
+
+    Returns:
+        Dict mapping feature_id -> list of removed orphan IDs for logging.
+        Empty dict if no orphaned references were found.
+
+    Example:
+        >>> from api.database import create_database
+        >>> from api.dependency_resolver import repair_orphaned_dependencies
+        >>> engine, SessionMaker = create_database(project_dir)
+        >>> session = SessionMaker()
+        >>> repairs = repair_orphaned_dependencies(session)
+        >>> for fid, removed in repairs.items():
+        ...     print(f"Feature #{fid}: removed orphan deps {removed}")
+    """
+    # Import Feature model here to avoid circular imports
+    from api.database import Feature
+
+    repairs: dict[int, list[int]] = {}
+
+    # Query all features from the database
+    features = session.query(Feature).all()
+
+    # Build set of all valid feature IDs
+    valid_ids = {f.id for f in features}
+
+    # Check each feature for orphaned dependencies and remove them
+    for feature in features:
+        # Get dependencies safely (handle NULL and malformed data)
+        deps = feature.get_dependencies_safe()
+
+        # Find orphaned dependencies (references to non-existent features)
+        orphans = [d for d in deps if d not in valid_ids]
+
+        if orphans:
+            # Log BEFORE the fix (structured logging format)
+            _logger.info(
+                "repair_orphaned_dependencies: action=before_fix feature_id=%d message='Feature %d has orphaned dependencies %s, removing' original_deps=%s",
+                feature.id, feature.id, orphans, deps
+            )
+
+            # Remove orphaned references from dependencies
+            new_deps = [d for d in deps if d in valid_ids]
+            feature.dependencies = new_deps
+
+            # Track this repair for logging
+            repairs[feature.id] = orphans
+
+            # Log AFTER the fix (structured logging format)
+            _logger.info(
+                "repair_orphaned_dependencies: action=after_fix feature_id=%d message='Feature %d dependencies changed from %s to %s' removed_orphans=%s",
+                feature.id, feature.id, deps, new_deps, orphans
+            )
+
+    # Commit all changes in a single transaction
+    if repairs:
+        session.commit()
+        _logger.info(
+            "repair_orphaned_dependencies: Committed repairs for %d feature(s): %s",
+            len(repairs), list(repairs.keys())
+        )
+
+    return repairs
+
+
 def repair_self_references(session) -> list[int]:
     """Remove self-referencing dependencies from all affected features.
 
@@ -740,6 +814,12 @@ def repair_self_references(session) -> list[int]:
 
         # Check if feature depends on itself
         if feature.id in deps:
+            # Log BEFORE the fix (Step 1: Before removing self-reference, log: Feature {id} has self-reference, removing)
+            _logger.info(
+                "repair_self_references: action=before_fix feature_id=%d message='Feature %d has self-reference, removing' original_deps=%s",
+                feature.id, feature.id, deps
+            )
+
             # Remove self-reference from dependencies
             new_deps = [d for d in deps if d != feature.id]
             feature.dependencies = new_deps
@@ -747,11 +827,10 @@ def repair_self_references(session) -> list[int]:
             # Track this feature as repaired
             repaired_ids.append(feature.id)
 
-            # Log the repair
+            # Log AFTER the fix (Step 2: After fix, log: Feature {id} dependencies changed from {old} to {new})
             _logger.info(
-                "repair_self_references: Removed self-reference from Feature #%d "
-                "(original_deps=%s, new_deps=%s)",
-                feature.id, deps, new_deps
+                "repair_self_references: action=after_fix feature_id=%d message='Feature %d dependencies changed from %s to %s'",
+                feature.id, feature.id, deps, new_deps
             )
 
     # Commit all changes in a single transaction
