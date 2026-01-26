@@ -64,6 +64,34 @@
   /* GLM/Alternative API badge */
   --color-neo-glm: #8b5cf6;
 
+  /* -------------------------------------------------------------------------
+     Colors - AgentRun Status (for DynamicAgentCard)
+     Accessible color combinations for status badges and progress bars
+     ------------------------------------------------------------------------- */
+  /* pending: gray - neutral waiting state */
+  --color-status-pending-text: #6b7280;
+  --color-status-pending-bg: #f3f4f6;
+
+  /* running: blue - active processing with pulse animation */
+  --color-status-running-text: #3b82f6;
+  --color-status-running-bg: #dbeafe;
+
+  /* paused: yellow/amber - suspended, attention needed */
+  --color-status-paused-text: #d97706;
+  --color-status-paused-bg: #fef3c7;
+
+  /* completed: green - successful completion */
+  --color-status-completed-text: #22c55e;
+  --color-status-completed-bg: #dcfce7;
+
+  /* failed: red - error state */
+  --color-status-failed-text: #ef4444;
+  --color-status-failed-bg: #fee2e2;
+
+  /* timeout: orange - execution limit reached */
+  --color-status-timeout-text: #f97316;
+  --color-status-timeout-bg: #ffedd5;
+
   /* Additional semantic colors */
   --color-neo-category-pink: #ff006e;
   --color-neo-category-cyan: #00b4d8;
@@ -190,6 +218,31 @@
 
   /* GLM/Alternative API badge for dark mode */
   --color-neo-glm: #a78bfa;
+
+  /* AgentRun Status colors for dark mode - adjusted for dark backgrounds */
+  /* pending: gray - neutral waiting state */
+  --color-status-pending-text: #9ca3af;
+  --color-status-pending-bg: #374151;
+
+  /* running: blue - active processing with pulse animation */
+  --color-status-running-text: #60a5fa;
+  --color-status-running-bg: #1e3a5f;
+
+  /* paused: yellow/amber - suspended, attention needed */
+  --color-status-paused-text: #fbbf24;
+  --color-status-paused-bg: #422006;
+
+  /* completed: green - successful completion */
+  --color-status-completed-text: #4ade80;
+  --color-status-completed-bg: #14532d;
+
+  /* failed: red - error state */
+  --color-status-failed-text: #f87171;
+  --color-status-failed-bg: #450a0a;
+
+  /* timeout: orange - execution limit reached */
+  --color-status-timeout-text: #fb923c;
+  --color-status-timeout-bg: #431407;
 
   /* Shadows - lighter for dark mode with subtle glow */
   --shadow-neo-sm: 2px 2px 0px rgba(224, 224, 224, 0.7);
@@ -531,6 +584,82 @@
     font-size: 0.875rem;
   }
 
+  /* -------------------------------------------------------------------------
+     AgentRun Status Badges
+     Accessible color combinations for status badges in DynamicAgentCard
+     ------------------------------------------------------------------------- */
+  .neo-status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    border-radius: 0.25rem;
+    text-transform: capitalize;
+    transition: all 0.2s ease;
+  }
+
+  .neo-status-pending {
+    color: var(--color-status-pending-text);
+    background-color: var(--color-status-pending-bg);
+  }
+
+  .neo-status-running {
+    color: var(--color-status-running-text);
+    background-color: var(--color-status-running-bg);
+    animation: statusPulse 2s ease-in-out infinite;
+  }
+
+  .neo-status-paused {
+    color: var(--color-status-paused-text);
+    background-color: var(--color-status-paused-bg);
+  }
+
+  .neo-status-completed {
+    color: var(--color-status-completed-text);
+    background-color: var(--color-status-completed-bg);
+  }
+
+  .neo-status-failed {
+    color: var(--color-status-failed-text);
+    background-color: var(--color-status-failed-bg);
+  }
+
+  .neo-status-timeout {
+    color: var(--color-status-timeout-text);
+    background-color: var(--color-status-timeout-bg);
+  }
+
+  /* -------------------------------------------------------------------------
+     AgentRun Progress Bar Fill Colors
+     Matches status colors for visual consistency
+     ------------------------------------------------------------------------- */
+  .neo-progress-fill-pending {
+    background-color: var(--color-status-pending-text);
+  }
+
+  .neo-progress-fill-running {
+    background-color: var(--color-status-running-text);
+    animation: shimmer 2s infinite, statusPulse 2s ease-in-out infinite;
+  }
+
+  .neo-progress-fill-paused {
+    background-color: var(--color-status-paused-text);
+  }
+
+  .neo-progress-fill-completed {
+    background-color: var(--color-status-completed-text);
+  }
+
+  .neo-progress-fill-failed {
+    background-color: var(--color-status-failed-text);
+  }
+
+  .neo-progress-fill-timeout {
+    background-color: var(--color-status-timeout-text);
+  }
+
   /* Progress Bar */
   .neo-progress {
     width: 100%;
@@ -668,6 +797,18 @@
   }
   50% {
     box-shadow: 6px 6px 0px rgba(0, 180, 216, 0.8);
+  }
+}
+
+/* Status pulse animation for running AgentRun status */
+@keyframes statusPulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.85;
+    transform: scale(1.02);
   }
 }
 

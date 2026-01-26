@@ -25,6 +25,7 @@ from .agentspec import (
     RunStatusUpdate,
     # Response schemas
     AcceptanceSpecResponse,
+    AgentEventListResponse,
     AgentEventResponse,
     AgentRunResponse,
     AgentRunSummary,
@@ -61,6 +62,7 @@ __all__ = [
     "AgentRunSummary",
     "ArtifactResponse",
     "AgentEventResponse",
+    "AgentEventListResponse",
     # Nested schemas
     "ToolPolicy",
     "Validator",

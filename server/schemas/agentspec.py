@@ -16,7 +16,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 # =============================================================================
 # Constants (must match api/agentspec_models.py)
@@ -312,62 +312,227 @@ class AgentSpecSummary(BaseModel):
 # =============================================================================
 
 class AcceptanceSpecCreate(BaseModel):
-    """Request schema for creating an AcceptanceSpec."""
+    """Request schema for creating an AcceptanceSpec.
+
+    Validates all field constraints including:
+    - validators array structure (each with type, config dict, weight, required fields)
+    - gate_mode enum validation (all_pass, any_pass, weighted)
+    - retry_policy enum validation (none, fixed, exponential)
+    - min_score required when gate_mode is 'weighted' (must be in range 0.0-1.0)
+
+    Example:
+        {
+            "validators": [
+                {
+                    "type": "test_pass",
+                    "config": {"command": "pytest tests/"},
+                    "weight": 1.0,
+                    "required": true
+                }
+            ],
+            "gate_mode": "all_pass",
+            "retry_policy": "fixed",
+            "max_retries": 3
+        }
+    """
 
     validators: list[Validator] = Field(
         ...,
         min_length=1,
         max_length=20,
-        description="Validation checks to run"
+        description="Validation checks to run. Each validator must have type, config dict, and optionally weight (0.0-10.0) and required (bool) fields."
     )
     gate_mode: GATE_MODES = Field(
         default="all_pass",
-        description="How validators combine to determine success"
+        description="How validators combine to determine success. Must be one of: all_pass, any_pass, weighted"
     )
     min_score: float | None = Field(
         default=None,
         ge=0.0,
         le=1.0,
-        description="Minimum score for weighted mode"
+        description="Minimum score for weighted mode (0.0-1.0). Required when gate_mode is 'weighted'."
     )
     retry_policy: RETRY_POLICIES = Field(
         default="none",
-        description="Behavior on failure"
+        description="Behavior on failure. Must be one of: none, fixed, exponential"
     )
     max_retries: int = Field(
         default=0,
         ge=0,
         le=10,
-        description="Max retry attempts"
+        description="Max retry attempts (0-10)"
     )
     fallback_spec_id: str | None = Field(
         default=None,
-        description="Alternative spec if all retries fail"
+        description="Alternative spec ID if all retries fail"
     )
 
-    @field_validator("min_score")
+    @field_validator("gate_mode")
     @classmethod
-    def validate_min_score(cls, v: float | None, info) -> float | None:
-        """min_score required for weighted mode."""
-        # This would need access to gate_mode which requires model_validator
-        # Keeping simple for now
+    def validate_gate_mode_enum(cls, v: str) -> str:
+        """Validate gate_mode is one of the allowed enum values.
+
+        Args:
+            v: The gate_mode string to validate
+
+        Returns:
+            The validated gate_mode
+
+        Raises:
+            ValueError: If gate_mode is not one of [all_pass, any_pass, weighted]
+        """
+        allowed = ["all_pass", "any_pass", "weighted"]
+        if v not in allowed:
+            raise ValueError(f"gate_mode must be one of {allowed}, got '{v}'")
         return v
+
+    @field_validator("retry_policy")
+    @classmethod
+    def validate_retry_policy_enum(cls, v: str) -> str:
+        """Validate retry_policy is one of the allowed enum values.
+
+        Args:
+            v: The retry_policy string to validate
+
+        Returns:
+            The validated retry_policy
+
+        Raises:
+            ValueError: If retry_policy is not one of [none, fixed, exponential]
+        """
+        allowed = ["none", "fixed", "exponential"]
+        if v not in allowed:
+            raise ValueError(f"retry_policy must be one of {allowed}, got '{v}'")
+        return v
+
+    @model_validator(mode="after")
+    def validate_min_score_for_weighted_mode(self) -> "AcceptanceSpecCreate":
+        """Validate that min_score is provided when gate_mode is 'weighted'.
+
+        For weighted gate mode, a minimum score threshold is required to
+        determine if the agent run passed or failed. The score is calculated
+        from the weighted sum of validator results.
+
+        Returns:
+            The validated model instance
+
+        Raises:
+            ValueError: If gate_mode is 'weighted' but min_score is not provided
+        """
+        if self.gate_mode == "weighted":
+            if self.min_score is None:
+                raise ValueError(
+                    "min_score is required when gate_mode is 'weighted'. "
+                    "Please provide a value between 0.0 and 1.0."
+                )
+        return self
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "validators": [
+                    {
+                        "type": "test_pass",
+                        "config": {"command": "pytest tests/"},
+                        "weight": 1.0,
+                        "required": True
+                    },
+                    {
+                        "type": "file_exists",
+                        "config": {"path": "src/feature.ts"},
+                        "weight": 0.5,
+                        "required": False
+                    }
+                ],
+                "gate_mode": "all_pass",
+                "retry_policy": "fixed",
+                "max_retries": 3
+            }
+        }
 
 
 class AcceptanceSpecResponse(BaseModel):
-    """Response schema for an AcceptanceSpec."""
+    """Response schema for an AcceptanceSpec.
 
-    id: str
-    agent_spec_id: str
-    validators: list[dict[str, Any]]
-    gate_mode: str
-    min_score: float | None
-    retry_policy: str
-    max_retries: int
-    fallback_spec_id: str | None
+    This schema matches the database model output from AcceptanceSpec.to_dict().
+    It represents the verification gate configuration for an AgentSpec.
+
+    Example:
+        {
+            "id": "abc12345-6789-def0-1234-567890abcdef",
+            "agent_spec_id": "spec12345-6789-def0-1234-567890abcdef",
+            "validators": [
+                {"type": "test_pass", "config": {"command": "pytest"}, "weight": 1.0, "required": true}
+            ],
+            "gate_mode": "all_pass",
+            "min_score": null,
+            "retry_policy": "fixed",
+            "max_retries": 3,
+            "fallback_spec_id": null
+        }
+    """
+
+    id: str = Field(..., description="Unique identifier for this AcceptanceSpec")
+    agent_spec_id: str = Field(..., description="ID of the linked AgentSpec (unique relationship)")
+    validators: list[dict[str, Any]] = Field(
+        ...,
+        description="Array of validator configurations, each with type, config, weight, and required fields"
+    )
+    gate_mode: str = Field(
+        ...,
+        description="How validators combine: all_pass, any_pass, or weighted"
+    )
+    min_score: float | None = Field(
+        default=None,
+        description="Minimum score threshold for weighted mode (0.0-1.0)"
+    )
+    retry_policy: str = Field(
+        ...,
+        description="Retry behavior on failure: none, fixed, or exponential"
+    )
+    max_retries: int = Field(
+        ...,
+        description="Maximum retry attempts (0-10)"
+    )
+    fallback_spec_id: str | None = Field(
+        default=None,
+        description="Alternative AgentSpec ID to execute if all retries fail"
+    )
+
+    @field_validator("gate_mode", mode="before")
+    @classmethod
+    def validate_response_gate_mode(cls, v: str) -> str:
+        """Validate gate_mode in response matches allowed values."""
+        allowed = ["all_pass", "any_pass", "weighted"]
+        if v not in allowed:
+            raise ValueError(f"gate_mode must be one of {allowed}, got '{v}'")
+        return v
+
+    @field_validator("retry_policy", mode="before")
+    @classmethod
+    def validate_response_retry_policy(cls, v: str) -> str:
+        """Validate retry_policy in response matches allowed values."""
+        allowed = ["none", "fixed", "exponential"]
+        if v not in allowed:
+            raise ValueError(f"retry_policy must be one of {allowed}, got '{v}'")
+        return v
 
     class Config:
         from_attributes = True
+        json_schema_extra = {
+            "example": {
+                "id": "abc12345-6789-def0-1234-567890abcdef",
+                "agent_spec_id": "spec12345-6789-def0-1234-567890abcdef",
+                "validators": [
+                    {"type": "test_pass", "config": {"command": "pytest tests/"}, "weight": 1.0, "required": True}
+                ],
+                "gate_mode": "all_pass",
+                "min_score": None,
+                "retry_policy": "fixed",
+                "max_retries": 3,
+                "fallback_spec_id": None
+            }
+        }
 
 
 # =============================================================================

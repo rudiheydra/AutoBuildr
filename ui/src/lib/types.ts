@@ -121,6 +121,51 @@ export interface FeatureUpdate {
 // Agent types
 export type AgentStatus = 'stopped' | 'running' | 'paused' | 'crashed' | 'loading'
 
+// ============================================================================
+// AgentRun Types (from AgentSpec execution system)
+// ============================================================================
+
+// AgentRun status - lifecycle states for an agent run
+export type AgentRunStatus = 'pending' | 'running' | 'paused' | 'completed' | 'failed' | 'timeout'
+
+// AgentRun verdict - final outcome after acceptance check
+export type AgentRunVerdict = 'passed' | 'failed' | 'partial'
+
+// AgentSpec task types
+export type AgentSpecTaskType = 'coding' | 'testing' | 'refactoring' | 'documentation' | 'audit' | 'custom'
+
+// AgentSpec summary for UI display
+export interface AgentSpecSummary {
+  id: string
+  name: string
+  display_name: string
+  icon: string | null
+  task_type: AgentSpecTaskType
+  max_turns: number
+  source_feature_id: number | null
+}
+
+// AgentRun for UI display
+export interface AgentRun {
+  id: string
+  agent_spec_id: string
+  status: AgentRunStatus
+  started_at: string | null
+  completed_at: string | null
+  turns_used: number
+  tokens_in: number
+  tokens_out: number
+  final_verdict: AgentRunVerdict | null
+  error: string | null
+  retry_count: number
+}
+
+// Combined AgentSpec + Run for DynamicAgentCard
+export interface DynamicAgentData {
+  spec: AgentSpecSummary
+  run: AgentRun | null
+}
+
 export interface AgentStatusResponse {
   status: AgentStatus
   pid: number | null
