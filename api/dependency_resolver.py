@@ -7,7 +7,10 @@ Includes cycle detection, validation, and helper functions for dependency manage
 """
 
 import heapq
+import logging
 from typing import TypedDict
+
+_logger = logging.getLogger(__name__)
 
 # Security: Prevent DoS via excessive dependencies
 MAX_DEPENDENCIES_PER_FEATURE = 20
@@ -362,6 +365,7 @@ def _detect_cycles_for_validation(
     """Detect cycles in the dependency graph for validation purposes.
 
     Similar to _detect_cycles but returns unique cycles without duplicates.
+    Enforces iteration limit of len(features) * 2 to prevent infinite loops.
 
     Args:
         features: List of features to check for cycles
@@ -376,14 +380,33 @@ def _detect_cycles_for_validation(
     path: list[int] = []
     found_cycles: set[tuple[int, ...]] = set()  # Track unique cycles
 
+    # Iteration limit to prevent infinite loops
+    max_iterations = len(features) * 2
+    iteration_count = [0]  # Use list to allow mutation in nested function
+    limit_exceeded = [False]
+
     def dfs(fid: int) -> None:
+        # Check iteration limit
+        iteration_count[0] += 1
+        if iteration_count[0] > max_iterations:
+            if not limit_exceeded[0]:
+                _logger.error(
+                    "_detect_cycles_for_validation: DFS iteration limit exceeded "
+                    f"(limit={max_iterations}, features={len(features)}). "
+                    "Returning partial results."
+                )
+                limit_exceeded[0] = True
+            return
+
         visited.add(fid)
         rec_stack.add(fid)
         path.append(fid)
 
         feature = feature_map.get(fid)
-        if feature:
+        if feature and not limit_exceeded[0]:
             for dep_id in feature.get("dependencies") or []:
+                if limit_exceeded[0]:
+                    break
                 # Skip self-references (handled separately)
                 if dep_id == fid:
                     continue
@@ -411,6 +434,8 @@ def _detect_cycles_for_validation(
         rec_stack.remove(fid)
 
     for f in features:
+        if limit_exceeded[0]:
+            break
         if f["id"] not in visited:
             dfs(f["id"])
 
@@ -419,6 +444,8 @@ def _detect_cycles_for_validation(
 
 def _detect_cycles(features: list[dict], feature_map: dict) -> list[list[int]]:
     """Detect cycles using DFS with recursion tracking.
+
+    Enforces iteration limit of len(features) * 2 to prevent infinite loops.
 
     Args:
         features: List of features to check for cycles
@@ -432,14 +459,33 @@ def _detect_cycles(features: list[dict], feature_map: dict) -> list[list[int]]:
     rec_stack: set[int] = set()
     path: list[int] = []
 
+    # Iteration limit to prevent infinite loops
+    max_iterations = len(features) * 2
+    iteration_count = [0]  # Use list to allow mutation in nested function
+    limit_exceeded = [False]
+
     def dfs(fid: int) -> bool:
+        # Check iteration limit
+        iteration_count[0] += 1
+        if iteration_count[0] > max_iterations:
+            if not limit_exceeded[0]:
+                _logger.error(
+                    "_detect_cycles: DFS iteration limit exceeded "
+                    f"(limit={max_iterations}, features={len(features)}). "
+                    "Returning partial results."
+                )
+                limit_exceeded[0] = True
+            return False
+
         visited.add(fid)
         rec_stack.add(fid)
         path.append(fid)
 
         feature = feature_map.get(fid)
-        if feature:
+        if feature and not limit_exceeded[0]:
             for dep_id in feature.get("dependencies") or []:
+                if limit_exceeded[0]:
+                    break
                 if dep_id not in visited:
                     if dfs(dep_id):
                         return True
@@ -453,6 +499,8 @@ def _detect_cycles(features: list[dict], feature_map: dict) -> list[list[int]]:
         return False
 
     for f in features:
+        if limit_exceeded[0]:
+            break
         if f["id"] not in visited:
             dfs(f["id"])
 
@@ -488,16 +536,43 @@ def compute_scheduling_scores(features: list[dict]) -> dict[int, float]:
                 children[dep_id].append(f["id"])
                 parents[f["id"]].append(dep_id)
 
-    # Calculate depths via BFS from roots
+    # Calculate depths via BFS from roots with iteration limit and queued tracking
+    # MAX_ITERATIONS prevents infinite loops from unexpected graph structures
+    # queued_depths tracks the best (highest) depth we've queued for each node
+    # to prevent redundant queue entries while still allowing depth updates
+    max_iterations = len(features) * 2
+    iteration_count = 0
+
     depths: dict[int, int] = {}
+    queued_depths: dict[int, int] = {}  # Track highest depth queued for each node
     roots = [f["id"] for f in features if not parents[f["id"]]]
     queue = [(root, 0) for root in roots]
+
+    # Mark roots as queued initially
+    for root in roots:
+        queued_depths[root] = 0
+
     while queue:
+        # Check iteration limit to prevent infinite loops
+        iteration_count += 1
+        if iteration_count > max_iterations:
+            _logger.error(
+                "compute_scheduling_scores: BFS iteration limit exceeded - "
+                f"algorithm=BFS, iterations={iteration_count}, "
+                f"limit={max_iterations}, feature_count={len(features)}. "
+                "Possible cycle or unexpected graph structure. Returning partial results."
+            )
+            break
+
         node_id, depth = queue.pop(0)
         if node_id not in depths or depth > depths[node_id]:
             depths[node_id] = depth
         for child_id in children[node_id]:
-            queue.append((child_id, depth + 1))
+            new_depth = depth + 1
+            # Only queue if we haven't seen this node or found a longer path
+            if child_id not in queued_depths or new_depth > queued_depths[child_id]:
+                queued_depths[child_id] = new_depth
+                queue.append((child_id, new_depth))
 
     # Handle orphaned nodes (shouldn't happen but be safe)
     for f in features:
