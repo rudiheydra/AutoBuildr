@@ -1,0 +1,3 @@
+# This directory stores AutoBuildr artifacts
+# - artifacts/{run_id}/{hash}.blob - Large content files (>4KB)
+# The artifacts directory is automatically created and managed by AutoBuildr
