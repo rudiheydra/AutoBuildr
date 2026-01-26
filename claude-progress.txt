@@ -1,6 +1,60 @@
 # AutoBuildr Progress Log
 # ======================
 
+## Session: 2026-01-27 (Coding Agent - Feature #69)
+
+### Feature #69: Artifact List Component - COMPLETED
+
+**Status:** PASSING
+
+**Category:** O. Responsive and Layout
+
+**Description:** Create Artifact List component with type filtering, preview, and download functionality.
+
+**Dependencies:**
+- Feature #20 (GET /api/agent-runs/:id/artifacts List Artifacts) - PASSING
+- Feature #21 (GET /api/artifacts/:id/content Download Content) - PASSING
+- Feature #68 (Event Timeline Component) - PASSING
+
+**Implementation Summary:**
+
+Implemented all 8 verification steps for the Artifact List Component:
+
+1. Create ArtifactList.tsx component - Full React component with TypeScript types
+2. Props: runId (string) - Component accepts runId prop plus optional onArtifactClick callback
+3. Fetch artifacts via GET /api/agent-runs/:id/artifacts - Uses getRunArtifacts API function
+4. Filter dropdown by artifact_type - FilterDropdown component with all 5 artifact types
+5. Show artifact metadata: type, path, size - ArtifactCard component displays all metadata
+6. Preview button for inline content - PreviewModal for viewing content with Eye icon
+7. Download button linking to /api/artifacts/:id/content - Direct download links
+8. Handle empty state gracefully - Shows appropriate message when no artifacts exist
+
+**Key Implementation Details:**
+- Created ArtifactList.tsx with 500 lines of well-documented code
+- Added ARTIFACT_TYPE_CONFIG with icons, colors, and labels for each type
+- Implemented FilterDropdown for type filtering with proper state management
+- Created ArtifactCard sub-component for rendering individual artifacts
+- PreviewModal component for inline content viewing with loading/error states
+- formatSize() and formatPath() utility functions for display formatting
+- Added Artifact, ArtifactType, and ArtifactListResponse types to types.ts
+- Added getRunArtifacts() and getArtifactContentUrl() to api.ts
+
+**Verification Results:**
+- tests/verify_feature_69.py: 25/25 checks PASS
+- tests/test_feature_69_artifact_list.py: 41/41 tests PASS
+
+**Browser Testing:**
+- Browser automation unavailable (Playwright launch failed)
+- Component implementation verified through static code analysis
+- All TypeScript compilation passes (npm run build)
+- Unit tests comprehensively cover all feature requirements
+
+**Current Progress:** 47/103 features passing (45.6%)
+
+**Commit:** fbd09a1 - Implement Artifact List Component (Feature #69)
+
+---
+
 ## Session: 2026-01-27 (Coding Agent - Feature #28)
 
 ### Feature #28: Timeout Seconds Wall-Clock Enforcement - COMPLETED
@@ -3868,3 +3922,198 @@ Modified: api/harness_kernel.py
 - Feature #29: Token Usage Tracking - PASSING
 
 **Session completed successfully.**
+[Testing] 2026-01-27 08:55:18 - Feature #6 regression test PASSED
+  - Feature: Database Migration Preserves Existing Features
+  - Verification script: 6/6 steps pass
+  - Unit tests: 34/34 tests pass
+  - All verification steps confirmed working:
+    - Step 1: Create test features.db with sample Feature records
+    - Step 2: Run _migrate_add_agentspec_tables migration
+    - Step 3: Original Feature records preserved with unchanged data
+    - Step 4: features table schema unmodified (9 columns, 5 indexes)
+    - Step 5: Migration is idempotent (runs twice without errors)
+    - Step 6: New tables created only if missing (agent_specs, acceptance_specs, agent_runs, artifacts, agent_events)
+  - No regression found - feature still working correctly
+
+---
+
+## Session: 2026-01-27 (Coding Agent - Feature #34)
+
+### Feature #34: forbidden_patterns Acceptance Validator - COMPLETED
+
+**Status:** PASSING
+
+**Category:** D. Workflow Completeness
+
+**Description:** Implement forbidden_patterns validator that ensures agent output does not contain forbidden regex patterns.
+
+**Dependencies:** 
+- #2: AcceptanceSpec SQLite Table Schema (PASSING)
+- #5: AgentEvent SQLite Table Schema (PASSING)
+- #26: AgentRun Status Transition State Machine (PASSING)
+
+**Verification Summary (8 Steps):**
+
+- Step 1: Create ForbiddenPatternsValidator class - PASS
+  - Class created extending Validator ABC
+  - validator_type = "forbidden_patterns"
+  - Registered in VALIDATOR_REGISTRY
+  - get_validator('forbidden_patterns') returns instance
+
+- Step 2: Extract patterns array from validator config - PASS
+  - Returns failure for missing patterns field
+  - Returns failure for patterns=None
+  - Returns failure for patterns not a list
+  - Returns success for empty patterns list
+  - Patterns extracted correctly from config
+
+- Step 3: Compile patterns as regex - PASS
+  - Returns failure for invalid regex with compilation errors
+  - Valid regex patterns compile successfully
+  - Case-sensitive matching by default
+  - case_sensitive=False option for case-insensitive matching
+
+- Step 4: Query all tool_result events for the run - PASS
+  - Returns failure when run is None
+  - Only tool_result events checked (not started/tool_call/completed)
+  - All tool_result events are processed
+
+- Step 5: Check each payload against all patterns - PASS
+  - String payloads checked correctly
+  - Dict payloads recursively searched
+  - Nested dict payloads searched
+  - List values in dicts searched
+  - Multiple patterns all checked
+
+- Step 6: If any match found, return passed = false - PASS
+  - Single match returns passed=False, score=0.0
+  - Multiple matches all recorded
+
+- Step 7: Include matched pattern and context in result - PASS
+  - Match includes event_id
+  - Match includes event_sequence
+  - Match includes tool_name
+  - Match includes pattern
+  - Match includes matched_text
+  - Match includes context around match
+
+- Step 8: Return passed = true if no matches - PASS
+  - Returns passed=True when no patterns match
+  - Returns score=1.0
+  - Details include events_checked count
+  - Details include patterns_checked list
+  - Result has validator_type="forbidden_patterns"
+
+**Implementation Details:**
+
+Created ForbiddenPatternsValidator in api/validators.py:
+- Extends Validator ABC with evaluate() method
+- Extracts patterns from config and validates them
+- Compiles patterns as regex with optional case-insensitivity
+- Queries tool_result events from AgentRun.events relationship
+- Searches string, dict, and nested payloads using helper functions
+- Returns detailed match information including context
+
+Helper functions:
+- _dict_to_searchable_text(): Recursively converts dict to searchable string
+- _get_match_context(): Returns context around regex match
+
+**Test Results:**
+- tests/test_feature_34_forbidden_patterns_validator.py: 56/56 tests PASS
+  - TestStep1ForbiddenPatternsValidatorClass: 6 tests
+  - TestStep2ExtractPatternsFromConfig: 5 tests
+  - TestStep3CompilePatternsAsRegex: 5 tests
+  - TestStep4QueryToolResultEvents: 4 tests
+  - TestStep5CheckPayloadsAgainstPatterns: 6 tests
+  - TestStep6ReturnPassedFalseOnMatch: 3 tests
+  - TestStep7IncludeMatchedPatternAndContext: 6 tests
+  - TestStep8ReturnPassedTrueNoMatches: 4 tests
+  - TestEvaluateValidatorIntegration: 2 tests
+  - TestDescriptionInMessages: 2 tests
+  - TestHelperFunctions: 5 tests
+  - TestValidatorType: 3 tests
+  - TestEdgeCases: 5 tests
+
+- tests/verify_feature_34.py: All 8 verification steps PASS
+  - 35 individual checks across 8 steps
+
+- Integration with evaluate_acceptance_spec: PASS
+  - Safe output correctly passes validation
+  - Dangerous output correctly fails validation
+  - Match details correctly reported
+
+**Files Created:**
+- tests/test_feature_34_forbidden_patterns_validator.py: Comprehensive test suite (673 lines)
+- tests/verify_feature_34.py: Feature verification script (271 lines)
+
+**Files Modified:**
+- api/validators.py: Added ForbiddenPatternsValidator class (~215 lines added)
+
+**Commit:** f9f7cfc - "feat: Implement forbidden_patterns Acceptance Validator - Feature #34"
+
+---
+
+**Updated Progress:**
+- Total: 48/103 features passing (approximately 46.6%)
+- Feature #34: forbidden_patterns Acceptance Validator - PASSING
+
+**Session completed successfully.**
+
+---
+
+## Session: 2026-01-27 (Coding Agent - Feature #37)
+
+### Feature #37: StaticSpecAdapter for Legacy Coding Agent - COMPLETED
+
+**Status:** PASSING
+
+**Category:** K. Default & Reset
+
+**Description:** Wrap the existing coding agent as a static AgentSpec with security-restricted tool_policy.
+
+**Dependencies:** [1, 2, 7] - All passing (AgentSpec SQLite Table Schema, AcceptanceSpec SQLite Table Schema, AgentSpec Pydantic Schemas)
+
+**Verification Summary (11 Steps):**
+
+- Step 1: Define create_coding_spec(feature_id) method - PASS
+- Step 2: Load coding agent prompt from prompts/ - PASS
+- Step 3: Interpolate feature details into objective - PASS
+- Step 4: Set task_type to coding - PASS
+- Step 5: Configure tool_policy with code editing tools - PASS
+- Step 6: Include allowed bash commands from security.py allowlist - PASS
+- Step 7: Set forbidden_patterns for dangerous operations - PASS
+- Step 8: Set max_turns appropriate for implementation - PASS
+- Step 9: Create AcceptanceSpec with test_pass and lint_clean validators - PASS
+- Step 10: Link source_feature_id to feature - PASS
+- Step 11: Return static AgentSpec - PASS
+
+**Implementation Details:**
+
+Modified api/static_spec_adapter.py:
+- Added test_pass validator with pytest/npm test command
+- Added lint_clean validator with npm lint/ruff check command
+- Added Bash tool hint documenting security.py integration
+- Added comments explaining security allowlist
+
+**Test Results:**
+- tests/test_feature_37_coding_spec_adapter.py: 53/53 tests PASS
+- tests/test_static_spec_adapter.py: 45/45 tests PASS (no regressions)
+- tests/verify_feature_37.py: All 11 verification steps PASS
+
+**Files Modified:**
+- api/static_spec_adapter.py: Added validators and tool hints
+
+**Files Created:**
+- tests/test_feature_37_coding_spec_adapter.py: 53 comprehensive tests
+- tests/verify_feature_37.py: Feature verification script
+
+**Commit:** bede992 - "feat: Implement Feature #37 - StaticSpecAdapter for Legacy Coding Agent"
+
+---
+
+**Updated Progress:**
+- Total: 49/103 features passing (approximately 47.6%)
+- Feature #37: StaticSpecAdapter for Legacy Coding Agent - PASSING
+
+**Session completed successfully.**
+
