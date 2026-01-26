@@ -1,6 +1,74 @@
 # AutoBuildr Progress Log
 # ======================
 
+## Session: 2026-01-27 (Coding Agent - Feature #23)
+
+### Feature #23: POST /api/agent-runs/:id/resume Resume Agent - COMPLETED
+
+**Status:** PASSING
+
+**Category:** D. Workflow Completeness
+
+**Description:** Implement POST /api/agent-runs/:id/resume endpoint to resume a paused agent.
+
+**Dependencies:** [3, 5, 9] - All passing
+- Feature #3: AgentRun SQLite Table Schema
+- Feature #5: AgentEvent SQLite Table Schema
+- Feature #9: AgentRun Pydantic Response Schema
+
+**Verification Steps (All Passed):**
+
+1. Define FastAPI route POST /api/agent-runs/{run_id}/resume - PASS
+2. Query AgentRun by id - PASS
+3. Return 404 if not found - PASS
+4. Return 409 Conflict if status is not paused - PASS
+5. Update status to running - PASS
+6. Record resumed AgentEvent - PASS
+7. Commit transaction - PASS
+8. Signal kernel to resume - PASS
+9. Return updated AgentRunResponse - PASS
+
+**Implementation Summary:**
+
+The resume endpoint was already implemented in server/routers/agent_runs.py
+(lines 591-731). The implementation includes:
+
+1. Route definition at POST /api/agent-runs/{run_id}/resume
+2. AgentRun lookup using get_agent_run() from api.agentspec_crud
+3. 404 error for non-existent runs with run_id in message
+4. 409 Conflict when status is not 'paused' (with current status in message)
+5. Status update to 'running' via run.resume() state machine method
+6. Recording 'resumed' AgentEvent with payload containing:
+   - previous_status: "paused"
+   - new_status: "running"
+   - turns_used, tokens_in, tokens_out
+7. Transaction committed with db.commit()
+8. Event broadcaster called for UI updates
+9. Full AgentRunResponse returned with all fields
+
+**API Testing Results (curl on port 8899):**
+
+- Resume paused run: 200 OK, status changed to "running"
+- Non-existent run: 404 with "not found" message
+- Already running run: 409 with "must be 'paused'" message
+- Event timeline shows 'resumed' event with correct payload
+
+**Tests Created:**
+
+- tests/test_feature_23_resume_agent_run.py: Comprehensive test suite (47 tests)
+- tests/verify_feature_23.py: Step-by-step verification script
+- tests/check_router_feature23.py: Router configuration checker
+
+**Commit:** 38239b0 - "feat: Verify Feature #23 - POST /api/agent-runs/:id/resume endpoint"
+
+---
+
+**Updated Progress:**
+- Total: 67/103 features passing (65.0%)
+- Feature #23: POST /api/agent-runs/:id/resume Resume Agent - PASSING
+
+---
+
 ## Session: 2026-01-27 (Coding Agent - Feature #22)
 
 ### Feature #22: POST /api/agent-runs/:id/pause Pause Agent - COMPLETED
@@ -5057,3 +5125,21 @@ Key design decisions:
 - Feature #17: GET /api/agent-runs List Runs Endpoint - PASSING (verified)
 
 **Session completed successfully.**
+[Testing] 2026-01-27 09:30:00 - Feature #21 regression test PASSED
+  - Feature: GET /api/artifacts/:id/content Download Content
+  - Verification: All 8 steps pass
+  - Unit tests: 22/22 tests pass
+  - Artifact storage tests: 33/33 pass
+  - Artifact list tests (Feature #69): 41/41 pass
+  - API verification: 404 response for non-existent artifact confirmed
+  - All verification steps confirmed working:
+    - Step 1: FastAPI route GET defined at correct path
+    - Step 2: Query Artifact by id works correctly
+    - Step 3: Return 404 if not found (verified via API)
+    - Step 4: Inline content returned as response body
+    - Step 5: Content_ref file existence verification
+    - Step 6: File streaming with appropriate Content-Type
+    - Step 7: Content-Disposition header set for download
+    - Step 8: Missing file handled gracefully with 404
+  - Note: Browser automation unavailable - verified via API and unit tests
+  - No regression found - feature still working correctly
