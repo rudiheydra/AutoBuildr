@@ -454,3 +454,106 @@
 - API endpoints for AgentSpec/AgentRun CRUD operations
 - HarnessKernel.execute() implementation
 
+
+## Regression Test Session: 2026-01-27 03:00
+
+### Feature #3: AgentRun SQLite Table Schema - VERIFIED (No Regression)
+
+**Test Results:**
+- Step 1: PRAGMA table_info(agent_runs) shows 13 columns - PASS
+- Step 2: id column is VARCHAR(36) primary key - PASS
+- Step 3: agent_spec_id foreign key references agent_specs.id ON DELETE CASCADE - PASS
+- Step 4: status column is VARCHAR(20) - PASS
+- Step 5: started_at and completed_at columns are DATETIME nullable - PASS
+- Step 6: turns_used, tokens_in, tokens_out columns are INTEGER - PASS
+- Step 7: final_verdict column is VARCHAR(20) nullable - PASS
+- Step 8: acceptance_results stores valid JSON - PASS
+- Step 9: error column is TEXT nullable - PASS
+- Step 10: retry_count column is INTEGER - PASS
+- Step 11: indexes ix_agentrun_spec, ix_agentrun_status exist - PASS
+
+**Additional Verification:**
+- CHECK constraints verified:
+  - ck_run_turns CHECK (turns_used >= 0) - PASS
+  - ck_run_tokens_in CHECK (tokens_in >= 0) - PASS
+  - ck_run_tokens_out CHECK (tokens_out >= 0) - PASS
+  - ck_run_retry CHECK (retry_count >= 0) - PASS
+- ORM model AgentRun imports correctly with all 12 required attributes - PASS
+
+**Conclusion:** Feature #3 passes all verification steps. No regression detected.
+
+[Testing] Feature #3 verified - still passing
+
+
+---
+
+### Feature #10: Artifact and AgentEvent Pydantic Schemas - COMPLETED
+
+**Status:** PASSING
+
+**Category:** M. Form Validation
+
+**Description:** Create Pydantic models for Artifact and AgentEvent responses. Validate artifact_type and event_type enums.
+
+**Verification Summary:**
+- Step 1: ArtifactResponse with all Artifact fields - PASS
+  - All 10 required fields defined: id, run_id, artifact_type, path, content_ref, content_hash, size_bytes, created_at, metadata, content_inline
+  - Can create ArtifactResponse instance with all fields
+- Step 2: Field validator for artifact_type enum - PASS
+  - All valid types accepted: file_change, test_result, log, metric, snapshot
+  - Invalid types properly rejected with ValidationError
+- Step 3: has_inline_content computed property - PASS
+  - Returns True when content_inline is not None and not empty
+  - Returns False when content_inline is None
+  - Returns False when content_inline is empty string
+- Step 4: AgentEventResponse with all AgentEvent fields - PASS
+  - All 9 required fields defined: id, run_id, event_type, timestamp, sequence, payload, payload_truncated, artifact_ref, tool_name
+  - Can create AgentEventResponse instance with all fields
+- Step 5: Field validator for event_type enum - PASS
+  - All 9 valid types accepted: started, tool_call, tool_result, turn_complete, acceptance_check, completed, failed, paused, resumed
+  - Invalid types properly rejected with ValidationError
+- Step 6: AgentEventListResponse for timeline queries - PASS
+  - All 6 fields defined: events, total, run_id, start_sequence, end_sequence, has_more
+  - Can create timeline response with list of events
+  - Exported from server.schemas package
+
+**Implementation Details:**
+- Enhanced ArtifactResponse with:
+  - Field validators for artifact_type enum
+  - has_inline_content computed property
+  - Comprehensive docstrings with JSON schema examples
+- Enhanced AgentEventResponse with:
+  - Field validators for event_type enum
+  - Comprehensive docstrings with examples
+- Added new AgentEventListResponse class for timeline queries:
+  - Designed for Run Inspector UI timeline display
+  - Includes run_id, start_sequence, end_sequence for navigation
+  - has_more boolean for pagination
+
+**Files Modified:**
+- `server/schemas/agentspec.py`: Enhanced ArtifactResponse and AgentEventResponse, added AgentEventListResponse
+- `server/schemas/__init__.py`: Added AgentEventListResponse to exports
+
+**Files Added:**
+- `tests/verify_feature_10.py`: Feature verification script (all 6 steps pass)
+
+**Commit:** e7f057d - "Implement Artifact and AgentEvent Pydantic schemas (Feature #10)"
+
+---
+
+**Current Progress:**
+- Feature #1: AgentSpec SQLite Table Schema - PASSING
+- Feature #2: AcceptanceSpec SQLite Table Schema - PASSING
+- Feature #3: AgentRun SQLite Table Schema - PASSING
+- Feature #4: Artifact SQLite Table Schema - PASSING
+- Feature #5: AgentEvent SQLite Table Schema - PASSING
+- Feature #7: AgentSpec Pydantic Request/Response Schemas - PASSING
+- Feature #9: AgentRun Pydantic Response Schema - PASSING
+- Feature #10: Artifact and AgentEvent Pydantic Schemas - PASSING
+- Feature #26: AgentRun Status Transition State Machine - PASSING
+- Total: 9/85 features passing (approximately 10.6%)
+
+**Next Steps:**
+- Continue with Form Validation features (remaining Pydantic schemas)
+- AcceptanceSpec Pydantic schemas
+- API endpoints for AgentSpec/AgentRun CRUD operations
