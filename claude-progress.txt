@@ -5220,3 +5220,224 @@ Key design decisions:
     - Step 10: source_feature_id linked to feature
     - Step 11: Returns static AgentSpec instance
   - No regression found - feature still working correctly
+[Testing] 2026-01-27 09:33:00 - Feature #5 regression test PASSED
+  - Feature: AgentEvent SQLite Table Schema
+  - Verification: All 10 steps pass
+  - Migration tests: 8/8 tests pass (test_agentspec_migration.py)
+  - Schema tests: 24/24 tests pass (test_agentspec_schemas.py)
+  - All verification steps confirmed working:
+    - Step 1: Table exists with 9 columns (id, run_id, event_type, timestamp, sequence, payload, payload_truncated, artifact_ref, tool_name)
+    - Step 2: id is INTEGER PRIMARY KEY (SQLite implicit autoincrement)
+    - Step 3: run_id FK to agent_runs.id with ON DELETE CASCADE
+    - Step 4: sequence is INTEGER NOT NULL
+    - Step 5: event_type is VARCHAR(50) NOT NULL
+    - Step 6: timestamp is DATETIME NOT NULL
+    - Step 7: payload is JSON nullable
+    - Step 8: artifact_ref is VARCHAR(36) nullable
+    - Step 9: tool_name is VARCHAR(100) nullable
+    - Step 10: Indexes exist: ix_event_run_sequence, ix_event_timestamp, ix_event_tool
+  - Note: Browser automation unavailable - verified via Python/SQLAlchemy and unit tests
+  - No regression found - feature still working correctly
+
+---
+
+## Session: 2026-01-27 (Coding Agent - Feature #32)
+
+### Feature #32: test_pass Acceptance Validator - COMPLETED
+
+**Status:** PASSING
+
+**Category:** D. Workflow Completeness
+
+**Description:** Implement test_pass validator that runs a shell command and checks exit code for acceptance testing.
+
+**Dependencies:** [2, 26] - Both passing
+- Feature #2: AcceptanceSpec SQLite Table Schema
+- Feature #26: AgentRun Status Transition State Machine
+
+**Verification Summary (11 Steps - All Passed):**
+
+1. Create TestPassValidator class implementing Validator interface - PASS
+   - Class is subclass of Validator
+   - Has validator_type = "test_pass"
+   - Registered in VALIDATOR_REGISTRY
+
+2. Extract command from validator config - PASS
+   - Required field validation
+   - Variable interpolation support ({var_name})
+
+3. Extract expected_exit_code (default 0) - PASS
+   - Default value is 0
+   - Supports int and string values
+
+4. Extract timeout_seconds (default 60) - PASS
+   - Default value is 60 seconds
+   - Range limited to 1-3600 seconds
+
+5. Execute command via subprocess with timeout - PASS
+   - shell=True for pipe/redirect support
+   - Working directory support
+   - project_dir as default working directory
+
+6. Capture stdout and stderr - PASS
+   - Both captured in result details
+   - Large output truncated to 4KB
+
+7. Compare exit code to expected - PASS
+   - Exact comparison for pass/fail
+   - actual_exit_code in details
+
+8. Return ValidatorResult with passed boolean - PASS
+   - Proper ValidatorResult instance
+   - Score 1.0 for pass, 0.0 for fail
+
+9. Include command output in result message - PASS
+   - Exit codes in message
+   - Description appended if provided
+   - stdout/stderr in details
+
+10. Handle timeout as failure - PASS
+    - TimeoutExpired exception caught
+    - error="timeout" in details
+    - Descriptive message
+
+11. Handle command not found as failure - PASS
+    - Exit code 127 for shell=True
+    - Proper error handling
+
+**Test Results:**
+- tests/test_feature_32_test_pass_validator.py: 73/73 tests PASS
+- tests/verify_feature_32.py: 11/11 verification steps PASS
+- Related validator tests: 99/99 PASS (no regressions)
+
+**Files Created:**
+- tests/test_feature_32_test_pass_validator.py: Comprehensive test suite (73 tests)
+- tests/verify_feature_32.py: Feature verification script
+
+**Files Modified:**
+- api/validators.py: Added TestPassValidator class (~300 lines)
+
+**Commit:** cf93056 - "feat: Implement test_pass Acceptance Validator (Feature #32)"
+
+---
+
+**Updated Progress:**
+- Total: 68/103 features passing (approximately 66.0%)
+- Feature #32: test_pass Acceptance Validator - PASSING
+
+**Session completed successfully.**
+[Testing] 2026-01-27 09:36:00 - Feature #20 regression test PASSED
+  - Feature: GET /api/agent-runs/:id/artifacts List Artifacts
+  - Verification: All 6 steps pass
+  - Unit tests: 16/16 tests pass (test_feature_20_unit.py)
+  - All verification steps confirmed working:
+    - Step 1: FastAPI route GET /api/agent-runs/{run_id}/artifacts defined
+    - Step 2: artifact_type query parameter with description
+    - Step 3: Artifacts queried by run_id via list_artifacts function
+    - Step 4: artifact_type filtering with validation (5 valid types)
+    - Step 5: content_inline excluded, has_inline_content boolean present
+    - Step 6: Returns ArtifactListResponse with ArtifactListItemResponse list
+  - API verification: 404 response for non-existent run confirmed
+  - Note: Browser automation unavailable - verified via API and unit tests
+  - Note: E2E tests have fixture issues (missing run_id fixture), but core functionality verified
+  - No regression found - feature still working correctly
+
+## Session: Feature #35 - Acceptance Gate Orchestration
+Date: 2025-01-27
+
+### Completed
+- Implemented AcceptanceGate class in api/validators.py
+- AcceptanceGate.evaluate(run, acceptance_spec) method orchestrates validators
+- Gate modes implemented: all_pass, any_pass (weighted reserved for future)
+- Required validator enforcement: required=True validators must always pass
+- GateResult dataclass captures evaluation results
+- evaluate_and_update_run() method updates AgentRun.final_verdict and acceptance_results
+- Added exports to api/__init__.py
+- Created comprehensive test suite (36 tests, all passing)
+- Created verification script (11 steps, all passing)
+- Feature marked as passing
+
+### Technical Details
+- AcceptanceGate follows existing validator infrastructure patterns
+- Works with both SQLAlchemy models and dict-based specs
+- Proper logging integrated throughout
+- Per-validator results include: index, type, passed, message, score, required, weight, details
+
+### Statistics
+- 68/103 features passing (66.0%)
+- Feature #35 marked as passing
+
+[Testing] 2026-01-27 09:39:03 - Feature #65 regression test PASSED
+  - Feature: AgentRun Status Color Coding
+  - Verification: All 9 steps pass (via code inspection)
+  - Browser automation unavailable - verified via code analysis
+  - All verification steps confirmed working:
+    - Step 1: Status color map defined in design tokens (lines 70-93 in globals.css)
+    - Step 2: pending: #6b7280 text, #f3f4f6 bg (gray-500/gray-100) - PASS
+    - Step 3: running: #3b82f6 text, #dbeafe bg (blue-500/blue-100) + statusPulse animation - PASS
+    - Step 4: paused: #d97706 text, #fef3c7 bg (amber-600/amber-100) - PASS
+    - Step 5: completed: #22c55e text, #dcfce7 bg (green-500/green-100) - PASS
+    - Step 6: failed: #ef4444 text, #fee2e2 bg (red-500/red-100) - PASS
+    - Step 7: timeout: #f97316 text, #ffedd5 bg (orange-500/orange-100) - PASS
+    - Step 8: Status badge applied in DynamicAgentCard via neo-status-{status} class - PASS
+    - Step 9: Progress bar fill color via neo-progress-fill-{status} class - PASS
+  - Dark mode variants also defined (lines 222-245)
+  - AgentRunStatus type includes all 6 statuses
+  - No regression found - feature still working correctly
+
+## Session: Feature #40 Implementation (2026-01-27)
+
+### Feature #40: ToolPolicy Allowed Tools Filtering
+- **Status**: COMPLETED AND PASSING
+- **Dependencies**: #1 (AgentSpec SQLite Table Schema), #26 (AgentRun Status Transition)
+
+### Implementation Summary
+
+Added comprehensive tool filtering functionality to `api/tool_policy.py`:
+
+1. **ToolDefinition dataclass**: Represents a tool definition for the Claude SDK
+   - Properties: name, description, input_schema, metadata
+   - to_dict() method for serialization
+
+2. **ToolFilterResult dataclass**: Contains filtered tools and filtering metadata
+   - Properties: filtered_tools, allowed_count, total_count, filtered_out, invalid_tools, mode
+   - Properties: all_allowed, has_invalid_tools
+   - to_dict() method for serialization
+
+3. **extract_allowed_tools(tool_policy)**: Extract allowed_tools from tool_policy dict
+   - Handles None, empty dicts, missing keys, empty lists
+   - Filters non-string entries with warnings
+   - Strips whitespace from tool names
+
+4. **validate_tool_names(tool_names, available_tools)**: Verify tool names exist
+   - Returns tuple of (valid_tools, invalid_tools)
+   - Case-sensitive matching
+
+5. **filter_tools(available_tools, allowed_tools, spec_id)**: Core filtering function
+   - Accepts ToolDefinition objects or dicts
+   - Logs filtered tools at INFO level
+   - Logs filtered-out tools at DEBUG level
+   - Logs invalid tool names with WARNING
+
+6. **filter_tools_for_spec(spec, available_tools)**: Convenience function
+   - Extracts allowed_tools from spec.tool_policy
+   - Calls filter_tools with spec.id for logging
+
+7. **get_filtered_tool_names(tool_policy, available_names, spec_id)**: Lightweight version
+   - Works with just tool names, not full definitions
+
+### All 6 Feature Steps Verified:
+1. ✅ Extract allowed_tools from spec.tool_policy
+2. ✅ If None or empty, allow all available tools  
+3. ✅ If list provided, filter tools to only include those in list
+4. ✅ Log which tools are available to agent
+5. ✅ Verify filtered tools are valid MCP tool names
+6. ✅ Return filtered tool definitions to Claude SDK
+
+### Testing:
+- Created 54 comprehensive tests in `tests/test_feature_40_tool_filtering.py`
+- Created verification script `tests/verify_feature_40.py`
+- All tests pass, all existing tool_policy tests still pass
+
+### Current Progress:
+- 71/103 features passing (68.9%)
