@@ -3354,3 +3354,257 @@ The feature was already implemented with:
 - Feature #103: Optional UI banner shows when dependency issues detected at startup - PASSING
 
 **Session completed successfully.**
+[Testing] 2026-01-27 08:44:42 - Feature #87 regression test PASSED
+  - Feature: Core validate_dependency_graph function detects simple cycles
+  - Verification script: All 5 steps pass
+  - Unit tests: 13/13 tests pass
+  - Cycle detection: [[1, 2]] correctly detected for A -> B -> A
+  - Issue type: auto_fixable=False (requires_user_action=True)
+  - No regression found - feature still working correctly
+
+
+---
+
+## Session: 2026-01-27 (Coding Agent - Feature #13)
+
+### Feature #13: GET /api/agent-specs/:id Get Single AgentSpec - COMPLETED
+
+**Status:** PASSING
+
+**Category:** F. UI-Backend Integration
+
+**Description:** Implement GET /api/agent-specs/:id endpoint to retrieve a single AgentSpec by UUID with linked AcceptanceSpec.
+
+**Dependencies:** [1, 2, 7] - All passing
+
+**Verification Summary (5 Steps):**
+
+- Step 1: Define FastAPI route GET /api/agent-specs/{spec_id} - PASS
+  - Route defined at lines 459-578 in server/routers/agent_specs.py
+  - Uses response model AgentSpecWithAcceptanceResponse
+  - Includes full OpenAPI documentation with response examples
+
+- Step 2: Validate spec_id is valid UUID format - PASS
+  - Uses _is_valid_uuid() helper function (lines 450-456)
+  - Returns HTTP 400 with "Invalid UUID format" message for invalid input
+  - Verified via curl: "not-a-uuid" returns 400
+
+- Step 3: Query AgentSpec by id with eager load of acceptance_spec relationship - PASS
+  - Uses joinedload(AgentSpecModel.acceptance_spec) for efficient loading
+  - Single database query fetches both AgentSpec and linked AcceptanceSpec
+  - Verified: Created AcceptanceSpec and confirmed it appears in response
+
+- Step 4: Return 404 with message if not found - PASS
+  - Returns HTTP 404 with message "AgentSpec '{spec_id}' not found"
+  - Verified via curl: non-existent UUID returns 404
+
+- Step 5: Return AgentSpecResponse with nested AcceptanceSpec - PASS
+  - Response includes all 17 required fields
+  - acceptance_spec field is null when no AcceptanceSpec linked
+  - acceptance_spec contains full AcceptanceSpec when linked
+  - Includes validators array, gate_mode, retry_policy, max_retries, etc.
+
+**Implementation Details:**
+- Endpoint: GET /api/projects/{project_name}/agent-specs/{spec_id}
+- Response model: AgentSpecWithAcceptanceResponse (server/schemas/agentspec.py)
+- Database model: AgentSpec with acceptance_spec relationship (api/agentspec_models.py)
+
+**Test Results:**
+- tests/test_feature_13_get_agent_spec.py: 20/20 tests PASS
+  - TestStep1FastAPIRouteDefinition: 3 tests
+  - TestStep2UUIDValidation: 4 tests
+  - TestStep3EagerLoadAcceptanceSpec: 3 tests
+  - TestStep4Return404IfNotFound: 2 tests
+  - TestStep5ResponseWithNestedAcceptanceSpec: 3 tests
+  - TestEdgeCases: 2 tests
+  - TestSchemaDefinitions: 3 tests
+
+**Endpoint Verification via curl/httpx:**
+- GET valid UUID: HTTP 200 with full response ✅
+- GET invalid UUID: HTTP 400 with validation error ✅
+- GET non-existent UUID: HTTP 404 with not found message ✅
+- GET with linked AcceptanceSpec: Nested object included ✅
+
+**Files Modified:**
+- tests/test_feature_13_get_agent_spec.py: Fixed route path assertions (2 lines)
+
+**Files Created:**
+- tests/test_feature_13_get_agent_spec.py: Comprehensive test suite (402 lines)
+
+**Commit:** c200760 - "feat: Add comprehensive tests for Feature #13 - GET /api/agent-specs/:id"
+
+---
+
+**Updated Progress:**
+- Total: 44/103 features passing (approximately 42.7%)
+- Feature #13: GET /api/agent-specs/:id Get Single AgentSpec - PASSING
+
+**Session completed successfully.**
+
+
+---
+
+## Session: 2026-01-27 (Coding Agent - Feature #21)
+
+### Feature #21: GET /api/artifacts/:id/content Download Content - COMPLETED
+
+**Status:** PASSING
+
+**Category:** F. UI-Backend Integration
+
+**Description:** Implement GET /api/artifacts/:id/content endpoint to download artifact content either inline or from file.
+
+**Dependencies:** #4 (Artifact SQLite Table Schema), #10 (Artifact and AgentEvent Pydantic Schemas) - both passing
+
+**Verification Summary (8 Steps):**
+
+- Step 1: Define FastAPI route GET /api/artifacts/{artifact_id}/content - PASS
+  - Route exists in artifacts router
+  - GET method properly defined
+  - Router prefix: /api/artifacts
+
+- Step 2: Query Artifact by id - PASS
+  - get_artifact() called with correct artifact_id
+  - Database session properly injected
+
+- Step 3: Return 404 if not found - PASS
+  - Returns 404 status code
+  - Error message includes artifact ID
+
+- Step 4: If content_inline is set, return it as response body - PASS
+  - Returns 200 status
+  - Content body matches inline content
+  - Uses text/plain content type
+
+- Step 5: If content_ref is set, verify file exists - PASS
+  - Returns 404 for missing files
+  - Error message includes content_ref path
+
+- Step 6: Stream file content with appropriate Content-Type - PASS
+  - Returns 200 status
+  - File content streamed correctly
+  - MIME type guessed from file path
+
+- Step 7: Set Content-Disposition header for download - PASS
+  - Has Content-Disposition header
+  - Specifies attachment
+  - Includes filename from path or generated
+
+- Step 8: Handle missing file gracefully with 404 - PASS
+  - Returns 404 for empty artifacts
+  - Error message mentions "no content"
+
+**Implementation Details:**
+
+Created new artifacts router: server/routers/artifacts.py
+- download_artifact_content() endpoint
+- _guess_content_type() helper for MIME type detection
+- _generate_file_chunks() generator for streaming large files
+- Handles both inline content (<= 4KB) and file-based content
+- Sets X-Artifact-Id and X-Content-Hash headers
+
+**Test Results:**
+- tests/test_feature_21_artifacts_content_endpoint.py: 22/22 tests PASS
+  - TestRouteDefinition: 4 tests
+  - TestArtifactQuery: 1 test
+  - TestNotFoundHandling: 2 tests
+  - TestInlineContentReturn: 3 tests
+  - TestFileExistenceVerification: 2 tests
+  - TestFileStreaming: 2 tests
+  - TestContentDisposition: 4 tests
+  - TestMissingFileHandling: 2 tests
+  - TestIntegration: 2 tests
+
+**Files Created:**
+- server/routers/artifacts.py: Artifacts router (153 lines)
+- tests/test_feature_21_artifacts_content_endpoint.py: Test suite (454 lines)
+
+**Files Modified:**
+- server/routers/__init__.py: Added artifacts_router export
+- server/main.py: Registered artifacts_router
+
+**Commit:** f9efa3f - "feat: Implement GET /api/artifacts/:id/content endpoint (Feature #21)"
+
+---
+
+**Updated Progress:**
+- Total: 44/103 features passing (approximately 42.7%)
+- Feature #21: GET /api/artifacts/:id/content Download Content - PASSING
+
+**Session completed successfully.**
+[Testing] 2026-01-27 08:47:59 - Feature #16 regression test PASSED
+  - Feature: POST /api/agent-specs/:id/execute Trigger Execution
+  - Verification script: 6/6 tests pass
+  - E2E tests: 2/2 tests pass
+  - All 8 verification steps confirmed working:
+    - Step 1: POST route defined at /api/projects/{project}/agent-specs/{spec_id}/execute
+    - Step 2: AgentSpec queried by id
+    - Step 3: Returns 404 if spec not found
+    - Step 4: AgentRun created with status=pending
+    - Step 5: created_at uses UTC timestamp
+    - Step 6: Run committed to database
+    - Step 7: Background task queued and executes
+    - Step 8: Returns 202 Accepted with AgentRunResponse
+  - No regression found - feature still working correctly
+
+## Session: 2026-01-27 (Coding Agent - Feature #14)
+
+### Feature #14: PUT /api/agent-specs/:id Update AgentSpec - COMPLETED
+
+**Status:** PASSING
+
+**Category:** F. UI-Backend Integration
+
+**Description:** Implement PUT /api/agent-specs/:id endpoint to update an existing AgentSpec with partial updates.
+
+**Dependencies:** 
+- Feature #1: AgentSpec SQLite Table Schema (PASSING)
+- Feature #7: AgentSpec Pydantic Request/Response Schemas (PASSING)
+
+**Implementation Summary:**
+
+The PUT endpoint was already implemented but had a bug in tool_policy handling. Fixed and added comprehensive tests.
+
+**Verification Steps (All Passed):**
+1. Define FastAPI route PUT /api/agent-specs/{spec_id} with AgentSpecUpdate body
+2. Query existing AgentSpec by id
+3. Return 404 if not found
+4. Update only fields that are provided (not None) using exclude_unset=True
+5. Validate max_turns (1-500) and timeout_seconds (60-7200) constraints
+6. Commit transaction
+7. Return updated AgentSpecResponse
+
+**API Testing Results:**
+- POST to create test spec: SUCCESS (ID: ae4f56be-1c86-4e2e-b515-c9fce9fa9315)
+- PUT to update display_name and max_turns: SUCCESS
+- PUT to update priority, tags, timeout_seconds: SUCCESS
+- PUT with nonexistent ID: Returns 404 as expected
+- PUT with invalid max_turns (>500): Returns 422 validation error
+- PUT with invalid timeout_seconds (<60): Returns 422 validation error
+
+**Bug Fix:**
+Fixed AttributeError in tool_policy handling - the code was calling `.model_dump()` on a dict. 
+Added type check to handle both Pydantic model and dict cases.
+
+**Test Results:**
+- tests/test_feature_14_put_agent_spec.py: 32/32 tests PASS
+- tests/verify_feature_14.py: All 7 verification steps PASS
+
+**Files Created/Modified:**
+- tests/test_feature_14_put_agent_spec.py: Comprehensive test suite (484 lines, 32 tests)
+- tests/verify_feature_14.py: Feature verification script (138 lines)
+- server/routers/agent_specs.py: Bug fix for tool_policy handling
+
+**Current Progress:** 44/103 features passing (42.7%)
+[Testing] 2026-01-27 08:49:01 - Feature #43 regression test PASSED
+  - Feature: Tool Hints System Prompt Injection
+  - Verification script: 5/5 steps pass
+  - Integration tests: 2/2 tests pass
+  - Unit tests: 36/36 tests pass
+  - All verification steps confirmed working:
+    - Step 1: extract_tool_hints() correctly extracts hints from tool_policy
+    - Step 2: format_tool_hints_as_markdown() produces proper markdown formatting
+    - Step 3: build_system_prompt() appends guidelines to dedicated section
+    - Step 4: Example format matches specification exactly
+    - Bonus: inject_tool_hints_into_prompt() works with existing templates
+  - No regression found - feature still working correctly

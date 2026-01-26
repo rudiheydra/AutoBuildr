@@ -199,12 +199,18 @@ class TestBudgetTracker:
         tracker = BudgetTracker(max_turns=10, turns_used=7)
         payload = tracker.to_payload()
 
-        assert payload == {
-            "turns_used": 7,
-            "max_turns": 10,
-            "remaining_turns": 3,
-            "is_exhausted": False,
-        }
+        # Check turns-related fields
+        assert payload["turns_used"] == 7
+        assert payload["max_turns"] == 10
+        assert payload["remaining_turns"] == 3
+        assert payload["is_exhausted"] is False
+
+        # Check timeout-related fields (Feature #28)
+        # elapsed_seconds is 0 because started_at is None
+        assert payload["elapsed_seconds"] == 0.0
+        assert payload["timeout_seconds"] == 1800  # default
+        assert payload["remaining_seconds"] == 1800.0
+        assert payload["is_timed_out"] is False
 
 
 # =============================================================================

@@ -104,6 +104,33 @@ class MaxTurnsExceeded(BudgetExceeded):
         self.max_turns = max_turns
 
 
+class TimeoutSecondsExceeded(BudgetExceeded):
+    """
+    Raised when timeout_seconds wall-clock limit is exceeded.
+
+    Attributes:
+        elapsed_seconds: Number of seconds that have elapsed
+        timeout_seconds: Maximum allowed seconds from spec
+        run_id: ID of the AgentRun that exceeded timeout
+    """
+
+    def __init__(
+        self,
+        elapsed_seconds: float,
+        timeout_seconds: int,
+        run_id: str,
+    ):
+        super().__init__(
+            budget_type="timeout_seconds",
+            current_value=int(elapsed_seconds),
+            max_value=timeout_seconds,
+            run_id=run_id,
+            message=f"timeout_exceeded: {elapsed_seconds:.1f}s elapsed, max {timeout_seconds}s allowed",
+        )
+        self.elapsed_seconds = elapsed_seconds
+        self.timeout_seconds = timeout_seconds
+
+
 # =============================================================================
 # Budget Tracker
 # =============================================================================
@@ -115,6 +142,8 @@ class BudgetTracker:
 
     This class provides methods to:
     - Track turns used
+    - Track elapsed wall-clock time (timeout_seconds)
+    - Track token usage (tokens_in, tokens_out) for cost visibility
     - Check if budget allows another turn
     - Record budget status in event payloads
 
@@ -123,11 +152,19 @@ class BudgetTracker:
     """
 
     max_turns: int
+    timeout_seconds: int = 1800  # 30 minute default
     turns_used: int = 0
     run_id: str = ""
+    started_at: datetime | None = None
+
+    # Token tracking for cost visibility (Feature #29)
+    tokens_in: int = 0
+    tokens_out: int = 0
 
     # Internal tracking for persistence verification
     _last_persisted_turns: int = field(default=0, repr=False)
+    _last_persisted_tokens_in: int = field(default=0, repr=False)
+    _last_persisted_tokens_out: int = field(default=0, repr=False)
 
     def __post_init__(self):
         """Validate initial state."""
@@ -135,6 +172,8 @@ class BudgetTracker:
             raise ValueError(f"max_turns must be >= 1, got {self.max_turns}")
         if self.turns_used < 0:
             raise ValueError(f"turns_used must be >= 0, got {self.turns_used}")
+        if self.timeout_seconds < 1:
+            raise ValueError(f"timeout_seconds must be >= 1, got {self.timeout_seconds}")
 
     @property
     def remaining_turns(self) -> int:
@@ -175,6 +214,28 @@ class BudgetTracker:
         )
         return self.turns_used
 
+    def accumulate_tokens(self, input_tokens: int, output_tokens: int) -> tuple[int, int]:
+        """
+        Accumulate token counts from a Claude API response.
+
+        This should be called AFTER each Claude API response to track
+        cumulative token usage for cost visibility (Feature #29).
+
+        Args:
+            input_tokens: Number of input tokens from Claude API response usage field
+            output_tokens: Number of output tokens from Claude API response usage field
+
+        Returns:
+            Tuple of (total_tokens_in, total_tokens_out) after accumulation
+        """
+        self.tokens_in += input_tokens
+        self.tokens_out += output_tokens
+        _logger.debug(
+            "Tokens accumulated for run %s: in=%d (+%d), out=%d (+%d)",
+            self.run_id, self.tokens_in, input_tokens, self.tokens_out, output_tokens
+        )
+        return self.tokens_in, self.tokens_out
+
     def check_budget_or_raise(self) -> None:
         """
         Check budget and raise MaxTurnsExceeded if exhausted.
@@ -191,36 +252,124 @@ class BudgetTracker:
                 run_id=self.run_id,
             )
 
+    @property
+    def elapsed_seconds(self) -> float:
+        """
+        Compute elapsed wall-clock seconds since run started.
+
+        Returns:
+            Number of seconds elapsed since started_at, or 0.0 if not started
+        """
+        if self.started_at is None:
+            return 0.0
+        now = _utc_now()
+        delta = now - self.started_at
+        return delta.total_seconds()
+
+    @property
+    def remaining_seconds(self) -> float:
+        """
+        Number of seconds remaining before timeout.
+
+        Returns:
+            Seconds remaining until timeout, or 0.0 if timed out
+        """
+        return max(0.0, self.timeout_seconds - self.elapsed_seconds)
+
+    @property
+    def is_timed_out(self) -> bool:
+        """
+        True if the wall-clock timeout has been exceeded.
+
+        Returns:
+            True if elapsed_seconds >= timeout_seconds
+        """
+        return self.elapsed_seconds >= self.timeout_seconds
+
+    def can_continue_within_timeout(self) -> bool:
+        """
+        Check if execution can continue within timeout limit.
+
+        Returns:
+            True if elapsed_seconds < timeout_seconds, False otherwise
+        """
+        return self.elapsed_seconds < self.timeout_seconds
+
+    def check_timeout_or_raise(self) -> None:
+        """
+        Check timeout and raise TimeoutSecondsExceeded if exceeded.
+
+        Call this BEFORE each turn to ensure timeout allows execution.
+        Uses started_at timestamp comparison.
+
+        Raises:
+            TimeoutSecondsExceeded: If elapsed_seconds >= timeout_seconds
+        """
+        if not self.can_continue_within_timeout():
+            raise TimeoutSecondsExceeded(
+                elapsed_seconds=self.elapsed_seconds,
+                timeout_seconds=self.timeout_seconds,
+                run_id=self.run_id,
+            )
+
+    def check_all_budgets_or_raise(self) -> None:
+        """
+        Check both max_turns and timeout_seconds budgets.
+
+        Call this BEFORE each turn to ensure all budgets allow execution.
+
+        Raises:
+            MaxTurnsExceeded: If turns_used >= max_turns
+            TimeoutSecondsExceeded: If elapsed_seconds >= timeout_seconds
+        """
+        # Check timeout first (more likely to be hit during long-running operations)
+        self.check_timeout_or_raise()
+        # Then check turns
+        self.check_budget_or_raise()
+
     def mark_persisted(self) -> None:
         """
-        Mark the current turns_used as persisted to database.
+        Mark the current turns_used and token counts as persisted to database.
 
         Call this after successfully committing the AgentRun to database.
         Used to verify persistence in tests.
         """
         self._last_persisted_turns = self.turns_used
+        self._last_persisted_tokens_in = self.tokens_in
+        self._last_persisted_tokens_out = self.tokens_out
 
     def is_persisted(self) -> bool:
         """
-        Check if current turns_used has been persisted.
+        Check if current turns_used and token counts have been persisted.
 
         Returns:
-            True if current value matches last persisted value
+            True if all current values match last persisted values
         """
-        return self._last_persisted_turns == self.turns_used
+        return (
+            self._last_persisted_turns == self.turns_used and
+            self._last_persisted_tokens_in == self.tokens_in and
+            self._last_persisted_tokens_out == self.tokens_out
+        )
 
     def to_payload(self) -> dict[str, Any]:
         """
         Convert budget state to event payload dict.
 
         Returns:
-            Dict suitable for AgentEvent payload
+            Dict suitable for AgentEvent payload, including token counts (Feature #29)
         """
         return {
             "turns_used": self.turns_used,
             "max_turns": self.max_turns,
             "remaining_turns": self.remaining_turns,
             "is_exhausted": self.is_exhausted,
+            "elapsed_seconds": round(self.elapsed_seconds, 2),
+            "timeout_seconds": self.timeout_seconds,
+            "remaining_seconds": round(self.remaining_seconds, 2),
+            "is_timed_out": self.is_timed_out,
+            # Token tracking (Feature #29)
+            "tokens_in": self.tokens_in,
+            "tokens_out": self.tokens_out,
         }
 
 
@@ -364,6 +513,9 @@ class ExecutionResult:
     turns_used: int
     final_verdict: Optional[str]  # passed, failed, partial
     error: Optional[str]
+    # Token tracking for cost visibility (Feature #29, Step 7)
+    tokens_in: int = 0
+    tokens_out: int = 0
 
     @property
     def is_success(self) -> bool:
@@ -375,6 +527,11 @@ class ExecutionResult:
         """True if execution timed out."""
         return self.status == "timeout"
 
+    @property
+    def total_tokens(self) -> int:
+        """Total tokens consumed (input + output)."""
+        return self.tokens_in + self.tokens_out
+
 
 class HarnessKernel:
     """
@@ -383,18 +540,27 @@ class HarnessKernel:
     The kernel orchestrates execution of an AgentSpec:
     1. Initialize AgentRun with status=running, turns_used=0
     2. Build system prompt from spec.objective + spec.context
-    3. Execute turns via Claude SDK, enforcing max_turns budget
+    3. Execute turns via Claude SDK, enforcing max_turns and timeout_seconds budgets
     4. Record events for each tool call and turn
     5. Run acceptance validators when agent signals completion
     6. Finalize run with verdict and status
 
-    Budget Enforcement (Feature #27):
+    Budget Enforcement (Feature #27 - max_turns):
     - Initialize turns_used to 0 at run start
     - Increment turns_used after each Claude API response
     - Check turns_used < spec.max_turns before each turn
     - When budget exhausted: status=timeout, error="max_turns_exceeded"
     - Record timeout event with turns_used in payload
     - Persist turns_used after each turn
+
+    Timeout Enforcement (Feature #28 - timeout_seconds):
+    - Record started_at timestamp at run begin
+    - Compute elapsed_seconds = now - started_at before each turn
+    - Check elapsed_seconds < spec.timeout_seconds
+    - When timeout reached: status=timeout, error="timeout_exceeded"
+    - Record timeout event with elapsed_seconds in payload
+    - Ensure partial work is committed before termination
+    - Handle long-running tool calls that exceed timeout
 
     Usage:
         kernel = HarnessKernel(db_session)
@@ -419,8 +585,8 @@ class HarnessKernel:
         Sets up:
         - turns_used = 0
         - status = running
-        - started_at = now
-        - Budget tracker with spec.max_turns
+        - started_at = now (Feature #28, Step 1)
+        - Budget tracker with spec.max_turns and spec.timeout_seconds
 
         Args:
             run: The AgentRun to initialize
@@ -435,14 +601,25 @@ class HarnessKernel:
         # Initialize turns_used to 0 (Step 1 of Feature #27)
         run.turns_used = 0
 
+        # Initialize tokens_in and tokens_out to 0 at run start (Feature #29, Step 1)
+        run.tokens_in = 0
+        run.tokens_out = 0
+
         # Transition to running (handles started_at timestamp)
+        # Feature #28, Step 1: Record started_at timestamp at run begin
         run.start()
 
-        # Create budget tracker
+        # Create budget tracker with both max_turns and timeout_seconds
+        # Feature #28: Include started_at for elapsed_seconds calculation
+        # Feature #29: Initialize token tracking to 0
         self._budget_tracker = BudgetTracker(
             max_turns=spec.max_turns,
+            timeout_seconds=spec.timeout_seconds,
             turns_used=0,
             run_id=run.id,
+            started_at=run.started_at,  # Use the timestamp from run.start()
+            tokens_in=0,  # Feature #29: Initialize token tracking
+            tokens_out=0,
         )
 
         # Reset event sequence
@@ -453,8 +630,8 @@ class HarnessKernel:
         self._budget_tracker.mark_persisted()
 
         _logger.info(
-            "Initialized run %s: max_turns=%d, status=%s",
-            run.id, spec.max_turns, run.status
+            "Initialized run %s: max_turns=%d, timeout_seconds=%d, status=%s",
+            run.id, spec.max_turns, spec.timeout_seconds, run.status
         )
 
         # Record started event
@@ -488,17 +665,22 @@ class HarnessKernel:
 
         Raises:
             MaxTurnsExceeded: If turns_used >= max_turns
+            TimeoutSecondsExceeded: If elapsed_seconds >= timeout_seconds
         """
         if self._budget_tracker is None:
             raise RuntimeError("Budget tracker not initialized. Call initialize_run first.")
 
-        # Step 3 of Feature #27: Check turns_used < spec.max_turns before each turn
-        self._budget_tracker.check_budget_or_raise()
+        # Feature #28, Step 2 & 3: Compute elapsed_seconds and check < spec.timeout_seconds
+        # Feature #27, Step 3: Check turns_used < spec.max_turns before each turn
+        # check_all_budgets_or_raise checks timeout first, then turns
+        self._budget_tracker.check_all_budgets_or_raise()
 
     def record_turn_complete(
         self,
         run: "AgentRun",
         turn_data: dict[str, Any] | None = None,
+        input_tokens: int = 0,
+        output_tokens: int = 0,
     ) -> int:
         """
         Record a completed turn and increment counter.
@@ -508,13 +690,15 @@ class HarnessKernel:
         Args:
             run: The AgentRun to update
             turn_data: Optional data about the turn (tool calls, etc.)
+            input_tokens: Number of input tokens from Claude API response usage field (Feature #29)
+            output_tokens: Number of output tokens from Claude API response usage field (Feature #29)
 
         Returns:
             The new turns_used value
 
         Persistence:
-            This method commits to ensure turns_used is persisted
-            after each turn (Step 8 of Feature #27).
+            This method commits to ensure turns_used and token counts are persisted
+            after each turn (Step 8 of Feature #27, Feature #29).
         """
         if self._budget_tracker is None:
             raise RuntimeError("Budget tracker not initialized. Call initialize_run first.")
@@ -522,8 +706,15 @@ class HarnessKernel:
         # Step 2 of Feature #27: Increment turns_used after each Claude API response
         new_turns = self._budget_tracker.increment_turns()
 
+        # Feature #29, Steps 2-4: Extract and accumulate token counts from Claude API response
+        self._budget_tracker.accumulate_tokens(input_tokens, output_tokens)
+
         # Update the AgentRun model
         run.turns_used = new_turns
+
+        # Feature #29, Step 5: Update AgentRun.tokens_in and tokens_out after each turn
+        run.tokens_in = self._budget_tracker.tokens_in
+        run.tokens_out = self._budget_tracker.tokens_out
 
         # Record turn_complete event
         self._event_sequence += 1
@@ -536,12 +727,14 @@ class HarnessKernel:
         )
 
         # Step 8 of Feature #27: Persist turns_used after each turn
+        # Feature #29, Step 5: Persist token counts after each turn
         self.db.commit()
         self._budget_tracker.mark_persisted()
 
         _logger.debug(
-            "Turn complete for run %s: turns=%d/%d",
-            run.id, run.turns_used, self._budget_tracker.max_turns
+            "Turn complete for run %s: turns=%d/%d, tokens_in=%d, tokens_out=%d",
+            run.id, run.turns_used, self._budget_tracker.max_turns,
+            run.tokens_in, run.tokens_out
         )
 
         return new_turns
@@ -575,6 +768,10 @@ class HarnessKernel:
             run.id, str(error)
         )
 
+        # Feature #29, Step 6: Persist token counts even on failure/timeout
+        run.tokens_in = self._budget_tracker.tokens_in
+        run.tokens_out = self._budget_tracker.tokens_out
+
         # Step 6: Record timeout event with turns_used in payload
         self._event_sequence += 1
         record_timeout_event(
@@ -589,6 +786,7 @@ class HarnessKernel:
         run.timeout(error_message="max_turns_exceeded")
 
         # Step 7: Ensure partial work is committed before termination
+        # Feature #29: Token counts are now included in the commit
         self.db.commit()
 
         return ExecutionResult(
@@ -597,6 +795,71 @@ class HarnessKernel:
             turns_used=run.turns_used,
             final_verdict=None,
             error="max_turns_exceeded",
+            # Feature #29, Step 7: Include token counts in run response
+            tokens_in=run.tokens_in,
+            tokens_out=run.tokens_out,
+        )
+
+    def handle_timeout_exceeded(
+        self,
+        run: "AgentRun",
+        error: TimeoutSecondsExceeded,
+    ) -> ExecutionResult:
+        """
+        Handle timeout_seconds wall-clock limit exceeded gracefully.
+
+        Steps 4-7 of Feature #28:
+        - Set status to timeout
+        - Set error message to timeout_exceeded
+        - Record timeout event with elapsed_seconds in payload
+        - Ensure partial work is committed before termination
+        - Handle long-running tool calls that exceed timeout
+
+        Args:
+            run: The AgentRun that exceeded timeout
+            error: The TimeoutSecondsExceeded exception
+
+        Returns:
+            ExecutionResult with timeout status
+        """
+        if self._budget_tracker is None:
+            raise RuntimeError("Budget tracker not initialized")
+
+        _logger.warning(
+            "Timeout exceeded for run %s: %s",
+            run.id, str(error)
+        )
+
+        # Feature #29, Step 6: Persist token counts even on failure/timeout
+        run.tokens_in = self._budget_tracker.tokens_in
+        run.tokens_out = self._budget_tracker.tokens_out
+
+        # Feature #28, Step 6: Record timeout event with elapsed_seconds in payload
+        self._event_sequence += 1
+        record_timeout_event(
+            db=self.db,
+            run_id=run.id,
+            sequence=self._event_sequence,
+            budget_tracker=self._budget_tracker,
+            reason="timeout_exceeded",  # Feature #28, Step 5: Set error message
+        )
+
+        # Feature #28, Step 4: Set status to timeout with error message
+        run.timeout(error_message="timeout_exceeded")
+
+        # Feature #28, Step 7: Ensure partial work is committed before termination
+        # Feature #29: Token counts are now included in the commit
+        self.db.commit()
+
+        return ExecutionResult(
+            run_id=run.id,
+            status="timeout",
+            turns_used=run.turns_used,
+            final_verdict=None,
+            error="timeout_exceeded",
+            # Feature #29, Step 7: Include token counts in run response
+            tokens_in=run.tokens_in,
+            tokens_out=run.tokens_out,
         )
 
     def execute_with_budget(
@@ -608,7 +871,7 @@ class HarnessKernel:
         """
         Execute turns with budget enforcement.
 
-        This is the main execution loop that enforces max_turns budget.
+        This is the main execution loop that enforces max_turns and timeout_seconds budgets.
 
         Args:
             run: The AgentRun to execute
@@ -629,23 +892,41 @@ class HarnessKernel:
                 return completed, {"response": response}
 
             result = kernel.execute_with_budget(run, spec, my_turn_executor)
+
+        Budget Enforcement:
+            - Feature #27: max_turns budget enforced before each turn
+            - Feature #28: timeout_seconds wall-clock limit enforced before each turn
+            - Long-running tool calls may exceed timeout; checked after turn completes
         """
         # Initialize run and budget tracker
         self.initialize_run(run, spec)
 
         try:
             while True:
-                # Check budget before turn
+                # Check budget before turn (both max_turns and timeout_seconds)
                 try:
                     self.check_budget_before_turn(run)
                 except MaxTurnsExceeded as e:
                     return self.handle_budget_exceeded(run, e)
+                except TimeoutSecondsExceeded as e:
+                    # Feature #28: Handle timeout before turn
+                    return self.handle_timeout_exceeded(run, e)
 
                 # Execute one turn
+                # Feature #28, Step 8: Long-running tool calls may exceed timeout
+                # Timeout is checked before each turn; if a tool call exceeds timeout,
+                # it will be caught on the next iteration of the loop
                 completed, turn_data = turn_executor(run, spec)
 
                 # Record turn completion and increment counter
                 self.record_turn_complete(run, turn_data)
+
+                # Feature #28: Check timeout after turn in case tool call exceeded limit
+                # This handles long-running tool calls that exceed timeout during execution
+                try:
+                    self._budget_tracker.check_timeout_or_raise()
+                except TimeoutSecondsExceeded as e:
+                    return self.handle_timeout_exceeded(run, e)
 
                 # Check if agent signaled completion
                 if completed:
@@ -653,6 +934,9 @@ class HarnessKernel:
 
             # Normal completion
             run.complete()
+            # Feature #29, Step 6: Ensure token counts are persisted on completion
+            run.tokens_in = self._budget_tracker.tokens_in
+            run.tokens_out = self._budget_tracker.tokens_out
             self.db.commit()
 
             return ExecutionResult(
@@ -661,13 +945,23 @@ class HarnessKernel:
                 turns_used=run.turns_used,
                 final_verdict=run.final_verdict,
                 error=None,
+                # Feature #29, Step 7: Include token counts in run response
+                tokens_in=run.tokens_in,
+                tokens_out=run.tokens_out,
             )
 
         except MaxTurnsExceeded as e:
             return self.handle_budget_exceeded(run, e)
+        except TimeoutSecondsExceeded as e:
+            # Feature #28: Handle timeout exception from anywhere in execution
+            return self.handle_timeout_exceeded(run, e)
         except Exception as e:
             # Handle unexpected errors
             _logger.exception("Execution error for run %s: %s", run.id, e)
+            # Feature #29, Step 6: Persist token counts even on failure
+            if self._budget_tracker is not None:
+                run.tokens_in = self._budget_tracker.tokens_in
+                run.tokens_out = self._budget_tracker.tokens_out
             run.fail(error_message=str(e))
             self.db.commit()
 
@@ -677,4 +971,7 @@ class HarnessKernel:
                 turns_used=run.turns_used,
                 final_verdict=None,
                 error=str(e),
+                # Feature #29, Step 7: Include token counts in run response
+                tokens_in=run.tokens_in,
+                tokens_out=run.tokens_out,
             )
