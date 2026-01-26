@@ -647,8 +647,93 @@ class ArtifactCreate(BaseModel):
     metadata: dict[str, Any] | None = Field(default=None, description="Type-specific metadata")
 
 
+class ArtifactListItemResponse(BaseModel):
+    """Response schema for an artifact in list views (excludes content_inline for performance).
+
+    This schema is optimized for listing artifacts without transferring potentially
+    large inline content. Use GET /api/artifacts/:id to fetch full content.
+
+    Example:
+        {
+            "id": "abc123-...",
+            "run_id": "def456-...",
+            "artifact_type": "test_result",
+            "path": "/path/to/test/output.log",
+            "content_ref": ".autobuildr/artifacts/abc123/sha256.blob",
+            "content_hash": "abc123def456...",
+            "size_bytes": 1024,
+            "created_at": "2024-01-27T12:00:00Z",
+            "metadata": {"test_suite": "unit", "passed": true},
+            "has_inline_content": true
+        }
+    """
+
+    id: str
+    run_id: str
+    artifact_type: ARTIFACT_TYPES = Field(
+        ...,
+        description="Type of artifact: file_change, test_result, log, metric, or snapshot"
+    )
+    path: str | None = Field(
+        default=None,
+        description="Source path for file artifacts"
+    )
+    content_ref: str | None = Field(
+        default=None,
+        description="Path to content file for large artifacts (>4KB)"
+    )
+    content_hash: str | None = Field(
+        default=None,
+        description="SHA256 hash of content for integrity and deduplication"
+    )
+    size_bytes: int | None = Field(
+        default=None,
+        description="Size of artifact content in bytes"
+    )
+    created_at: datetime = Field(
+        ...,
+        description="Timestamp when artifact was created"
+    )
+    metadata: dict[str, Any] | None = Field(
+        default=None,
+        description="Type-specific metadata (e.g., test results, diff stats)"
+    )
+
+    # Indicates if content is available inline (without the actual content)
+    has_inline_content: bool = Field(
+        default=False,
+        description="True if content_inline is available (fetch via GET /api/artifacts/:id)"
+    )
+
+    @field_validator("artifact_type", mode="before")
+    @classmethod
+    def validate_artifact_type(cls, v: str) -> str:
+        """Validate artifact_type is one of the allowed values."""
+        allowed = ["file_change", "test_result", "log", "metric", "snapshot"]
+        if v not in allowed:
+            raise ValueError(f"artifact_type must be one of {allowed}, got '{v}'")
+        return v
+
+    class Config:
+        from_attributes = True
+        json_schema_extra = {
+            "example": {
+                "id": "abc12345-6789-def0-1234-567890abcdef",
+                "run_id": "run12345-6789-def0-1234-567890abcdef",
+                "artifact_type": "test_result",
+                "path": "/tmp/test_output.log",
+                "content_ref": None,
+                "content_hash": "sha256:abc123def456...",
+                "size_bytes": 256,
+                "created_at": "2024-01-27T12:00:00Z",
+                "metadata": {"test_suite": "unit", "passed": True, "duration_ms": 1234},
+                "has_inline_content": True,
+            }
+        }
+
+
 class ArtifactResponse(BaseModel):
-    """Response schema for an artifact.
+    """Response schema for an artifact (full details including content).
 
     Represents the output from an agent run, such as file changes, test results,
     logs, metrics, or snapshots.
@@ -891,10 +976,25 @@ class AgentRunListResponse(BaseModel):
 
 
 class ArtifactListResponse(BaseModel):
-    """Response for listing artifacts."""
+    """Response for listing artifacts (excludes content_inline for performance).
 
-    artifacts: list[ArtifactResponse]
-    total: int
+    This schema uses ArtifactListItemResponse which omits inline content.
+    Use GET /api/artifacts/:id to fetch full artifact details with content.
+
+    Example:
+        {
+            "artifacts": [...],
+            "total": 10,
+            "run_id": "abc123-..."
+        }
+    """
+
+    artifacts: list[ArtifactListItemResponse] = Field(
+        ...,
+        description="List of artifacts without inline content"
+    )
+    total: int = Field(..., ge=0, description="Total number of artifacts for this run")
+    run_id: str = Field(..., description="ID of the AgentRun these artifacts belong to")
 
 
 class EventListResponse(BaseModel):

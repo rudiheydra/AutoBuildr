@@ -7,6 +7,7 @@ API endpoints for AgentRun management and event timeline queries.
 Implements:
 - GET /api/agent-runs/:id - Get run details with spec info
 - GET /api/agent-runs/:id/events - Event timeline with filtering
+- GET /api/agent-runs/:id/artifacts - List artifacts without inline content
 """
 
 from typing import Optional
@@ -15,7 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, joinedload
 
 from api.agentspec_crud import get_agent_run, get_agent_spec, get_event_count, get_events, list_artifacts
-from api.agentspec_models import AgentEvent, AgentRun as AgentRunModel
+from api.agentspec_models import AgentEvent, Artifact, AgentRun as AgentRunModel
 from api.database import get_db
 from server.schemas.agentspec import (
     AgentEventListResponse,
@@ -23,6 +24,8 @@ from server.schemas.agentspec import (
     AgentRunResponse,
     AgentRunSummary,
     AgentSpecResponse,
+    ArtifactListItemResponse,
+    ArtifactListResponse,
 )
 
 
@@ -223,4 +226,73 @@ async def get_run_events(
         start_sequence=start_sequence,
         end_sequence=end_sequence,
         has_more=has_more,
+    )
+
+
+@router.get("/{run_id}/artifacts", response_model=ArtifactListResponse)
+async def get_run_artifacts(
+    run_id: str,
+    artifact_type: Optional[str] = Query(
+        None,
+        description="Filter artifacts by type (file_change, test_result, log, metric, snapshot)"
+    ),
+    db: Session = Depends(get_db),
+):
+    """
+    List artifacts for an AgentRun without inline content.
+
+    Returns artifacts with metadata but excludes content_inline for performance.
+    Use GET /api/artifacts/:id to retrieve full artifact content.
+
+    This endpoint is optimized for listing artifacts in the Run Inspector UI.
+
+    Args:
+        run_id: UUID of the AgentRun
+        artifact_type: Optional filter for specific artifact types
+
+    Returns:
+        ArtifactListResponse with artifacts list (without content), total count, and run_id
+
+    Raises:
+        404: If the AgentRun is not found
+        400: If artifact_type is invalid
+    """
+    # Validate run exists
+    run = get_agent_run(db, run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail=f"AgentRun {run_id} not found")
+
+    # Validate artifact_type if provided
+    valid_artifact_types = ["file_change", "test_result", "log", "metric", "snapshot"]
+    if artifact_type and artifact_type not in valid_artifact_types:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid artifact_type '{artifact_type}'. Must be one of: {', '.join(valid_artifact_types)}"
+        )
+
+    # Query artifacts with optional type filter
+    artifacts = list_artifacts(db, run_id, artifact_type=artifact_type)
+
+    # Build response list (excluding content_inline for performance)
+    artifact_responses = [
+        ArtifactListItemResponse(
+            id=a.id,
+            run_id=a.run_id,
+            artifact_type=a.artifact_type,
+            path=a.path,
+            content_ref=a.content_ref,
+            content_hash=a.content_hash,
+            size_bytes=a.size_bytes,
+            created_at=a.created_at,
+            metadata=a.metadata,
+            # Compute has_inline_content without including actual content
+            has_inline_content=a.content_inline is not None and len(a.content_inline) > 0,
+        )
+        for a in artifacts
+    ]
+
+    return ArtifactListResponse(
+        artifacts=artifact_responses,
+        total=len(artifacts),
+        run_id=run_id,
     )
