@@ -350,7 +350,7 @@ class ForbiddenPatternsValidator(Validator):
         # Step 2: Extract patterns array from validator config
         patterns = config.get("patterns")
 
-        if not patterns:
+        if patterns is None:
             return ValidatorResult(
                 passed=False,
                 message="Validator config missing required 'patterns' field",
