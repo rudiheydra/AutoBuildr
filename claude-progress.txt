@@ -5791,3 +5791,104 @@ Created api/event_recorder.py:
   - API endpoints using state machine: pause, resume, cancel (verified in agent_runs.py)
   - Browser automation unavailable - verified via unit tests and code inspection
   - No regression found - feature still working correctly
+
+---
+
+## Session: 2026-01-27 (Coding Agent - Feature #58)
+
+### Feature #58: Budget Derivation from Task Complexity - VERIFIED
+
+**Status:** PASSING
+
+**Category:** T. Performance
+
+**Description:** Derive appropriate max_turns and timeout_seconds based on task complexity estimation.
+
+**Dependencies:** [7, 57] - Both passing
+- Feature #7: AgentSpec Pydantic Request/Response Schemas
+- Feature #57: Tool Policy Derivation from Task Type
+
+**Verification Summary (7 Steps - All Passed):**
+
+1. Define base budgets per task_type - PASS
+   - BASE_BUDGETS dict with 6 task types: coding, testing, documentation, refactoring, audit, custom
+   - Each task type has max_turns and timeout_seconds
+
+2. coding: max_turns=50, timeout=1800 - PASS
+   - BASE_BUDGETS["coding"]["max_turns"] == 50
+   - BASE_BUDGETS["coding"]["timeout_seconds"] == 1800 (30 minutes)
+
+3. testing: max_turns=30, timeout=600 - PASS
+   - BASE_BUDGETS["testing"]["max_turns"] == 30
+   - BASE_BUDGETS["testing"]["timeout_seconds"] == 600 (10 minutes)
+
+4. Adjust based on description length - PASS
+   - Short descriptions: no adjustment
+   - Long descriptions (>1000 chars): budget increases
+   - DESCRIPTION_LENGTH_THRESHOLDS: [500, 1000, 2000, 5000] with multipliers
+
+5. Adjust based on number of acceptance steps - PASS
+   - Few steps (<3): no adjustment
+   - Many steps (>5): budget increases
+   - STEPS_COUNT_THRESHOLDS: [3, 5, 10, 20] with multipliers
+
+6. Apply minimum and maximum bounds - PASS
+   - MIN_BUDGET: max_turns=5, timeout_seconds=60
+   - MAX_BUDGET: max_turns=200, timeout_seconds=7200
+
+7. Return budget dict with max_turns and timeout_seconds - PASS
+   - derive_budget() returns dict with exactly 2 keys
+   - Both values are integers
+
+**Implementation Details:**
+
+The implementation in api/tool_policy.py includes:
+
+- BASE_BUDGETS: Dict with base budgets for each task type
+- MIN_BUDGET / MAX_BUDGET: Safety bounds
+- DESCRIPTION_LENGTH_THRESHOLDS: [(500, 1.0), (1000, 1.2), (2000, 1.4), (5000, 1.6)]
+- STEPS_COUNT_THRESHOLDS: [(3, 1.0), (5, 1.15), (10, 1.3), (20, 1.5)]
+- BudgetResult dataclass: Detailed derivation result with metadata
+- derive_budget(): Main function returning {max_turns, timeout_seconds}
+- derive_budget_detailed(): Returns BudgetResult with full derivation metadata
+- get_base_budget(): Get base budget for task type
+- get_budget_bounds(): Get min/max bounds
+- get_all_base_budgets(): Get all base budgets
+
+**Test Results:**
+- tests/test_feature_58_budget_derivation.py: 110/110 tests PASS
+- tests/verify_feature_58.py: All 9 verification steps PASS
+- tests/test_feature_57_tool_policy_derivation.py: 69/69 tests PASS (no regressions)
+
+**Files Implemented:**
+- api/tool_policy.py: Added budget derivation functions (~450 lines)
+- api/__init__.py: Added exports for new functions
+- tests/test_feature_58_budget_derivation.py: Comprehensive test suite (110 tests)
+- tests/verify_feature_58.py: Feature verification script
+
+---
+
+**Updated Progress:**
+- Total: 77/103 features passing (approximately 74.8%)
+- Feature #58: Budget Derivation from Task Complexity - PASSING
+
+**Session completed successfully.**
+[Testing] 2026-01-27 09:48:50 - Feature #66 regression test PASSED
+  - Feature: Turns Progress Bar Component
+  - Category: O. Responsive & Layout
+  - Verification: All 8 feature steps pass
+  - Unit tests: 30/30 tests pass (test_feature_66_turns_progress_bar.py)
+  - All verification steps confirmed working:
+    - Step 1: TurnsProgressBar.tsx component exists (241 lines) - PASS
+    - Step 2: Props: used (number), max (number) defined in TurnsProgressBarProps interface - PASS
+    - Step 3: Percentage calculation (used / max) * 100 at line 123 - PASS
+    - Step 4: Cap at 100% using Math.min() - PASS
+    - Step 5: Animated width transition with cubic-bezier easing (0.5s) - PASS
+    - Step 6: ProgressTooltip shows exact values on hover with mouse handlers - PASS
+    - Step 7: Status-appropriate color via neo-progress-fill-{status} classes - PASS
+    - Step 8: max=0 edge case handled with isOverflow detection and warning styling - PASS
+  - Integration: Used in DynamicAgentCard.tsx and RunInspector.tsx
+  - TypeScript compilation: PASSED
+  - Accessibility: role=progressbar, aria-valuenow/min/max, aria-label - PASSED
+  - Browser automation unavailable - verified via unit tests and code analysis
+  - No regression found - feature still working correctly
