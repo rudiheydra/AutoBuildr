@@ -1,6 +1,43 @@
 # AutoBuildr Progress Log
 # ======================
 
+## Session: 2026-01-27 (Feature #11)
+
+### Feature #11: POST /api/agent-specs Create AgentSpec Endpoint - COMPLETED
+
+**Status:** PASSING
+
+**Description:** Implement POST /api/projects/{project_name}/agent-specs endpoint to create new AgentSpec records with validation and UUID generation.
+
+**Verification Summary:**
+- Step 1: Define FastAPI route POST /api/projects/{project_name}/agent-specs - PASS
+- Step 2: Validate request body against Pydantic schema - PASS
+- Step 3: Generate UUID for new spec id - PASS
+- Step 4: Set spec_version default to v1 - PASS
+- Step 5: Set created_at to current UTC timestamp - PASS
+- Step 6: Create AgentSpec SQLAlchemy model instance - PASS (all fields verified)
+- Step 7: Add to session and commit transaction - PASS (data persists)
+- Step 8: Return AgentSpecResponse with status 201 - PASS
+- Step 9: Return 422 for validation errors with field details - PASS
+- Step 10: Return 400 for database constraint violations - PASS (verified via OpenAPI)
+
+**Implementation Notes:**
+- Endpoint is project-scoped: /api/projects/{project_name}/agent-specs
+- Uses get_db_session context manager for database access
+- Validates project name before accessing database
+- Returns 404 if project not found
+- IntegrityError handling for UNIQUE, FOREIGN KEY, and CHECK constraints
+
+**Tests Created:**
+- tests/verify_feature_11.py - comprehensive verification of all 10 steps
+
+**Tests Run:**
+```
+./venv/bin/python tests/verify_feature_11.py  # All 10/10 steps PASS
+```
+
+---
+
 ## Session: 2026-01-27 (Feature #12)
 
 ### Feature #12: GET /api/agent-specs List AgentSpecs Endpoint - COMPLETED
@@ -1222,3 +1259,4 @@ in the state machine itself. Server startup import issue was fixed.
 - Continue with other UI-Backend Integration features
 - Implement remaining API endpoints for agent management
 
+[Testing] Feature #43 verified - still passing. All 36 unit tests pass, verification scripts pass, integration tests pass. No regression detected.
