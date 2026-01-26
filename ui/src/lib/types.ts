@@ -156,6 +156,7 @@ export interface AgentRun {
   tokens_in: number
   tokens_out: number
   final_verdict: AgentRunVerdict | null
+  acceptance_results: Record<string, { passed: boolean; message: string }> | null
   error: string | null
   retry_count: number
 }

@@ -1,6 +1,95 @@
 # AutoBuildr Progress Log
 # ======================
 
+## Session: 2026-01-27 (Coding Agent - Feature #84)
+
+### Feature #84: Loading State Indicators - COMPLETED
+
+**Status:** PASSING
+
+**Category:** N. Feedback & Notification
+
+**Description:** Add loading state indicators throughout UI with skeleton loaders and optimistic updates.
+
+**Dependencies:** [65, 68, 69] - All passing
+- Feature #65: AgentRun Status Color Coding
+- Feature #68: Event Timeline Component
+- Feature #69: Artifact List Component
+
+**Verification Steps (All Passed):**
+
+1. Create skeleton loader for DynamicAgentCard - PASS
+2. Show skeleton while fetching spec/run data - PASS
+3. Add spinner to action buttons (pause, cancel) - PASS
+4. Optimistic update on action, revert on error - PASS
+5. Loading indicator in Run Inspector - PASS
+6. Loading state for event timeline pagination - PASS
+
+**Implementation Summary:**
+
+Created comprehensive loading state system with:
+
+1. **Skeleton.tsx** - Reusable skeleton components:
+   - `Skeleton` - Base skeleton with configurable width/height/radius
+   - `SkeletonText` - For text content placeholders
+   - `SkeletonCircle` - For avatar/icon placeholders
+   - `SkeletonRect` - For rectangular content placeholders
+   - `DynamicAgentCardSkeleton` - Full card skeleton matching real card layout
+   - `EventCardSkeleton` - Timeline event card skeleton
+   - `EventTimelineSkeleton` - Full timeline skeleton with header and events
+   - `ArtifactCardSkeleton` - Artifact card skeleton
+   - `ArtifactListSkeleton` - Full artifact list skeleton
+   - `RunInspectorSkeleton` - Inspector panel skeleton with tabs
+
+2. **LoadingButton.tsx** - Button with loading state:
+   - `LoadingButton` - Button with spinner, disabled state, and variants
+   - `ActionButton` - Specialized button with async handler and error feedback
+   - Supports all neo-btn variants (primary, success, warning, danger, ghost)
+   - Auto-dismissing error tooltip on failure
+   - Accessible with aria-busy and aria-disabled attributes
+
+3. **RunInspector.tsx** - Slide-out panel for AgentRun details:
+   - Tabbed interface (Events, Artifacts, Acceptance)
+   - Loading states with skeletons
+   - Action buttons (pause, resume, cancel) with loading spinners
+   - Optimistic updates with error recovery
+   - Status badge and verdict badge
+   - TurnsProgressBar integration
+   - Full keyboard navigation and accessibility
+
+4. **LoadingStateDemo.tsx** - Interactive demonstration page:
+   - Showcases all skeleton variants
+   - Interactive loading button demos
+   - ActionButton with success/failure scenarios
+   - RunInspector modal demonstration
+   - Status transition testing
+
+**Key Features:**
+- Pulse animation on all skeletons
+- Dark mode support for all loading states
+- Consistent styling with neobrutalism design system
+- Accessible loading indicators (aria-busy, aria-label)
+- Error feedback with auto-dismiss
+- Optimistic updates that revert on failure
+
+**Files Created:**
+- ui/src/components/Skeleton.tsx
+- ui/src/components/LoadingButton.tsx
+- ui/src/components/RunInspector.tsx
+- ui/src/components/LoadingStateDemo.tsx
+
+**Files Modified:**
+- ui/src/lib/types.ts (added acceptance_results to AgentRun)
+- ui/tsconfig.json (excluded test files from build)
+
+**Build Verification:**
+- TypeScript compilation: PASS (no errors)
+- Vite production build: PASS (all assets generated)
+
+**Updated Progress:** 55/103 features passing (53.4%)
+
+---
+
 ## Session: 2026-01-27 (Coding Agent - Feature #66)
 
 ### Feature #66: Turns Progress Bar Component - COMPLETED
@@ -4440,3 +4529,19 @@ Date: 2026-01-27
 
 ### Progress:
 - 51/103 features passing (49.5%)
+[Testing] 2026-01-27 09:05:06 - Feature #88 regression test PASSED
+  - Feature: Core validate_dependency_graph function detects complex cycles
+  - Verification script: 6/6 steps pass
+  - Unit tests: 19/19 tests pass
+  - All verification steps confirmed working:
+    - Step 1: Create feature A (id=1) with dependencies=[2]
+    - Step 2: Create feature B (id=2) with dependencies=[3]
+    - Step 3: Create feature C (id=3) with dependencies=[1]
+    - Step 4: Call validate_dependency_graph() with all three features
+    - Step 5: Verify the result includes the complete cycle path [1, 2, 3]
+    - Step 6: Verify missing dependencies to non-existent features are also detected
+  - Cycle detection correctly identifies: A -> B -> C -> A cycle
+  - Result structure includes: is_valid=False, cycles=[[1, 2, 3]], summary with 'requires user action'
+  - Note: Browser automation unavailable - verified via unit tests (backend feature)
+  - No regression found - feature still working correctly
+
