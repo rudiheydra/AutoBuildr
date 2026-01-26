@@ -19,6 +19,7 @@ Usage:
 """
 
 import asyncio
+import logging
 import os
 import subprocess
 import sys
@@ -27,8 +28,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Literal
 
+# Module-level logger for standard Python logging
+_logger = logging.getLogger(__name__)
+
 from api.database import Feature, create_database
-from api.dependency_resolver import are_dependencies_satisfied, compute_scheduling_scores
+from api.dependency_resolver import (
+    are_dependencies_satisfied,
+    compute_scheduling_scores,
+    validate_dependency_graph,
+)
 from progress import has_features
 from server.utils.process_utils import kill_process_tree
 
@@ -195,6 +203,140 @@ class ParallelOrchestrator:
     def get_session(self):
         """Get a new database session."""
         return self._session_maker()
+
+    def _run_dependency_health_check(self) -> bool:
+        """Run dependency graph validation on startup.
+
+        Detects corrupted dependency data (self-references, cycles, missing targets)
+        before processing any features. Auto-fixes auto-fixable issues and logs
+        a summary of the dependency health check.
+
+        Returns:
+            True if the graph is healthy or issues were fixed/logged,
+            False if there are blocking issues that prevent orchestrator from running.
+        """
+        debug_log.section("DEPENDENCY HEALTH CHECK")
+        debug_log.log("HEALTH_CHECK", "Running dependency graph validation on startup")
+        print("Running dependency health check...", flush=True)
+
+        session = self.get_session()
+        try:
+            # Step 1: Load all features from database
+            all_features = session.query(Feature).all()
+            feature_count = len(all_features)
+
+            if feature_count == 0:
+                debug_log.log("HEALTH_CHECK", "No features in database, skipping validation")
+                print("  No features found - skipping validation", flush=True)
+                return True
+
+            # Convert to dicts for validate_dependency_graph
+            feature_dicts = [f.to_dict() for f in all_features]
+
+            # Step 2: Call validate_dependency_graph
+            result = validate_dependency_graph(feature_dicts)
+
+            # Step 3: Log summary
+            debug_log.log("HEALTH_CHECK", "Dependency graph validation complete",
+                is_valid=result["is_valid"],
+                self_references=result["self_references"],
+                cycles=result["cycles"],
+                missing_targets=result["missing_targets"],
+                issue_count=len(result["issues"]),
+                summary=result["summary"])
+
+            # Step 4: Handle issues according to type
+            if result["is_valid"]:
+                print(f"  Dependency graph is healthy ({feature_count} features)", flush=True)
+                return True
+
+            # Report issues
+            print(f"  Dependency issues found: {result['summary']}", flush=True)
+
+            # Handle self-references (auto-fixable)
+            if result["self_references"]:
+                print(f"  Auto-fixing {len(result['self_references'])} self-reference(s):", flush=True)
+                for feature_id in result["self_references"]:
+                    feature = session.query(Feature).filter(Feature.id == feature_id).first()
+                    if feature and feature.dependencies:
+                        # Remove self-reference from dependencies
+                        original_deps = feature.dependencies
+                        new_deps = [d for d in original_deps if d != feature_id]
+                        feature.dependencies = new_deps
+                        print(f"    - Feature #{feature_id}: removed self-reference "
+                              f"(deps: {original_deps} -> {new_deps})", flush=True)
+                        # Emit WARNING level log for Feature #96 requirement
+                        _logger.warning(
+                            "Auto-fixed self-reference: Feature #%d removed dependency on itself "
+                            "(original_deps=%s, new_deps=%s)",
+                            feature_id, original_deps, new_deps
+                        )
+                        debug_log.log("HEALTH_CHECK", f"Auto-fixed self-reference for feature #{feature_id}",
+                            original_deps=original_deps,
+                            new_deps=new_deps)
+                session.commit()
+
+            # Handle missing targets (auto-fixable)
+            if result["missing_targets"]:
+                total_missing = sum(len(m) for m in result["missing_targets"].values())
+                print(f"  Auto-fixing {total_missing} missing dependency target(s):", flush=True)
+                for feature_id, missing_ids in result["missing_targets"].items():
+                    feature = session.query(Feature).filter(Feature.id == feature_id).first()
+                    if feature and feature.dependencies:
+                        # Remove missing dependencies
+                        original_deps = feature.dependencies
+                        new_deps = [d for d in original_deps if d not in missing_ids]
+                        feature.dependencies = new_deps
+                        print(f"    - Feature #{feature_id}: removed missing deps {missing_ids} "
+                              f"(deps: {original_deps} -> {new_deps})", flush=True)
+                        # Emit WARNING level log for Feature #98 requirement
+                        _logger.warning(
+                            "Auto-fixed orphaned dependency reference: Feature #%d removed non-existent "
+                            "dependency IDs %s (original_deps=%s, new_deps=%s)",
+                            feature_id, missing_ids, original_deps, new_deps
+                        )
+                        debug_log.log("HEALTH_CHECK", f"Auto-fixed missing targets for feature #{feature_id}",
+                            original_deps=original_deps,
+                            new_deps=new_deps,
+                            removed_ids=missing_ids)
+                session.commit()
+
+            # Handle cycles (BLOCKING - requires user resolution before startup)
+            if result["cycles"]:
+                print(flush=True)
+                print("=" * 70, flush=True)
+                print("  ERROR: CIRCULAR DEPENDENCIES DETECTED", flush=True)
+                print("=" * 70, flush=True)
+                print(flush=True)
+                print(f"  Found {len(result['cycles'])} circular dependency cycle(s):", flush=True)
+                print(flush=True)
+                for i, cycle in enumerate(result["cycles"], 1):
+                    # Format cycle path with arrow notation: A -> B -> C -> A
+                    cycle_str = " -> ".join(str(fid) for fid in cycle) + f" -> {cycle[0]}"
+                    print(f"    Cycle {i}: [{cycle_str}]", flush=True)
+                    debug_log.log("HEALTH_CHECK", f"Cycle detected (BLOCKING - startup halted)",
+                        cycle_number=i,
+                        cycle_path=cycle)
+                print(flush=True)
+                print("  To fix: Remove one dependency from each cycle.", flush=True)
+                print("  You can use the feature management API or edit the database directly.", flush=True)
+                print(flush=True)
+                print("=" * 70, flush=True)
+                print("  STARTUP BLOCKED - Please resolve cycles before running the orchestrator", flush=True)
+                print("=" * 70, flush=True)
+                print(flush=True)
+                return False
+
+            # Log final summary
+            auto_fixed_count = len(result["self_references"]) + sum(len(m) for m in result["missing_targets"].values())
+            if auto_fixed_count > 0:
+                print(f"  Auto-fixed {auto_fixed_count} issue(s)", flush=True)
+            print("  Dependency health check complete", flush=True)
+
+            return True
+
+        finally:
+            session.close()
 
     def _get_random_passing_feature(self) -> int | None:
         """Get a random passing feature for regression testing (no claim needed).
@@ -966,6 +1108,14 @@ class ParallelOrchestrator:
                     first_10_features=feature_names)
             finally:
                 session.close()
+
+        # Run dependency health check before processing features
+        # This detects and handles corrupted dependency data (self-refs, cycles, missing)
+        # Returns False if cycles are detected (blocking) - orchestrator should exit
+        if not self._run_dependency_health_check():
+            debug_log.log("STARTUP", "Orchestrator startup blocked by circular dependencies")
+            print("Orchestrator startup aborted due to circular dependencies.", flush=True)
+            return
 
         # Phase 2: Feature loop
         # Check for features to resume from previous session
