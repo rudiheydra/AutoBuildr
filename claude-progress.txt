@@ -557,3 +557,75 @@
 - Continue with Form Validation features (remaining Pydantic schemas)
 - AcceptanceSpec Pydantic schemas
 - API endpoints for AgentSpec/AgentRun CRUD operations
+
+---
+
+### Feature #65: AgentRun Status Color Coding - COMPLETED
+
+**Status:** PASSING
+
+**Category:** O. Responsive & Layout
+
+**Description:** Define and apply color coding for AgentRun status with accessibility considerations.
+
+**Verification Summary:**
+- Step 1: Define status color map in design tokens - PASS
+  - Light mode: defined --color-status-{status}-text and --color-status-{status}-bg for all 6 statuses
+  - Dark mode: defined adjusted colors for dark backgrounds
+- Step 2: pending - text-gray-500 (#6b7280), bg-gray-100 (#f3f4f6) - PASS
+- Step 3: running - text-blue-500 (#3b82f6), bg-blue-100 (#dbeafe) with pulse animation - PASS
+  - Added statusPulse keyframes animation
+- Step 4: paused - text-amber-600 (#d97706), bg-amber-100 (#fef3c7) - PASS
+  - Used amber-600 instead of yellow-500 for better accessibility contrast
+- Step 5: completed - text-green-500 (#22c55e), bg-green-100 (#dcfce7) - PASS
+- Step 6: failed - text-red-500 (#ef4444), bg-red-100 (#fee2e2) - PASS
+- Step 7: timeout - text-orange-500 (#f97316), bg-orange-100 (#ffedd5) - PASS
+- Step 8: Apply to status badge in DynamicAgentCard - PASS
+  - Created StatusBadge component using neo-status-{status} CSS classes
+- Step 9: Apply to progress bar fill color - PASS
+  - Created TurnsProgressBar component using neo-progress-fill-{status} CSS classes
+
+**Implementation Details:**
+- Created DynamicAgentCard component (ui/src/components/DynamicAgentCard.tsx)
+  - StatusBadge sub-component with icon and label
+  - TurnsProgressBar sub-component for turns_used/max_turns
+  - Full accessibility support (aria-label, keyboard navigation)
+- Added AgentRun types to ui/src/lib/types.ts
+  - AgentRunStatus, AgentRunVerdict, AgentSpecTaskType types
+  - AgentSpecSummary, AgentRun, DynamicAgentData interfaces
+- Updated design tokens in ui/src/styles/globals.css
+  - Status color CSS custom properties for light and dark modes
+  - neo-status-{status} badge classes
+  - neo-progress-fill-{status} progress bar classes
+  - statusPulse animation for running status
+
+**Build Verification:**
+- npm build succeeds with no TypeScript errors
+- CSS compiled successfully, all status classes included in bundle
+
+**Files Modified:**
+- `ui/src/styles/globals.css`: Added status color tokens, badge classes, progress fill classes, statusPulse animation
+- `ui/src/lib/types.ts`: Added AgentRun types (AgentRunStatus, AgentRunVerdict, etc.)
+
+**Files Added:**
+- `ui/src/components/DynamicAgentCard.tsx`: New component with StatusBadge and TurnsProgressBar
+
+---
+
+**Current Progress:**
+- Feature #1: AgentSpec SQLite Table Schema - PASSING
+- Feature #2: AcceptanceSpec SQLite Table Schema - PASSING
+- Feature #3: AgentRun SQLite Table Schema - PASSING
+- Feature #4: Artifact SQLite Table Schema - PASSING
+- Feature #5: AgentEvent SQLite Table Schema - PASSING
+- Feature #7: AgentSpec Pydantic Request/Response Schemas - PASSING
+- Feature #9: AgentRun Pydantic Response Schema - PASSING
+- Feature #10: Artifact and AgentEvent Pydantic Schemas - PASSING
+- Feature #26: AgentRun Status Transition State Machine - PASSING
+- Feature #65: AgentRun Status Color Coding - PASSING
+- Total: 10/85 features passing (approximately 11.8%)
+
+**Next Steps:**
+- Continue with UI features (Phase 3 Dynamic Cards)
+- DynamicAgentCard WebSocket integration
+- Run Inspector panel
