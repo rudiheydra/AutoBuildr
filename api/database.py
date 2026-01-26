@@ -4,6 +4,7 @@ Database Models and Connection
 
 SQLite database schema for feature storage using SQLAlchemy.
 """
+from __future__ import annotations
 
 import sys
 from datetime import datetime, timezone

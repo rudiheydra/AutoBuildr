@@ -87,13 +87,51 @@
 
 ---
 
+### Feature #1: AgentSpec SQLite Table Schema - COMPLETED
+
+**Status:** PASSING
+
+**Category:** G. State & Persistence
+
+**Description:** Create the agent_specs table with all required columns: id (UUID), name, display_name, icon, spec_version, objective, task_type, context (JSON), tool_policy (JSON), max_turns, timeout_seconds, parent_spec_id, source_feature_id, priority, tags, created_at. Include proper indexes.
+
+**Verification Summary:**
+- Step 1: SQLite database file exists at project root - PASS
+- Step 2: PRAGMA table_info(agent_specs) shows all 16 columns - PASS
+- Step 3: id column is VARCHAR(36) primary key - PASS
+- Step 4: name column is VARCHAR(100) NOT NULL - PASS
+- Step 5: display_name column is VARCHAR(255) NOT NULL - PASS
+- Step 6: icon column is VARCHAR(50) nullable - PASS
+- Step 7: spec_version column is VARCHAR(20) NOT NULL with default v1 - PASS
+- Step 8: objective column is TEXT NOT NULL - PASS
+- Step 9: task_type column is VARCHAR(50) NOT NULL - PASS
+- Step 10: context column stores valid JSON - PASS
+- Step 11: tool_policy column stores valid JSON NOT NULL - PASS
+- Step 12: max_turns column is INTEGER with CHECK constraint 1-500 - PASS
+- Step 13: timeout_seconds column is INTEGER with CHECK constraint 60-7200 - PASS
+- Step 14: All required indexes exist (ix_agentspec_source_feature, ix_agentspec_task_type, ix_agentspec_created) - PASS
+
+**Implementation Notes:**
+- Fixed Python 3.8 compatibility by adding `from __future__ import annotations` to api/database.py and api/agentspec_models.py
+- Database migration creates all tables via _migrate_add_agentspec_tables()
+- CHECK constraints verified: max_turns=0/501 rejected, timeout_seconds=59/7201 rejected
+- Data insertion and retrieval test passed
+- Browser automation failed due to Chrome launch issues, but all verification done via direct database testing
+
+**Files Modified:**
+- `api/database.py`: Added `from __future__ import annotations` for Python 3.8 compatibility
+- `api/agentspec_models.py`: Added `from __future__ import annotations` for Python 3.8 compatibility
+
+---
+
 **Current Progress:**
+- Feature #1: AgentSpec SQLite Table Schema - PASSING
 - Feature #2: AcceptanceSpec SQLite Table Schema - PASSING
 - Feature #3: AgentRun SQLite Table Schema - PASSING
 - Feature #5: AgentEvent SQLite Table Schema - PASSING
-- Total: 3/85 features passing
+- Total: 4/85 features passing
 
 **Next Steps:**
 - Continue with other Phase 0 Kernel Wiring features
-- Remaining table schema features: AgentSpec (#1), Artifact (#4)
+- Remaining table schema features: Artifact (#4)
 - API endpoints for the AgentSpec system
