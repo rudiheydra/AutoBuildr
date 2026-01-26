@@ -37,6 +37,8 @@ from __future__ import annotations
 
 import logging
 import re
+import subprocess
+import shlex
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -510,6 +512,315 @@ class ForbiddenPatternsValidator(Validator):
             )
 
 
+# =============================================================================
+# TestPassValidator
+# =============================================================================
+
+class TestPassValidator(Validator):
+    """
+    Validator that runs a shell command and checks the exit code.
+
+    This validator executes a specified command and validates that its exit
+    code matches the expected value (default 0 for success). Supports variable
+    interpolation in the command string.
+
+    Config Options:
+        command (str, required): The shell command to execute. Supports variable
+            interpolation like {project_dir}, {feature_id}.
+        expected_exit_code (int, optional): Expected exit code, default 0.
+        timeout_seconds (int, optional): Command timeout in seconds, default 60.
+        working_directory (str, optional): Working directory for command execution.
+            Supports variable interpolation.
+        description (str, optional): Human-readable description of the check.
+
+    Context Variables:
+        project_dir: Base project directory
+        Any other variables used in the command template
+
+    Example Config:
+        {
+            "command": "pytest {project_dir}/tests -v",
+            "expected_exit_code": 0,
+            "timeout_seconds": 120,
+            "description": "Run project test suite"
+        }
+    """
+
+    validator_type: str = "test_pass"
+
+    def evaluate(
+        self,
+        config: dict[str, Any],
+        context: dict[str, Any],
+        run: "AgentRun | None" = None,
+    ) -> ValidatorResult:
+        """
+        Execute a command and validate its exit code.
+
+        Args:
+            config: Validator configuration containing:
+                - command (required): Shell command to execute, with optional {variables}
+                - expected_exit_code (optional, default 0): Expected exit code
+                - timeout_seconds (optional, default 60): Command timeout
+                - working_directory (optional): Working directory for command
+                - description (optional): Human-readable check description
+            context: Runtime context with variable values for interpolation
+            run: Optional AgentRun (not used by this validator)
+
+        Returns:
+            ValidatorResult indicating whether the command exit code matches expected.
+        """
+        # Step 2: Extract command from validator config
+        command_template = config.get("command")
+
+        if not command_template:
+            return ValidatorResult(
+                passed=False,
+                message="Validator config missing required 'command' field",
+                score=0.0,
+                details={"config": config},
+                validator_type=self.validator_type,
+            )
+
+        # Interpolate variables in command
+        interpolated_command = self.interpolate_path(command_template, context)
+
+        # Step 3: Extract expected_exit_code (default 0)
+        expected_exit_code = config.get("expected_exit_code", 0)
+
+        # Normalize expected_exit_code to int
+        if isinstance(expected_exit_code, str):
+            try:
+                expected_exit_code = int(expected_exit_code)
+            except ValueError:
+                return ValidatorResult(
+                    passed=False,
+                    message=f"Invalid expected_exit_code: {expected_exit_code}",
+                    score=0.0,
+                    details={"config": config},
+                    validator_type=self.validator_type,
+                )
+
+        # Step 4: Extract timeout_seconds (default 60)
+        timeout_seconds = config.get("timeout_seconds", 60)
+
+        # Normalize timeout_seconds to int
+        if isinstance(timeout_seconds, str):
+            try:
+                timeout_seconds = int(timeout_seconds)
+            except ValueError:
+                timeout_seconds = 60
+
+        # Ensure timeout is positive and reasonable
+        timeout_seconds = max(1, min(timeout_seconds, 3600))  # 1 second to 1 hour
+
+        # Extract optional working directory
+        working_directory = config.get("working_directory")
+        if working_directory:
+            working_directory = self.interpolate_path(working_directory, context)
+
+        # Use project_dir as default working directory if available
+        if not working_directory and "project_dir" in context:
+            working_directory = context["project_dir"]
+
+        description = config.get("description", "")
+
+        _logger.debug(
+            "TestPassValidator: command=%s, expected_exit_code=%d, timeout=%ds, cwd=%s",
+            interpolated_command, expected_exit_code, timeout_seconds, working_directory
+        )
+
+        # Step 5: Execute command via subprocess with timeout
+        try:
+            # Use shell=True for command string execution
+            # This allows pipes, redirects, and other shell features
+            result = subprocess.run(
+                interpolated_command,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=timeout_seconds,
+                cwd=working_directory,
+            )
+
+            # Step 6: Capture stdout and stderr
+            stdout = result.stdout
+            stderr = result.stderr
+            actual_exit_code = result.returncode
+
+            # Truncate output if too long (keep last 4KB)
+            max_output_len = 4096
+            if len(stdout) > max_output_len:
+                stdout = "...(truncated)...\n" + stdout[-max_output_len:]
+            if len(stderr) > max_output_len:
+                stderr = "...(truncated)...\n" + stderr[-max_output_len:]
+
+            # Step 7: Compare exit code to expected
+            passed = actual_exit_code == expected_exit_code
+
+            # Calculate score
+            score = 1.0 if passed else 0.0
+
+            # Step 8 & 9: Return ValidatorResult with passed boolean and command output
+            if passed:
+                message = f"Command exited with code {actual_exit_code} (expected {expected_exit_code})"
+            else:
+                message = f"Command exited with code {actual_exit_code}, expected {expected_exit_code}"
+
+            if description:
+                message = f"{message} ({description})"
+
+            _logger.info(
+                "TestPassValidator: %s - exit_code=%d, expected=%d, passed=%s",
+                "PASSED" if passed else "FAILED",
+                actual_exit_code, expected_exit_code, passed
+            )
+
+            return ValidatorResult(
+                passed=passed,
+                message=message,
+                score=score,
+                details={
+                    "command_template": command_template,
+                    "interpolated_command": interpolated_command,
+                    "expected_exit_code": expected_exit_code,
+                    "actual_exit_code": actual_exit_code,
+                    "timeout_seconds": timeout_seconds,
+                    "working_directory": working_directory,
+                    "stdout": stdout,
+                    "stderr": stderr,
+                },
+                validator_type=self.validator_type,
+            )
+
+        except subprocess.TimeoutExpired as e:
+            # Step 10: Handle timeout as failure
+            stdout = e.stdout if e.stdout else ""
+            stderr = e.stderr if e.stderr else ""
+
+            # Ensure strings
+            if isinstance(stdout, bytes):
+                stdout = stdout.decode("utf-8", errors="replace")
+            if isinstance(stderr, bytes):
+                stderr = stderr.decode("utf-8", errors="replace")
+
+            message = f"Command timed out after {timeout_seconds} seconds"
+            if description:
+                message = f"{message} ({description})"
+
+            _logger.warning(
+                "TestPassValidator: TIMEOUT - command='%s' timed out after %ds",
+                interpolated_command, timeout_seconds
+            )
+
+            return ValidatorResult(
+                passed=False,
+                message=message,
+                score=0.0,
+                details={
+                    "command_template": command_template,
+                    "interpolated_command": interpolated_command,
+                    "expected_exit_code": expected_exit_code,
+                    "actual_exit_code": None,
+                    "timeout_seconds": timeout_seconds,
+                    "working_directory": working_directory,
+                    "stdout": stdout,
+                    "stderr": stderr,
+                    "error": "timeout",
+                },
+                validator_type=self.validator_type,
+            )
+
+        except FileNotFoundError as e:
+            # Step 11: Handle command not found as failure
+            message = f"Command not found: {e.filename or interpolated_command}"
+            if description:
+                message = f"{message} ({description})"
+
+            _logger.warning(
+                "TestPassValidator: FAILED - command not found: %s",
+                e.filename or interpolated_command
+            )
+
+            return ValidatorResult(
+                passed=False,
+                message=message,
+                score=0.0,
+                details={
+                    "command_template": command_template,
+                    "interpolated_command": interpolated_command,
+                    "expected_exit_code": expected_exit_code,
+                    "actual_exit_code": None,
+                    "timeout_seconds": timeout_seconds,
+                    "working_directory": working_directory,
+                    "stdout": "",
+                    "stderr": "",
+                    "error": "command_not_found",
+                    "error_message": str(e),
+                },
+                validator_type=self.validator_type,
+            )
+
+        except OSError as e:
+            # Handle other OS-level errors (e.g., permission denied)
+            message = f"Command execution failed: {e}"
+            if description:
+                message = f"{message} ({description})"
+
+            _logger.error(
+                "TestPassValidator: FAILED - OS error executing command: %s",
+                e
+            )
+
+            return ValidatorResult(
+                passed=False,
+                message=message,
+                score=0.0,
+                details={
+                    "command_template": command_template,
+                    "interpolated_command": interpolated_command,
+                    "expected_exit_code": expected_exit_code,
+                    "actual_exit_code": None,
+                    "timeout_seconds": timeout_seconds,
+                    "working_directory": working_directory,
+                    "stdout": "",
+                    "stderr": "",
+                    "error": "os_error",
+                    "error_message": str(e),
+                },
+                validator_type=self.validator_type,
+            )
+
+        except Exception as e:
+            # Handle unexpected errors
+            message = f"Unexpected error executing command: {e}"
+            if description:
+                message = f"{message} ({description})"
+
+            _logger.exception(
+                "TestPassValidator: FAILED - unexpected error executing command"
+            )
+
+            return ValidatorResult(
+                passed=False,
+                message=message,
+                score=0.0,
+                details={
+                    "command_template": command_template,
+                    "interpolated_command": interpolated_command,
+                    "expected_exit_code": expected_exit_code,
+                    "actual_exit_code": None,
+                    "timeout_seconds": timeout_seconds,
+                    "working_directory": working_directory,
+                    "stdout": "",
+                    "stderr": "",
+                    "error": "unexpected_error",
+                    "error_message": str(e),
+                },
+                validator_type=self.validator_type,
+            )
+
+
 def _dict_to_searchable_text(d: dict, prefix: str = "") -> str:
     """
     Convert a dictionary to a searchable text string.
@@ -560,6 +871,7 @@ def _get_match_context(text: str, match: re.Match, context_chars: int = 50) -> s
 VALIDATOR_REGISTRY: dict[str, type[Validator]] = {
     "file_exists": FileExistsValidator,
     "forbidden_patterns": ForbiddenPatternsValidator,
+    "test_pass": TestPassValidator,
 }
 
 
@@ -677,3 +989,382 @@ def evaluate_acceptance_spec(
         overall_passed = all(r.passed for r in results)
 
     return overall_passed, results
+
+
+# =============================================================================
+# AcceptanceGate - Gate Orchestration (Feature #35)
+# =============================================================================
+
+@dataclass
+class GateResult:
+    """
+    Result of acceptance gate evaluation.
+
+    Attributes:
+        passed: Overall gate pass/fail based on gate_mode
+        verdict: Final verdict string (passed, failed, partial)
+        gate_mode: Gate mode used for evaluation
+        validator_results: Per-validator outcomes
+        acceptance_results: JSON-serializable results for AgentRun storage
+        required_failed: True if a required validator failed
+        summary: Human-readable summary of the evaluation
+    """
+    passed: bool
+    verdict: str  # "passed", "failed", or "partial"
+    gate_mode: str
+    validator_results: list[ValidatorResult]
+    acceptance_results: list[dict[str, Any]]
+    required_failed: bool = False
+    summary: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "passed": self.passed,
+            "verdict": self.verdict,
+            "gate_mode": self.gate_mode,
+            "acceptance_results": self.acceptance_results,
+            "required_failed": self.required_failed,
+            "summary": self.summary,
+            "validators_passed": sum(1 for r in self.validator_results if r.passed),
+            "validators_total": len(self.validator_results),
+        }
+
+
+class AcceptanceGate:
+    """
+    Orchestrates acceptance gate evaluation for AgentRuns.
+
+    The AcceptanceGate class implements Feature #35, providing:
+    - Full orchestration of validator execution
+    - Gate mode handling (all_pass, any_pass)
+    - Required validator enforcement
+    - Per-validator result collection
+    - AgentRun verdict and acceptance_results updates
+
+    Gate Modes:
+        - all_pass: All validators must pass for overall success
+        - any_pass: At least one validator must pass for overall success
+        - weighted: (future) Validators have weights, min_score determines success
+
+    Required Validators:
+        Validators marked with required=True must ALWAYS pass,
+        regardless of gate_mode. If any required validator fails,
+        the overall gate fails.
+
+    Usage:
+        ```python
+        from api.validators import AcceptanceGate
+        from api.agentspec_models import AgentRun, AcceptanceSpec
+
+        gate = AcceptanceGate()
+
+        # Evaluate and get result
+        result = gate.evaluate(run, acceptance_spec, context)
+
+        # Or evaluate and update run in one call
+        result = gate.evaluate_and_update_run(run, acceptance_spec, context)
+        ```
+    """
+
+    def __init__(self):
+        """Initialize the AcceptanceGate."""
+        self._logger = logging.getLogger(__name__)
+
+    def evaluate(
+        self,
+        run: "AgentRun",
+        acceptance_spec: Any,  # AcceptanceSpec model
+        context: dict[str, Any] | None = None,
+    ) -> GateResult:
+        """
+        Evaluate acceptance gate for an AgentRun.
+
+        This method implements Feature #35 steps 1-11:
+        1. Iterate through validators array
+        2. Instantiate appropriate validator class for each type
+        3. Execute validator and collect ValidatorResult
+        4. Check required flag - required validators must always pass
+        5. For all_pass mode: verdict = passed if all passed
+        6. For any_pass mode: verdict = passed if any passed
+        7. Build acceptance_results array with per-validator outcomes
+
+        Args:
+            run: The AgentRun to evaluate acceptance for
+            acceptance_spec: The AcceptanceSpec with validators and gate_mode
+            context: Optional runtime context for validator interpolation.
+                    If not provided, builds context from run.
+
+        Returns:
+            GateResult with overall verdict and per-validator results
+        """
+        # Build context if not provided
+        if context is None:
+            context = {}
+
+        # Extract validators and gate_mode from acceptance_spec
+        validators_config = self._get_validators(acceptance_spec)
+        gate_mode = self._get_gate_mode(acceptance_spec)
+
+        self._logger.info(
+            "AcceptanceGate.evaluate: run_id=%s, gate_mode=%s, validators=%d",
+            run.id if run else "None", gate_mode, len(validators_config)
+        )
+
+        # Handle empty validators case
+        if not validators_config:
+            self._logger.info("No validators defined, defaulting to passed")
+            return GateResult(
+                passed=True,
+                verdict="passed",
+                gate_mode=gate_mode,
+                validator_results=[],
+                acceptance_results=[],
+                required_failed=False,
+                summary="No validators defined, defaulting to passed",
+            )
+
+        # Step 1-3: Iterate through validators, instantiate, and execute
+        validator_results: list[ValidatorResult] = []
+        acceptance_results: list[dict[str, Any]] = []
+        required_failed = False
+
+        for index, validator_def in enumerate(validators_config):
+            # Step 2: Instantiate appropriate validator class for each type
+            validator_type = validator_def.get("type")
+            config = validator_def.get("config", {})
+            is_required = validator_def.get("required", False)
+            weight = validator_def.get("weight", 1.0)
+
+            self._logger.debug(
+                "Evaluating validator %d: type=%s, required=%s",
+                index, validator_type, is_required
+            )
+
+            # Step 3: Execute validator and collect ValidatorResult
+            result = evaluate_validator(validator_def, context, run)
+            validator_results.append(result)
+
+            # Step 4: Check required flag - required validators must always pass
+            if is_required and not result.passed:
+                required_failed = True
+                self._logger.warning(
+                    "Required validator %d (%s) failed: %s",
+                    index, validator_type, result.message
+                )
+
+            # Step 7: Build acceptance_results array with per-validator outcomes
+            acceptance_result = {
+                "index": index,
+                "type": validator_type,
+                "passed": result.passed,
+                "message": result.message,
+                "score": result.score,
+                "required": is_required,
+                "weight": weight,
+                "details": result.details,
+            }
+            acceptance_results.append(acceptance_result)
+
+        # Step 5-6: Determine overall pass based on gate mode
+        passed, verdict = self._determine_verdict(
+            validator_results=validator_results,
+            gate_mode=gate_mode,
+            required_failed=required_failed,
+        )
+
+        # Build summary
+        passed_count = sum(1 for r in validator_results if r.passed)
+        total_count = len(validator_results)
+        summary = self._build_summary(
+            passed_count=passed_count,
+            total_count=total_count,
+            gate_mode=gate_mode,
+            required_failed=required_failed,
+            verdict=verdict,
+        )
+
+        self._logger.info(
+            "AcceptanceGate.evaluate complete: verdict=%s, passed=%d/%d, required_failed=%s",
+            verdict, passed_count, total_count, required_failed
+        )
+
+        return GateResult(
+            passed=passed,
+            verdict=verdict,
+            gate_mode=gate_mode,
+            validator_results=validator_results,
+            acceptance_results=acceptance_results,
+            required_failed=required_failed,
+            summary=summary,
+        )
+
+    def evaluate_and_update_run(
+        self,
+        run: "AgentRun",
+        acceptance_spec: Any,
+        context: dict[str, Any] | None = None,
+    ) -> GateResult:
+        """
+        Evaluate acceptance gate and update AgentRun with results.
+
+        This is a convenience method that:
+        1. Calls evaluate() to run validators
+        2. Sets AgentRun.final_verdict based on gate result (Step 9)
+        3. Stores acceptance_results JSON in AgentRun (Step 10)
+        4. Returns overall verdict (Step 11)
+
+        Args:
+            run: The AgentRun to evaluate and update
+            acceptance_spec: The AcceptanceSpec with validators and gate_mode
+            context: Optional runtime context for validator interpolation
+
+        Returns:
+            GateResult with overall verdict and per-validator results
+
+        Note:
+            This method does NOT commit the database session.
+            The caller is responsible for committing after this call.
+        """
+        # Evaluate the gate
+        result = self.evaluate(run, acceptance_spec, context)
+
+        # Step 9: Set AgentRun.final_verdict based on gate result
+        run.final_verdict = result.verdict
+
+        # Step 10: Store acceptance_results JSON in AgentRun
+        run.acceptance_results = result.acceptance_results
+
+        self._logger.info(
+            "Updated run %s: final_verdict=%s, acceptance_results count=%d",
+            run.id, run.final_verdict, len(result.acceptance_results)
+        )
+
+        # Step 11: Return overall verdict
+        return result
+
+    def _get_validators(self, acceptance_spec: Any) -> list[dict[str, Any]]:
+        """
+        Extract validators list from AcceptanceSpec.
+
+        Handles both SQLAlchemy models and plain dicts.
+        """
+        if acceptance_spec is None:
+            return []
+
+        # Try AcceptanceSpec model
+        if hasattr(acceptance_spec, "validators"):
+            validators = acceptance_spec.validators
+            return validators if validators else []
+
+        # Try dict
+        if isinstance(acceptance_spec, dict):
+            return acceptance_spec.get("validators", [])
+
+        return []
+
+    def _get_gate_mode(self, acceptance_spec: Any) -> str:
+        """
+        Extract gate_mode from AcceptanceSpec.
+
+        Handles both SQLAlchemy models and plain dicts.
+        Defaults to "all_pass" if not specified.
+        """
+        if acceptance_spec is None:
+            return "all_pass"
+
+        # Try AcceptanceSpec model
+        if hasattr(acceptance_spec, "gate_mode"):
+            return acceptance_spec.gate_mode or "all_pass"
+
+        # Try dict
+        if isinstance(acceptance_spec, dict):
+            return acceptance_spec.get("gate_mode", "all_pass")
+
+        return "all_pass"
+
+    def _determine_verdict(
+        self,
+        validator_results: list[ValidatorResult],
+        gate_mode: str,
+        required_failed: bool,
+    ) -> tuple[bool, str]:
+        """
+        Determine overall pass/fail and verdict based on gate mode.
+
+        Steps 5-6 of Feature #35:
+        - Step 5: For all_pass mode: verdict = passed if all passed
+        - Step 6: For any_pass mode: verdict = passed if any passed
+
+        Required validators take precedence - if any required validator
+        fails, the overall gate fails regardless of gate_mode.
+
+        Args:
+            validator_results: List of ValidatorResult from each validator
+            gate_mode: Gate mode ("all_pass", "any_pass", "weighted")
+            required_failed: True if any required validator failed
+
+        Returns:
+            Tuple of (passed: bool, verdict: str)
+            verdict is one of: "passed", "failed", "partial"
+        """
+        # Handle empty results
+        if not validator_results:
+            return True, "passed"
+
+        # Required validators take precedence
+        if required_failed:
+            # Check if any validator passed (partial)
+            any_passed = any(r.passed for r in validator_results)
+            verdict = "partial" if any_passed else "failed"
+            return False, verdict
+
+        # Step 5: For all_pass mode: verdict = passed if all passed
+        if gate_mode == "all_pass":
+            all_passed = all(r.passed for r in validator_results)
+            if all_passed:
+                return True, "passed"
+            else:
+                # Check if any passed (partial)
+                any_passed = any(r.passed for r in validator_results)
+                verdict = "partial" if any_passed else "failed"
+                return False, verdict
+
+        # Step 6: For any_pass mode: verdict = passed if any passed
+        elif gate_mode == "any_pass":
+            any_passed = any(r.passed for r in validator_results)
+            if any_passed:
+                return True, "passed"
+            else:
+                return False, "failed"
+
+        # Weighted mode (future) or unknown - default to all_pass behavior
+        else:
+            all_passed = all(r.passed for r in validator_results)
+            if all_passed:
+                return True, "passed"
+            else:
+                any_passed = any(r.passed for r in validator_results)
+                verdict = "partial" if any_passed else "failed"
+                return False, verdict
+
+    def _build_summary(
+        self,
+        passed_count: int,
+        total_count: int,
+        gate_mode: str,
+        required_failed: bool,
+        verdict: str,
+    ) -> str:
+        """Build a human-readable summary of the gate evaluation."""
+        parts = []
+
+        parts.append(f"{passed_count}/{total_count} validators passed")
+
+        if required_failed:
+            parts.append("required validator failed")
+
+        parts.append(f"gate_mode={gate_mode}")
+        parts.append(f"verdict={verdict}")
+
+        return " | ".join(parts)
