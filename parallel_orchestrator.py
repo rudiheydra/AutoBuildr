@@ -217,7 +217,12 @@ class ParallelOrchestrator:
         """
         debug_log.section("DEPENDENCY HEALTH CHECK")
         debug_log.log("HEALTH_CHECK", "Running dependency graph validation on startup")
-        print("Running dependency health check...", flush=True)
+
+        # Print formatted log header
+        print(flush=True)
+        print("=" * 60, flush=True)
+        print("=== DEPENDENCY HEALTH CHECK ===", flush=True)
+        print("=" * 60, flush=True)
 
         session = self.get_session()
         try:
@@ -227,7 +232,9 @@ class ParallelOrchestrator:
 
             if feature_count == 0:
                 debug_log.log("HEALTH_CHECK", "No features in database, skipping validation")
-                print("  No features found - skipping validation", flush=True)
+                print("No features found - skipping validation", flush=True)
+                print("=" * 60, flush=True)
+                print(flush=True)
                 return True
 
             # Convert to dicts for validate_dependency_graph
@@ -247,25 +254,48 @@ class ParallelOrchestrator:
 
             # Step 4: Handle issues according to type
             if result["is_valid"]:
-                print(f"  Dependency graph is healthy ({feature_count} features)", flush=True)
+                print(flush=True)
+                print("Result: Dependency graph is healthy", flush=True)
+                print(f"  Scanned {feature_count} features, no issues found.", flush=True)
+                print("=" * 60, flush=True)
+                print(flush=True)
                 return True
 
-            # Report issues
-            print(f"  Dependency issues found: {result['summary']}", flush=True)
+            # Track counts for final summary
+            auto_fixed_count = 0
+            requires_attention_count = 0
+
+            print(flush=True)
 
             # Handle self-references (auto-fixable)
             if result["self_references"]:
-                print(f"  Auto-fixing {len(result['self_references'])} self-reference(s):", flush=True)
+                print("-" * 60, flush=True)
+                print("SELF-REFERENCES FOUND (auto-fixing):", flush=True)
+                print(f"  Found {len(result['self_references'])} feature(s) with self-references:", flush=True)
                 for feature_id in result["self_references"]:
                     feature = session.query(Feature).filter(Feature.id == feature_id).first()
                     if feature and feature.dependencies:
-                        # Remove self-reference from dependencies
                         original_deps = feature.dependencies
+
+                        # Log BEFORE the fix (Feature #101: structured logging with before/after state for auditability)
+                        _logger.info(
+                            "health_check_self_reference: action=before_fix feature_id=%d message='Feature %d has self-reference, removing' original_deps=%s",
+                            feature_id, feature_id, original_deps
+                        )
+
+                        # Remove self-reference from dependencies
                         new_deps = [d for d in original_deps if d != feature_id]
                         feature.dependencies = new_deps
                         print(f"    - Feature #{feature_id}: removed self-reference "
                               f"(deps: {original_deps} -> {new_deps})", flush=True)
-                        # Emit WARNING level log for Feature #96 requirement
+
+                        # Log AFTER the fix (Feature #101: structured logging with before/after state for auditability)
+                        _logger.info(
+                            "health_check_self_reference: action=after_fix feature_id=%d message='Feature %d dependencies changed from %s to %s'",
+                            feature_id, feature_id, original_deps, new_deps
+                        )
+
+                        # Emit WARNING level log for Feature #96 requirement (backward compatibility)
                         _logger.warning(
                             "Auto-fixed self-reference: Feature #%d removed dependency on itself "
                             "(original_deps=%s, new_deps=%s)",
@@ -274,22 +304,39 @@ class ParallelOrchestrator:
                         debug_log.log("HEALTH_CHECK", f"Auto-fixed self-reference for feature #{feature_id}",
                             original_deps=original_deps,
                             new_deps=new_deps)
+                        auto_fixed_count += 1
                 session.commit()
 
             # Handle missing targets (auto-fixable)
             if result["missing_targets"]:
                 total_missing = sum(len(m) for m in result["missing_targets"].values())
-                print(f"  Auto-fixing {total_missing} missing dependency target(s):", flush=True)
+                print("-" * 60, flush=True)
+                print("ORPHANED REFERENCES FOUND (auto-removing):", flush=True)
+                print(f"  Found {total_missing} orphaned dependency reference(s) in {len(result['missing_targets'])} feature(s):", flush=True)
                 for feature_id, missing_ids in result["missing_targets"].items():
                     feature = session.query(Feature).filter(Feature.id == feature_id).first()
                     if feature and feature.dependencies:
-                        # Remove missing dependencies
                         original_deps = feature.dependencies
+
+                        # Log BEFORE the fix (Feature #101: structured logging with before/after state for auditability)
+                        _logger.info(
+                            "health_check_orphaned_dependency: action=before_fix feature_id=%d message='Feature %d has orphaned dependencies %s, removing' original_deps=%s",
+                            feature_id, feature_id, missing_ids, original_deps
+                        )
+
+                        # Remove missing dependencies
                         new_deps = [d for d in original_deps if d not in missing_ids]
                         feature.dependencies = new_deps
                         print(f"    - Feature #{feature_id}: removed missing deps {missing_ids} "
                               f"(deps: {original_deps} -> {new_deps})", flush=True)
-                        # Emit WARNING level log for Feature #98 requirement
+
+                        # Log AFTER the fix (Feature #101: structured logging with before/after state for auditability)
+                        _logger.info(
+                            "health_check_orphaned_dependency: action=after_fix feature_id=%d message='Feature %d dependencies changed from %s to %s' removed_orphans=%s",
+                            feature_id, feature_id, original_deps, new_deps, missing_ids
+                        )
+
+                        # Emit WARNING level log for Feature #98 requirement (backward compatibility)
                         _logger.warning(
                             "Auto-fixed orphaned dependency reference: Feature #%d removed non-existent "
                             "dependency IDs %s (original_deps=%s, new_deps=%s)",
@@ -299,15 +346,15 @@ class ParallelOrchestrator:
                             original_deps=original_deps,
                             new_deps=new_deps,
                             removed_ids=missing_ids)
+                        auto_fixed_count += 1
                 session.commit()
 
             # Handle cycles (BLOCKING - requires user resolution before startup)
             if result["cycles"]:
+                requires_attention_count = len(result["cycles"])
                 print(flush=True)
-                print("=" * 70, flush=True)
-                print("  ERROR: CIRCULAR DEPENDENCIES DETECTED", flush=True)
-                print("=" * 70, flush=True)
-                print(flush=True)
+                print("-" * 60, flush=True)
+                print("CYCLES FOUND (requires user action):", flush=True)
                 print(f"  Found {len(result['cycles'])} circular dependency cycle(s):", flush=True)
                 print(flush=True)
                 for i, cycle in enumerate(result["cycles"], 1):
@@ -321,17 +368,26 @@ class ParallelOrchestrator:
                 print("  To fix: Remove one dependency from each cycle.", flush=True)
                 print("  You can use the feature management API or edit the database directly.", flush=True)
                 print(flush=True)
-                print("=" * 70, flush=True)
-                print("  STARTUP BLOCKED - Please resolve cycles before running the orchestrator", flush=True)
-                print("=" * 70, flush=True)
+                print("-" * 60, flush=True)
+                print(flush=True)
+                # Print summary before blocking
+                print("=" * 60, flush=True)
+                print(f"Summary: {auto_fixed_count} issues auto-fixed, {requires_attention_count} issues require attention", flush=True)
+                print("=" * 60, flush=True)
+                print(flush=True)
+                print("STARTUP BLOCKED - Please resolve cycles before running the orchestrator", flush=True)
                 print(flush=True)
                 return False
 
-            # Log final summary
-            auto_fixed_count = len(result["self_references"]) + sum(len(m) for m in result["missing_targets"].values())
+            # Log final summary (no cycles, all issues auto-fixed)
+            print(flush=True)
+            print("=" * 60, flush=True)
             if auto_fixed_count > 0:
-                print(f"  Auto-fixed {auto_fixed_count} issue(s)", flush=True)
-            print("  Dependency health check complete", flush=True)
+                print(f"Summary: {auto_fixed_count} issues auto-fixed, 0 issues require attention", flush=True)
+            else:
+                print("Result: Dependency graph is healthy", flush=True)
+            print("=" * 60, flush=True)
+            print(flush=True)
 
             return True
 

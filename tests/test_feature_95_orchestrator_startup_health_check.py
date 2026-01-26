@@ -608,8 +608,8 @@ class TestVerificationSteps:
 
             captured = capsys.readouterr()
 
-            # Verify summary was printed
-            assert "Running dependency health check" in captured.out
+            # Verify summary was printed (matches formatted header from implementation)
+            assert "DEPENDENCY HEALTH CHECK" in captured.out
             assert "healthy" in captured.out.lower()
 
 
