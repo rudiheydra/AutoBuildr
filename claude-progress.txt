@@ -1,6 +1,60 @@
 # AutoBuildr Progress Log
 # ======================
 
+## Session: 2026-01-27 (Coding Agent - Feature #66)
+
+### Feature #66: Turns Progress Bar Component - COMPLETED
+
+**Status:** PASSING
+
+**Category:** O. Responsive & Layout
+
+**Description:** Create reusable progress bar component showing turns_used / max_turns with animation.
+
+**Dependencies:** [65] - AgentRun Status Color Coding (PASSING)
+
+**Verification Steps (All Passed):**
+
+1. Create TurnsProgressBar.tsx component - PASS
+2. Props: used (number), max (number) - PASS
+3. Calculate percentage = (used / max) * 100 - PASS
+4. Cap at 100% for display - PASS
+5. Animate width transition on update - PASS
+6. Show tooltip with exact values on hover - PASS
+7. Use status-appropriate color - PASS
+8. Handle max=0 edge case - PASS
+
+**Implementation Summary:**
+
+Created standalone TurnsProgressBar component with:
+- Props interface: used, max, status, className, showLabel, label, size
+- Percentage calculation capped at 100%
+- CSS transition animation with cubic-bezier easing
+- Tooltip on hover showing exact values and percentage
+- Status-appropriate colors from Feature #65
+- Edge case handling for max=0
+- Full accessibility (role="progressbar", aria-* attributes)
+- Size variants (sm, md, lg)
+- Demo page for visual testing
+
+**Test Results:**
+- tests/test_feature_66_turns_progress_bar.py: 30/30 tests PASS
+
+**Files Created:**
+- ui/src/components/TurnsProgressBar.tsx
+- ui/src/components/TurnsProgressBarDemo.tsx
+- tests/test_feature_66_turns_progress_bar.py
+
+**Files Modified:**
+- ui/src/components/DynamicAgentCard.tsx
+- ui/src/components/Skeleton.tsx
+
+**Commit:** a1d4362
+
+**Updated Progress:** 54/103 features passing (52.4%)
+
+---
+
 ## Session: 2026-01-27 (Coding Agent - Feature #52)
 
 ### Feature #52: Feature to AgentSpec Compiler - COMPLETED
