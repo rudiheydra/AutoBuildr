@@ -1368,3 +1368,86 @@ in the state machine itself. Server startup import issue was fixed.
 **Conclusion:** Feature #43 passes all verification steps. No regression detected.
 
 [Testing] Feature #43 verified - still passing
+
+---
+
+## Session: 2026-01-27 (Coding Agent #20)
+
+### Feature #20: GET /api/agent-runs/:id/artifacts List Artifacts - COMPLETED
+
+**Status:** PASSING
+
+**Category:** F. UI-Backend Integration
+
+**Description:** Implement GET /api/agent-runs/:id/artifacts endpoint to list artifacts without inline content for performance.
+
+**Verification Summary (6 Steps):**
+- Step 1: Define FastAPI route GET /api/agent-runs/{run_id}/artifacts - PASS
+  - Route defined in server/routers/agent_runs.py
+  - Path: /api/agent-runs/{run_id}/artifacts
+  - Method: GET
+- Step 2: Add query parameter: artifact_type filter - PASS
+  - Optional parameter for filtering by artifact type
+  - Validates against: file_change, test_result, log, metric, snapshot
+  - Returns 400 for invalid artifact_type
+- Step 3: Query Artifacts by run_id - PASS
+  - Uses list_artifacts() from api/agentspec_crud.py
+  - Returns 404 for non-existent run
+- Step 4: Filter by artifact_type if provided - PASS
+  - list_artifacts() accepts artifact_type parameter
+  - Validation in endpoint returns descriptive error
+- Step 5: Exclude content_inline from list response for performance - PASS
+  - Created ArtifactListItemResponse schema without content_inline field
+  - Includes has_inline_content boolean indicator instead
+- Step 6: Return list of ArtifactResponse without content - PASS
+  - ArtifactListResponse uses ArtifactListItemResponse for artifacts list
+  - Includes: artifacts, total, run_id
+
+**Implementation Details:**
+- Created `ArtifactListItemResponse` schema that excludes `content_inline`
+- Updated `ArtifactListResponse` to use `ArtifactListItemResponse` for performance
+- Implemented endpoint with artifact_type validation
+- Returns 404 for non-existent runs, 400 for invalid artifact_type
+
+**Test Results:**
+- 16 unit tests in tests/test_feature_20_unit.py - ALL PASS
+- Verification script tests/verify_feature_20.py - 6/6 PASS
+
+**Files Modified:**
+- server/routers/agent_runs.py: Added get_run_artifacts endpoint
+- server/schemas/agentspec.py: Added ArtifactListItemResponse, updated ArtifactListResponse
+
+**Files Created:**
+- tests/verify_feature_20.py: Feature verification script
+- tests/test_feature_20_unit.py: Unit tests (16 tests)
+- tests/test_feature_20_e2e.py: E2E tests (requires server restart)
+
+**Commit:** 7c34eac - "feat: Implement GET /api/agent-runs/:id/artifacts endpoint (Feature #20)"
+
+---
+
+**Updated Progress:**
+- Feature #1: AgentSpec SQLite Table Schema - PASSING
+- Feature #2: AcceptanceSpec SQLite Table Schema - PASSING
+- Feature #3: AgentRun SQLite Table Schema - PASSING
+- Feature #4: Artifact SQLite Table Schema - PASSING
+- Feature #5: AgentEvent SQLite Table Schema - PASSING
+- Feature #7: AgentSpec Pydantic Request/Response Schemas - PASSING
+- Feature #8: AcceptanceSpec Pydantic Schemas - PASSING
+- Feature #9: AgentRun Pydantic Response Schema - PASSING
+- Feature #10: Artifact and AgentEvent Pydantic Schemas - PASSING
+- Feature #16: POST /api/agent-specs/:id/execute Trigger Execution - PASSING
+- Feature #18: GET /api/agent-runs/:id Get Run Details - PASSING
+- Feature #19: GET /api/agent-runs/:id/events Event Timeline - PASSING
+- Feature #20: GET /api/agent-runs/:id/artifacts List Artifacts - PASSING
+- Feature #26: AgentRun Status Transition State Machine - PASSING
+- Feature #31: Artifact Storage with Content-Addressing - PASSING
+- Feature #43: Tool Hints System Prompt Injection - PASSING
+- Feature #51: Skill Template Registry - PASSING
+- Feature #65: AgentRun Status Color Coding - PASSING
+- Total: 18/103 features passing (approximately 17.5%)
+
+**Next Steps:**
+- Continue with UI-Backend Integration features
+- GET /api/artifacts/:id for full artifact content
+- Run Inspector UI components
