@@ -386,3 +386,71 @@
 
 [Testing] Feature #1 verified - still passing
 
+---
+
+### Feature #9: AgentRun Pydantic Response Schema - COMPLETED
+
+**Status:** PASSING
+
+**Category:** M. Form Validation
+
+**Description:** Create Pydantic models for AgentRun responses: AgentRunResponse, AgentRunListResponse. Include status enum validation.
+
+**Verification Summary:**
+- Step 1: Define AgentRunResponse with all AgentRun fields - PASS
+  - id, agent_spec_id, status, started_at, completed_at, turns_used, tokens_in, tokens_out
+  - final_verdict, acceptance_results, error, retry_count, created_at
+- Step 2: Add Field validator for status in [pending, running, paused, completed, failed, timeout] - PASS
+  - @field_validator("status", mode="before") validates against all 6 allowed values
+- Step 3: Add Field validator for final_verdict in [passed, failed, partial] or None - PASS
+  - @field_validator("final_verdict", mode="before") validates against 3 allowed values or None
+- Step 4: Define AgentRunListResponse for paginated lists - PASS
+  - Includes runs, total, offset, limit fields
+- Step 5: Include computed fields for duration_seconds when both timestamps present - PASS
+  - Custom __init__ computes duration_seconds from started_at and completed_at
+  - Returns None when either timestamp is missing (run pending or still in progress)
+
+**Implementation Notes:**
+- Added `from __future__ import annotations` for Python 3.8 compatibility
+- Installed `eval_type_backport>=0.3.0` package for Python 3.8 type hint support
+- Added comprehensive tests: 12 new tests in TestAgentRunResponse and TestAgentRunListResponse classes
+- All 24 schema tests pass
+
+**Test Coverage:**
+- test_valid_agent_run_response - PASS
+- test_status_validation_valid (all 6 statuses) - PASS
+- test_status_validation_invalid - PASS
+- test_final_verdict_validation_valid (None + 3 verdicts) - PASS
+- test_final_verdict_validation_invalid - PASS
+- test_duration_seconds_computed_when_both_timestamps_present - PASS
+- test_duration_seconds_none_when_started_at_missing - PASS
+- test_duration_seconds_none_when_completed_at_missing - PASS
+- test_duration_seconds_from_iso_strings - PASS
+- test_list_response_structure - PASS
+- test_empty_list_response - PASS
+
+**Files Modified:**
+- `server/schemas/agentspec.py`: Enhanced AgentRunResponse with validators and computed field
+- `tests/test_agentspec_schemas.py`: Added TestAgentRunResponse and TestAgentRunListResponse classes
+- `requirements.txt`: Added eval_type_backport dependency for Python 3.8
+
+**Commit:** ba94f83 - "feat: Add AgentRun Pydantic Response Schema with validators (#9)"
+
+---
+
+**Current Progress:**
+- Feature #1: AgentSpec SQLite Table Schema - PASSING
+- Feature #2: AcceptanceSpec SQLite Table Schema - PASSING
+- Feature #3: AgentRun SQLite Table Schema - PASSING
+- Feature #4: Artifact SQLite Table Schema - PASSING
+- Feature #5: AgentEvent SQLite Table Schema - PASSING
+- Feature #7: AgentSpec Pydantic Request/Response Schemas - PASSING
+- Feature #9: AgentRun Pydantic Response Schema - PASSING
+- Feature #26: AgentRun Status Transition State Machine - PASSING
+- Total: 8/85 features passing (approximately 9.4%)
+
+**Next Steps:**
+- Continue with Form Validation features (Pydantic schemas)
+- API endpoints for AgentSpec/AgentRun CRUD operations
+- HarnessKernel.execute() implementation
+
