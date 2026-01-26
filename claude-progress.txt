@@ -1260,3 +1260,111 @@ in the state machine itself. Server startup import issue was fixed.
 - Implement remaining API endpoints for agent management
 
 [Testing] Feature #43 verified - still passing. All 36 unit tests pass, verification scripts pass, integration tests pass. No regression detected.
+
+---
+
+## Session: 2026-01-27 03:24
+
+### Feature #16: POST /api/agent-specs/:id/execute Trigger Execution - COMPLETED
+
+**Status:** PASSING
+
+**Category:** D. Workflow Completeness
+
+**Description:** Implement POST /api/agent-specs/:id/execute endpoint to trigger HarnessKernel execution and create AgentRun.
+
+**Dependencies:** Feature #1 (AgentSpec SQLite Table), #3 (AgentRun SQLite Table), #9 (AgentRun Pydantic Schema) - all passing
+
+**Verification Summary:**
+- Step 1: Define FastAPI route POST /api/agent-specs/{spec_id}/execute - PASS
+  - Route defined with correct path and POST method
+  - Returns 202 Accepted status code
+- Step 2: Query AgentSpec by id and verify exists - PASS
+  - Endpoint queries AgentSpec by spec_id from database
+- Step 3: Return 404 if spec not found - PASS
+  - HTTPException with status_code=404 raised for non-existent specs
+- Step 4: Create new AgentRun with status=pending - PASS
+  - AgentRunModel created with status="pending"
+- Step 5: Set created_at to current UTC timestamp - PASS
+  - Uses _utc_now() for UTC timestamp
+- Step 6: Commit run record to database - PASS
+  - Run is added, committed, and refreshed in database
+- Step 7: Queue execution task (async background) - PASS
+  - asyncio.create_task() queues _execute_spec_background
+  - Task stored in _execution_tasks dict for tracking
+- Step 8: Return AgentRunResponse with status 202 Accepted - PASS
+  - Returns complete AgentRunResponse with all fields
+
+**Implementation Details:**
+- Endpoint: POST /api/projects/{project_name}/agent-specs/{spec_id}/execute
+- Background task transitions run from "pending" to "running" and sets started_at
+- Placeholder for HarnessKernel.execute() - will be implemented in future feature
+- Error handling marks run as "failed" with error message on exceptions
+
+**Test Results:**
+- tests/verify_feature_16.py: 6/6 tests pass
+- tests/test_feature_16_e2e.py: All E2E tests pass
+  - Verified run creation and database persistence
+  - Verified 404 handling for non-existent specs
+  - Verified background task execution
+
+**Files Modified:**
+- `server/routers/agent_specs.py`: Added execute_agent_spec endpoint and _execute_spec_background task
+
+**Files Created:**
+- `tests/verify_feature_16.py`: Comprehensive verification script
+- `tests/test_feature_16_e2e.py`: End-to-end tests with real database
+- `tests/test_import_router.py`: Import validation tests
+- `tests/check_routes.py`: Route registration verification
+
+**Commit:** e0a9444 - "Add verification tests for Feature #16: POST /api/agent-specs/:id/execute"
+
+---
+
+**Updated Progress:**
+- Feature #1: AgentSpec SQLite Table Schema - PASSING
+- Feature #2: AcceptanceSpec SQLite Table Schema - PASSING
+- Feature #3: AgentRun SQLite Table Schema - PASSING
+- Feature #4: Artifact SQLite Table Schema - PASSING
+- Feature #5: AgentEvent SQLite Table Schema - PASSING
+- Feature #7: AgentSpec Pydantic Request/Response Schemas - PASSING
+- Feature #8: AcceptanceSpec Pydantic Schemas - PASSING
+- Feature #9: AgentRun Pydantic Response Schema - PASSING
+- Feature #10: Artifact and AgentEvent Pydantic Schemas - PASSING
+- Feature #16: POST /api/agent-specs/:id/execute Trigger Execution - PASSING
+- Feature #18: GET /api/agent-runs/:id Get Run Details - PASSING
+- Feature #26: AgentRun Status Transition State Machine - PASSING
+- Feature #31: Artifact Storage with Content-Addressing - PASSING
+- Feature #43: Tool Hints System Prompt Injection - PASSING
+- Feature #51: Skill Template Registry - PASSING
+- Feature #65: AgentRun Status Color Coding - PASSING
+- Total: 16/103 features passing (approximately 15.5%)
+
+**Next Steps:**
+- Continue with HarnessKernel implementation features
+- Tool Policy enforcement features
+- Additional API endpoints
+
+## Regression Test Session: 2026-01-27 03:25
+
+### Feature #43: Tool Hints System Prompt Injection - VERIFIED (No Regression)
+
+**Test Results:**
+- All 36 unit tests in tests/test_prompt_builder.py PASS
+- Verification script tests/verify_feature_43.py - ALL STEPS PASSED
+- Integration test tests/verify_feature_43_integration.py - ALL TESTS PASSED
+
+**Verification Steps:**
+1. Extract tool_hints dict from spec.tool_policy - PASS
+2. Format hints as markdown guidelines - PASS
+3. Append to system prompt in dedicated section - PASS
+4. Example format verification - PASS
+
+**Implementation Verified:**
+- api/prompt_builder.py: extract_tool_hints(), format_tool_hints_as_markdown(), build_system_prompt(), inject_tool_hints_into_prompt()
+- api/__init__.py: All functions properly exported
+- Tests cover all edge cases (empty hints, unicode, special chars, multiline)
+
+**Conclusion:** Feature #43 passes all verification steps. No regression detected.
+
+[Testing] Feature #43 verified - still passing
