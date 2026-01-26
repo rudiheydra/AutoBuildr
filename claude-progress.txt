@@ -1,6 +1,76 @@
 # AutoBuildr Progress Log
 # ======================
 
+## Session: 2026-01-27 (Coding Agent - Feature #44)
+
+### Feature #44: Policy Violation Event Logging - COMPLETED
+
+**Status:** PASSING
+
+**Category:** G. State & Persistence
+
+**Description:** Log all tool policy violations as AgentEvents with violation type and blocked operation details.
+
+**Dependencies:** [5, 31, 41, 42, 43] - All passing
+- Feature #5: AgentEvent SQLite Table Schema
+- Feature #31: Artifact Storage with Content-Addressing
+- Feature #41: ToolPolicy Forbidden Patterns Enforcement
+- Feature #42: Directory Sandbox Restriction
+- Feature #43: Tool Hints System Prompt Injection
+
+**Verification Steps (All 6 Steps Passed):**
+
+1. Define policy_violation event type - PASS
+   - Added "policy_violation" to EVENT_TYPES in agentspec_models.py
+   - Created VIOLATION_TYPES list: ["allowed_tools", "forbidden_patterns", "directory_sandbox"]
+
+2. When tool blocked by allowed_tools, record event - PASS
+   - Implemented create_allowed_tools_violation() function
+   - Implemented record_allowed_tools_violation() convenience function
+   - Captures tool name, allowed tools list, blocked arguments
+
+3. When tool blocked by forbidden_patterns, record pattern matched - PASS
+   - Implemented create_forbidden_patterns_violation() function
+   - Implemented record_forbidden_patterns_violation() convenience function
+   - Captures the exact pattern that matched
+
+4. When file operation blocked by sandbox, record attempted path - PASS
+   - Implemented create_directory_sandbox_violation() function
+   - Implemented record_directory_sandbox_violation() convenience function
+   - Captures attempted path, reason, allowed directories, symlink status
+
+5. Include agent turn number in event for context - PASS
+   - All violation events include turn_number in payload
+   - Turn number helps correlate violations with agent execution flow
+
+6. Aggregate violation count in run metadata - PASS
+   - Implemented ViolationAggregation dataclass with counts by type/tool
+   - Implemented update_run_violation_metadata() for incremental updates
+   - Implemented get_violation_aggregation() to compute from events
+   - Aggregation stored in run.acceptance_results["violation_aggregation"]
+
+**Implementation Details:**
+
+- PolicyViolation dataclass: Captures all violation info
+- ViolationAggregation dataclass: Tracks counts by type, tool, and last turn
+- record_policy_violation_event(): Creates AgentEvent with policy_violation type
+- record_and_aggregate_violation(): Combined event + metadata update
+- All functions exported in api/__init__.py
+
+**Tests:**
+- 31 unit tests in tests/test_feature_44_policy_violation_logging.py
+- Verification script tests/verify_feature_44.py passes all 6 steps
+- No regressions in existing tool_policy tests (116 tests pass)
+
+**Files Modified:**
+- api/agentspec_models.py - Added policy_violation to EVENT_TYPES
+- api/tool_policy.py - Added ~600 lines of violation logging code
+- api/__init__.py - Exported new functions
+- tests/test_feature_44_policy_violation_logging.py - 31 tests
+- tests/verify_feature_44.py - Verification script
+
+---
+
 ## Session: 2026-01-27 (Coding Agent - Feature #25)
 
 ### Feature #25: HarnessKernel.execute() Core Execution Loop - COMPLETED
@@ -5526,3 +5596,122 @@ Added comprehensive tool filtering functionality to `api/tool_policy.py`:
 
 ### Current Progress:
 - 71/103 features passing (68.9%)
+[Testing] 2026-01-27 09:40:55 - Feature #88 regression test PASSED
+  - Feature: Core validate_dependency_graph function detects complex cycles
+  - Category: error-handling
+  - Verification: All 6 feature steps pass
+  - Unit tests: 19/19 tests pass (test_validate_dependency_graph_complex_cycles.py)
+  - All verification steps confirmed working:
+    - Step 1: Create feature A (id=1) with dependencies=[2] - PASS
+    - Step 2: Create feature B (id=2) with dependencies=[3] - PASS
+    - Step 3: Create feature C (id=3) with dependencies=[1] - PASS
+    - Step 4: Call validate_dependency_graph() with all three features - PASS (is_valid=False detected)
+    - Step 5: Verify cycle path [1, 2, 3] - PASS (complete cycle path detected)
+    - Step 6: Verify missing dependencies also detected - PASS (missing 99 detected)
+  - Additional validations:
+    - 4-feature cycles detected correctly
+    - 5-feature cycles detected correctly
+    - Multiple separate cycles detected
+    - Overlapping cycles handled
+    - Cycle issues marked as not auto-fixable (requires user action)
+    - ValidationResult has all required fields
+  - No regression found - feature still working correctly
+[Testing] 2026-01-27 09:42:13 - Feature #34 regression test PASSED
+  - Feature: forbidden_patterns Acceptance Validator
+  - Category: D. Workflow Completeness
+  - Verification: All 8 feature steps pass
+  - Unit tests: 56/56 tests pass (test_feature_34_forbidden_patterns_validator.py)
+  - Related validator tests: 116/116 pass (no regressions in test_pass, file_exists validators)
+  - All verification steps confirmed working:
+    - Step 1: ForbiddenPatternsValidator class exists and inherits from Validator - PASS
+    - Step 2: Extract patterns array from validator config - PASS
+    - Step 3: Compile patterns as regex (with case sensitivity options) - PASS
+    - Step 4: Query all tool_result events for the run - PASS
+    - Step 5: Check each payload against all patterns (string, dict, nested) - PASS
+    - Step 6: If any match found, return passed = false - PASS
+    - Step 7: Include matched pattern and context in result - PASS
+    - Step 8: Return passed = true if no matches - PASS
+  - Helper functions _dict_to_searchable_text and _get_match_context working correctly
+  - Edge cases handled: invalid regex, unicode, large payloads, special characters
+  - No regression found - feature still working correctly
+
+---
+
+## Session: 2026-01-27 (Coding Agent - Feature #30)
+
+### Feature #30: AgentEvent Recording Service - COMPLETED
+
+**Status:** PASSING
+
+**Category:** G. State & Persistence
+
+**Description:** Implement event recording service that creates immutable AgentEvent records with sequential ordering and 4KB payload cap.
+
+**Dependencies:** [4, 5] - Both passing
+- Feature #4: Artifact SQLite Table Schema
+- Feature #5: AgentEvent SQLite Table Schema
+
+**Verification Summary (9 Steps - All Passed):**
+
+1. Create EventRecorder class with record(run_id, event_type, payload) method - PASS
+2. Maintain sequence counter per run (start at 1) - PASS
+3. Check payload size against EVENT_PAYLOAD_MAX_SIZE (4096 chars) - PASS
+4. If payload exceeds limit, create Artifact and set artifact_ref - PASS
+5. Truncate payload and set payload_truncated to original size - PASS
+6. Set timestamp to current UTC time - PASS
+7. Create AgentEvent record with all fields - PASS
+8. Commit immediately for durability - PASS
+9. Return created event ID - PASS
+
+**Implementation Details:**
+
+Created api/event_recorder.py:
+- EventRecorder class with record(run_id, event_type, payload, tool_name) method
+- Sequence counter with in-memory cache and database fallback
+- Automatic payload truncation for large payloads (>4096 chars)
+- Artifact storage for full payload when truncated
+- Convenience methods: record_started, record_tool_call, record_tool_result,
+  record_turn_complete, record_acceptance_check, record_completed,
+  record_failed, record_paused, record_resumed
+- get_event_recorder() for cached instance access
+- clear_recorder_cache() for testing cleanup
+
+**Test Results:**
+- tests/test_feature_30_event_recorder.py: 44/44 tests PASS
+- tests/verify_feature_30.py: All 9 verification steps PASS
+
+**Files Created:**
+- api/event_recorder.py: Event recorder service (667 lines)
+- tests/test_feature_30_event_recorder.py: Comprehensive test suite (762 lines)
+- tests/verify_feature_30.py: Feature verification script (633 lines)
+
+**Files Modified:**
+- api/__init__.py: Added exports for EventRecorder, get_event_recorder, clear_recorder_cache
+
+**Commit:** 78c74d5 - "feat: Implement AgentEvent Recording Service (Feature #30)"
+
+---
+
+**Updated Progress:**
+- Total: 67/103 features passing (approximately 65.0%)
+- Feature #30: AgentEvent Recording Service - PASSING
+
+**Session completed successfully.**
+[Testing] 2026-01-27 09:45:38 - Feature #26 regression test PASSED
+  - Feature: AgentRun Status Transition State Machine
+  - Category: D. Workflow Completeness
+  - Verification: All 9 feature steps pass
+  - Unit tests: 64/64 tests pass (test_agentrun_state_machine.py)
+  - All verification steps confirmed working:
+    - Step 1: Valid state transitions defined as adjacency map (VALID_STATE_TRANSITIONS)
+    - Step 2: pending can transition to running only - PASS
+    - Step 3: running can transition to paused, completed, failed, timeout - PASS
+    - Step 4: paused can transition to running, failed - PASS
+    - Step 5: completed, failed, timeout are terminal states (no transitions) - PASS
+    - Step 6: Transition validation implemented in AgentRun model methods - PASS
+    - Step 7: InvalidStateTransition exception raised for invalid transitions - PASS
+    - Step 8: Logging all state transitions with timestamps via _logger.info() - PASS
+    - Step 9: Transitions atomic (within transaction) by design pattern - PASS
+  - API endpoints using state machine: pause, resume, cancel (verified in agent_runs.py)
+  - Browser automation unavailable - verified via unit tests and code inspection
+  - No regression found - feature still working correctly
