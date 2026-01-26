@@ -12,9 +12,9 @@
  * - Accessibility considerations with proper contrast ratios
  */
 
-import { Clock, AlertCircle, CheckCircle, PauseCircle, XCircle, Timer, Play } from 'lucide-react'
+import { Clock, AlertCircle, CheckCircle, PauseCircle, XCircle, Timer, Play, Check, X } from 'lucide-react'
 import { TurnsProgressBar } from './TurnsProgressBar'
-import type { AgentRunStatus, DynamicAgentData } from '../lib/types'
+import type { AgentRunStatus, DynamicAgentData, AgentRun } from '../lib/types'
 
 interface DynamicAgentCardProps {
   data: DynamicAgentData
@@ -106,6 +106,55 @@ function StatusBadge({ status }: { status: AgentRunStatus }) {
 // TurnsProgressBar is now imported from ./TurnsProgressBar
 
 /**
+ * ValidatorStatusIndicators Component
+ * Displays a compact summary of acceptance/validator results
+ */
+function ValidatorStatusIndicators({ run }: { run: AgentRun }) {
+  const results = run.acceptance_results as Record<string, { passed: boolean; message: string }> | null
+
+  if (!results || Object.keys(results).length === 0) {
+    return null
+  }
+
+  const entries = Object.entries(results)
+  const passedCount = entries.filter(([, r]) => r.passed).length
+  const totalCount = entries.length
+  const allPassed = passedCount === totalCount
+
+  return (
+    <div className="mt-2">
+      {/* Summary line */}
+      <div className="flex items-center gap-1.5 text-xs">
+        <span className="text-neo-text-secondary">Validators:</span>
+        <span className={allPassed ? 'text-[var(--color-status-completed-text)]' : 'text-[var(--color-status-failed-text)]'}>
+          {passedCount}/{totalCount}
+        </span>
+      </div>
+
+      {/* Individual validator indicators */}
+      <div className="flex flex-wrap gap-1 mt-1.5">
+        {entries.map(([name, result]) => (
+          <span
+            key={name}
+            className={`
+              inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-medium rounded
+              ${result.passed
+                ? 'bg-[var(--color-status-completed-bg)] text-[var(--color-status-completed-text)]'
+                : 'bg-[var(--color-status-failed-bg)] text-[var(--color-status-failed-text)]'
+              }
+            `}
+            title={result.message}
+          >
+            {result.passed ? <Check size={10} /> : <X size={10} />}
+            <span className="max-w-16 truncate">{name}</span>
+          </span>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/**
  * DynamicAgentCard - Main component
  */
 export function DynamicAgentCard({ data, onClick }: DynamicAgentCardProps) {
@@ -162,6 +211,9 @@ export function DynamicAgentCard({ data, onClick }: DynamicAgentCardProps) {
             className="mt-3"
           />
 
+          {/* Validator status indicators */}
+          <ValidatorStatusIndicators run={run} />
+
           {/* Error message if failed */}
           {run.error && status === 'failed' && (
             <div className="mt-2 p-2 rounded text-xs bg-[var(--color-status-failed-bg)] text-[var(--color-status-failed-text)]">
@@ -196,7 +248,7 @@ export function DynamicAgentCard({ data, onClick }: DynamicAgentCardProps) {
 /**
  * Export status utility functions for use in other components
  */
-export { getStatusIcon, getStatusLabel, StatusBadge }
+export { getStatusIcon, getStatusLabel, StatusBadge, ValidatorStatusIndicators }
 
 // Re-export TurnsProgressBar from its module for convenience
 export { TurnsProgressBar } from './TurnsProgressBar'
