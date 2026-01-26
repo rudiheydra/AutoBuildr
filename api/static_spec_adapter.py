@@ -618,6 +618,7 @@ class StaticSpecAdapter:
         self,
         feature_id: int,
         feature_name: str | None = None,
+        feature_steps: list[str] | None = None,
         *,
         spec_id: str | None = None,
         extra_context: dict[str, Any] | None = None,
@@ -634,6 +635,7 @@ class StaticSpecAdapter:
         Args:
             feature_id: ID of the feature to test
             feature_name: Optional human-readable feature name
+            feature_steps: Optional list of verification steps from feature definition
             spec_id: Optional spec ID
             extra_context: Additional context
 
@@ -645,16 +647,28 @@ class StaticSpecAdapter:
 
         objective = template.content
 
+        # Format feature steps as test criteria if provided
+        steps_text = ""
+        if feature_steps:
+            steps_list = "\n".join(f"- {step}" for step in feature_steps)
+            steps_text = f"\n\n## Test Criteria\n\nVerify the following steps:\n{steps_list}"
+
         # Interpolate variables
         variables = {
             "feature_id": feature_id,
             "feature_name": feature_name or f"Feature #{feature_id}",
+            "feature_steps": steps_text,
+            "test_criteria": steps_text,  # Alias for template flexibility
         }
 
         if extra_context:
             variables.update(extra_context)
 
         objective = self._registry.interpolate(template, variables)
+
+        # Append test criteria to objective if not already interpolated
+        if feature_steps and steps_text not in objective:
+            objective += steps_text
 
         # Create tool policy (more restrictive than coding)
         tool_policy = create_tool_policy(
@@ -678,6 +692,7 @@ class StaticSpecAdapter:
             "agent_type": "testing",
             "feature_id": feature_id,
             "feature_name": feature_name,
+            "feature_steps": feature_steps or [],
             "test_mode": True,
         }
 
@@ -704,8 +719,10 @@ class StaticSpecAdapter:
             tags=["testing", "verification", "legacy"],
         )
 
-        # Create acceptance spec
-        acceptance = self._create_testing_acceptance_spec(spec.id, feature_id)
+        # Create acceptance spec with feature steps
+        acceptance = self._create_testing_acceptance_spec(
+            spec.id, feature_id, feature_steps
+        )
         spec.acceptance_spec = acceptance
 
         _logger.info(
@@ -720,13 +737,18 @@ class StaticSpecAdapter:
         self,
         agent_spec_id: str,
         feature_id: int,
+        feature_steps: list[str] | None = None,
     ) -> AcceptanceSpec:
         """
         Create an AcceptanceSpec for the testing agent.
 
+        Generates test_pass validators from feature steps to ensure each
+        verification step is properly tested.
+
         Args:
             agent_spec_id: ID of the parent AgentSpec
             feature_id: ID of the feature being tested
+            feature_steps: Optional list of verification steps to convert to validators
 
         Returns:
             AcceptanceSpec with test-specific validators
@@ -745,6 +767,27 @@ class StaticSpecAdapter:
                 required=True,
             ),
         ]
+
+        # Generate test_pass validators from feature steps
+        if feature_steps:
+            for i, step in enumerate(feature_steps, start=1):
+                # Create a test_pass validator for each feature step
+                validators.append(
+                    create_validator(
+                        validator_type="test_pass",
+                        config={
+                            "name": f"step_{i}",
+                            "description": step,
+                            "step_number": i,
+                            "feature_id": feature_id,
+                            # Test command can be customized per step if needed
+                            "command": None,  # No automatic command - manual verification
+                            "expected_exit_code": 0,
+                        },
+                        weight=1.0 / max(len(feature_steps), 1),  # Equal weight per step
+                        required=False,  # Individual steps are not required
+                    )
+                )
 
         return AcceptanceSpec(
             id=generate_uuid(),
