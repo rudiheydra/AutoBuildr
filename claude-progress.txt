@@ -1,6 +1,82 @@
 # AutoBuildr Progress Log
 # ======================
 
+## Session: 2026-01-27 (Coding Agent - Feature #50)
+
+### Feature #50: DSPy SpecGenerationSignature Definition - COMPLETED
+
+**Status:** PASSING
+
+**Category:** F. UI-Backend Integration
+
+**Description:** Define DSPy signature for task -> AgentSpec compilation with chain-of-thought reasoning.
+
+**Dependencies:** [7, 8] - All passing
+- Feature #7: AgentSpec Pydantic Request/Response Schemas
+- Feature #8: AcceptanceSpec Pydantic Schemas
+
+**Verification Steps (All 6 Steps Passed):**
+
+1. Import dspy library - PASS
+   - Added dspy>=3.0.0 to requirements.txt
+   - DSPy v3.1.2 successfully installed and imported
+
+2. Define SpecGenerationSignature(dspy.Signature) - PASS
+   - Created api/dspy_signatures.py with SpecGenerationSignature class
+   - Class properly inherits from dspy.Signature
+   - Works with both dspy.Predict and dspy.ChainOfThought
+
+3. Define input fields: task_description, task_type, project_context - PASS
+   - task_description: str - Natural language task description
+   - task_type: str - coding, testing, refactoring, documentation, audit, custom
+   - project_context: str - JSON with project-specific context
+
+4. Define output fields - PASS
+   - objective: str - Clear goal statement for agent
+   - context_json: str - Task-specific context
+   - tool_policy_json: str - Tool access policy
+   - max_turns: int - Max API round-trips (1-500)
+   - timeout_seconds: int - Wall-clock timeout (60-7200)
+   - validators_json: str - Acceptance validators array
+
+5. Add docstring with field descriptions - PASS
+   - 4425-character comprehensive docstring
+   - Describes purpose, all fields, and usage examples
+   - Each field has desc parameter with detailed description
+
+6. Add chain-of-thought reasoning field - PASS
+   - reasoning: str - Output field for step-by-step thinking
+   - Description mentions chain-of-thought reasoning
+   - Works seamlessly with dspy.ChainOfThought module
+
+**Additional Implementation:**
+
+- Utility functions:
+  - get_spec_generator(lm, use_chain_of_thought) - Create generator module
+  - validate_spec_output(result) - Validate generated spec fields
+
+- Constants:
+  - VALID_TASK_TYPES - frozenset of valid task types
+  - DEFAULT_BUDGETS - Dict of budgets per task type
+
+- Exported from api package:
+  - SpecGenerationSignature
+  - get_spec_generator
+  - validate_spec_output
+  - VALID_TASK_TYPES
+  - DSPY_DEFAULT_BUDGETS
+
+**Files Changed:**
+- api/dspy_signatures.py (NEW) - Main implementation
+- api/__init__.py - Added exports
+- requirements.txt - Added dspy>=3.0.0
+- tests/test_feature_50_dspy_signature.py (NEW) - 57 unit tests
+- tests/verify_feature_50.py (NEW) - Verification script
+
+**Test Results:** 57 passed, 0 failed
+
+---
+
 ## Session: 2026-01-27 (Coding Agent - Feature #44)
 
 ### Feature #44: Policy Violation Event Logging - COMPLETED
