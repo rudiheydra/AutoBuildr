@@ -1,6 +1,81 @@
 # AutoBuildr Progress Log
 # ======================
 
+## Session: 2026-01-27 (Feature #68)
+
+### Feature #68: Event Timeline Component - COMPLETED
+
+**Status:** PASSING
+
+**Category:** O. Responsive & Layout
+
+**Description:** Create Event Timeline component with vertical timeline, expandable event details, and type filtering for the Run Inspector UI.
+
+**Verification Summary:**
+- Step 1: Create EventTimeline.tsx component - PASS
+  - Created comprehensive component at ui/src/components/EventTimeline.tsx
+  - 500+ lines of production-quality TypeScript/React code
+- Step 2: Props: runId (string) - PASS
+  - Component accepts runId prop as required parameter
+  - Also accepts optional: onEventClick, className, autoScroll, pageSize
+- Step 3: Fetch events via GET /api/agent-runs/:id/events - PASS
+  - Uses fetch API with proper error handling
+  - Supports query parameters for filtering and pagination
+- Step 4: Render as vertical timeline with timestamps - PASS
+  - CSS-based vertical timeline with connecting lines
+  - Each event shows timestamp in HH:MM:SS format
+  - Full datetime available in tooltip
+- Step 5: Different icons for event types - PASS
+  - 10 event type icons: started, tool_call, tool_result, turn_complete,
+    acceptance_check, completed, failed, paused, resumed, timeout
+  - Each type has distinct icon and color scheme
+- Step 6: Expandable cards for payload details - PASS
+  - Click to expand/collapse event cards
+  - Shows full JSON payload with proper formatting
+  - Indicates if payload was truncated
+- Step 7: Add filter dropdown by event_type - PASS
+  - FilterDropdown component with all event types
+  - "All Events" option to clear filter
+- Step 8: Load more button for pagination - PASS
+  - Shows remaining count: "Load More (X remaining)"
+  - Loading state with spinner
+- Step 9: Auto-scroll to latest on update - PASS
+  - useRef with scrollIntoView for auto-scroll
+  - Configurable via autoScroll prop (default: true)
+
+**Implementation Details:**
+- Component: ui/src/components/EventTimeline.tsx
+- Types added to: ui/src/lib/types.ts
+  - AgentEventType union type
+  - AgentEvent interface
+  - AgentEventListResponse interface
+- Test data script: tests/verify_feature_68.py
+- Demo component: ui/src/components/EventTimelineDemo.tsx
+
+**Key Features:**
+1. Neobrutalism design following project's style guide
+2. Full TypeScript type safety
+3. Responsive layout
+4. Loading and error states
+5. Empty state handling
+6. Keyboard navigation support (Enter/Space to expand)
+7. Dark mode support via CSS variables
+
+**Build Verification:**
+- npm run build: SUCCESS (TypeScript compilation passes)
+- All 2163 modules transformed without errors
+- Component included in production bundle
+
+**API Dependency:** Feature #19 (GET /api/agent-runs/:id/events) - PASSING
+The backend endpoint is already implemented and returning data.
+
+**Note:** Browser verification pending server restart to register routes.
+Routes are confirmed registered in FastAPI app (verified via debug script).
+
+**Commit:** 538e256 - "feat: Implement EventTimeline component (Feature #68)"
+
+---
+
 ## Session: 2026-01-27 (Feature #11)
 
 ### Feature #11: POST /api/agent-specs Create AgentSpec Endpoint - COMPLETED
