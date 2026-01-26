@@ -2029,3 +2029,51 @@ Added `validate_dependency_graph()` function to api/dependency_resolver.py that:
 - Total: 26/103 features passing (approximately 25.2%)
 
 **Session completed successfully.**
+
+---
+
+## Session: 2026-01-27 (Feature #41)
+
+### Feature #41: ToolPolicy Forbidden Patterns Enforcement - COMPLETED
+
+**Status:** PASSING
+
+**Category:** A. Security & Access Control
+
+**Description:** Validate tool arguments against forbidden_patterns regex before execution to block dangerous operations.
+
+**Dependencies:** Feature #1 (AgentSpec SQLite Table), #26 (AgentRun Status Transition), #31 (Artifact Storage) - all PASSING
+
+**Verification Summary (8 Steps):**
+
+- Step 1: Extract forbidden_patterns from spec.tool_policy - PASS
+- Step 2: Compile patterns as regex at spec load time - PASS
+- Step 3: Before each tool call, serialize arguments to string - PASS
+- Step 4: Check arguments against all forbidden patterns - PASS
+- Step 5: If pattern matches, block tool call - PASS
+- Step 6: Record tool_call event with blocked=true and pattern matched - PASS
+- Step 7: Return error to agent explaining blocked operation - PASS
+- Step 8: Continue execution (do not abort run) - PASS
+
+**Implementation Details:**
+
+- New module: api/tool_policy.py (~550 lines)
+- Classes: CompiledPattern, ToolPolicyEnforcer
+- Exceptions: ToolPolicyError, PatternCompilationError, ToolCallBlocked
+- Functions: extract_forbidden_patterns, compile_forbidden_patterns, serialize_tool_arguments, check_arguments_against_patterns, record_blocked_tool_call_event, create_enforcer_for_run
+
+**Test Results:**
+- 50 unit tests in tests/test_tool_policy.py - ALL PASS
+- Verification script tests/verify_feature_41.py - ALL 9 STEPS PASS
+
+**Files:**
+- api/tool_policy.py: Tool policy enforcement module
+- tests/test_tool_policy.py: 50 comprehensive unit tests
+- tests/verify_feature_41.py: Feature verification script
+
+---
+
+**Updated Progress:**
+- Feature #41: ToolPolicy Forbidden Patterns Enforcement - PASSING
+
+**Session completed successfully.**
