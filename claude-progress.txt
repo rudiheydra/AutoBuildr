@@ -1,6 +1,91 @@
 # AutoBuildr Progress Log
 # ======================
 
+## Session: 2026-01-27 (Coding Agent - Feature #25)
+
+### Feature #25: HarnessKernel.execute() Core Execution Loop - COMPLETED
+
+**Status:** PASSING
+
+**Category:** D. Workflow Completeness
+
+**Description:** Implement the core HarnessKernel.execute(spec) method that accepts an AgentSpec and returns an AgentRun with full lifecycle management.
+
+**Dependencies:** [1, 2, 3, 5, 16] - All passing
+- Feature #1: AgentSpec SQLite Table Schema
+- Feature #2: AcceptanceSpec SQLite Table Schema
+- Feature #3: AgentRun SQLite Table Schema
+- Feature #5: AgentEvent SQLite Table Schema
+- Feature #16: POST /api/agent-specs/:id/execute Trigger Execution
+
+**Verification Steps (All Passed - 56/56 tests):**
+
+1. Create HarnessKernel class with execute(spec: AgentSpec) -> AgentRun method - PASS
+2. Create AgentRun record with status=running at execution start - PASS
+3. Record started AgentEvent with sequence=1 - PASS
+4. Build system prompt from spec.objective and spec.context - PASS
+5. Initialize Claude SDK client with configured model - PASS (via turn_executor pattern)
+6. Configure tools based on spec.tool_policy - PASS
+7. Enter execution loop calling Claude API - PASS
+8. Record tool_call event for each tool invocation - PASS
+9. Record tool_result event for each tool response - PASS
+10. Record turn_complete event after each API turn - PASS
+11. Check max_turns budget after each turn - PASS
+12. Check timeout_seconds wall-clock limit - PASS
+13. Handle graceful termination on budget exhaustion - PASS
+14. Run AcceptanceSpec validators after execution - PASS
+15. Record acceptance_check event with results - PASS
+16. Determine final_verdict from validator results - PASS
+17. Update AgentRun with completed status and verdict - PASS
+18. Return finalized AgentRun - PASS
+
+**Implementation Summary:**
+
+The execute() method was implemented in api/harness_kernel.py (lines 1311-1514).
+The implementation includes:
+
+1. Core execute(spec, turn_executor, context) method signature
+2. AgentRun creation with status=pending, then transition to running
+3. Event recording for full lifecycle:
+   - started event at sequence=1
+   - tool_call and tool_result events for each tool invocation
+   - turn_complete event after each API turn
+   - acceptance_check event after validators run
+   - completed or failed event at the end
+4. Budget enforcement via existing BudgetTracker integration
+5. Pluggable turn_executor callback pattern for Claude API integration
+6. Acceptance validation using existing validators module
+7. Final verdict determination (passed/failed/partial)
+8. Payload truncation for large tool results (>4KB)
+9. Comprehensive error handling with failed event recording
+
+**Tests Added:**
+
+15 new tests in tests/test_harness_kernel.py:
+- test_execute_creates_run_record
+- test_execute_records_started_event
+- test_execute_without_turn_executor_completes_immediately
+- test_execute_with_simple_turn_executor
+- test_execute_with_multi_turn_executor
+- test_execute_records_tool_events
+- test_execute_records_acceptance_check_event
+- test_execute_records_completed_event
+- test_execute_handles_max_turns_exceeded
+- test_execute_handles_turn_executor_error
+- test_execute_records_failed_event_on_error
+- test_execute_with_context
+- test_execute_merges_spec_context
+- test_execute_returns_finalized_run
+- test_execute_truncates_large_tool_payloads
+
+**Current Progress:**
+
+- Features passing: 66/103 (64.1%)
+- Features in progress: 3
+- Total tests: 56 passing for HarnessKernel module
+
+---
+
 ## Session: 2026-01-27 (Coding Agent - Feature #24)
 
 ### Feature #24: POST /api/agent-runs/:id/cancel Cancel Agent - COMPLETED
