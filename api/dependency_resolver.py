@@ -23,6 +23,26 @@ class DependencyResult(TypedDict):
     missing_dependencies: dict[int, list[int]]  # feature_id -> [missing_ids]
 
 
+class DependencyIssue(TypedDict):
+    """A single dependency issue found during validation."""
+
+    feature_id: int
+    issue_type: str  # 'self_reference', 'cycle', 'missing_target'
+    details: dict
+    auto_fixable: bool
+
+
+class ValidationResult(TypedDict):
+    """Result from dependency graph validation."""
+
+    is_valid: bool
+    self_references: list[int]  # Feature IDs with self-references
+    cycles: list[list[int]]  # Cycle paths (each cycle is list of feature IDs)
+    missing_targets: dict[int, list[int]]  # feature_id -> [non-existent dep IDs]
+    issues: list[DependencyIssue]  # All issues in structured format
+    summary: str  # Human-readable summary
+
+
 def resolve_dependencies(features: list[dict]) -> DependencyResult:
     """Topological sort using Kahn's algorithm with priority-aware ordering.
 
@@ -226,6 +246,175 @@ def validate_dependencies(
         return False, "Duplicate dependencies not allowed"
 
     return True, ""
+
+
+def validate_dependency_graph(features: list[dict]) -> ValidationResult:
+    """Validate the entire dependency graph for issues.
+
+    Detects:
+    - Self-references (A -> A) - auto-fixable
+    - Cycles (A -> B -> A) - requires user action
+    - Missing targets (references to non-existent features) - auto-fixable
+
+    Args:
+        features: List of feature dicts with id and dependencies fields
+
+    Returns:
+        ValidationResult with all detected issues and their fix recommendations
+    """
+    self_references: list[int] = []
+    cycles: list[list[int]] = []
+    missing_targets: dict[int, list[int]] = {}
+    issues: list[DependencyIssue] = []
+
+    # Build set of all valid feature IDs
+    all_feature_ids = {f["id"] for f in features}
+    feature_map = {f["id"]: f for f in features}
+
+    # Step 1: Detect self-references
+    for feature in features:
+        feature_id = feature["id"]
+        deps = feature.get("dependencies") or []
+
+        # Check for self-reference
+        if feature_id in deps:
+            self_references.append(feature_id)
+            issues.append({
+                "feature_id": feature_id,
+                "issue_type": "self_reference",
+                "details": {"message": f"Feature {feature_id} depends on itself"},
+                "auto_fixable": True,
+            })
+
+        # Check for missing targets
+        missing = [dep_id for dep_id in deps if dep_id not in all_feature_ids]
+        if missing:
+            missing_targets[feature_id] = missing
+            for missing_id in missing:
+                issues.append({
+                    "feature_id": feature_id,
+                    "issue_type": "missing_target",
+                    "details": {
+                        "message": f"Feature {feature_id} depends on non-existent feature {missing_id}",
+                        "missing_id": missing_id,
+                    },
+                    "auto_fixable": True,
+                })
+
+    # Step 2: Detect cycles using DFS (excluding self-references which are already detected)
+    # Only check for cycles if there are features without self-reference issues
+    features_to_check = [
+        f for f in features
+        if f["id"] not in self_references
+    ]
+
+    if features_to_check:
+        cycles = _detect_cycles_for_validation(features_to_check, feature_map)
+        for cycle in cycles:
+            # Mark all features in the cycle
+            for fid in cycle:
+                issues.append({
+                    "feature_id": fid,
+                    "issue_type": "cycle",
+                    "details": {
+                        "message": f"Feature {fid} is part of circular dependency",
+                        "cycle_path": cycle,
+                    },
+                    "auto_fixable": False,  # Cycles require user decision
+                })
+
+    # Build summary message
+    is_valid = not issues
+    summary_parts = []
+
+    if self_references:
+        summary_parts.append(
+            f"{len(self_references)} self-reference(s) found (auto-fixable)"
+        )
+    if cycles:
+        summary_parts.append(
+            f"{len(cycles)} cycle(s) found (requires user action)"
+        )
+    if missing_targets:
+        total_missing = sum(len(m) for m in missing_targets.values())
+        summary_parts.append(
+            f"{total_missing} missing target(s) found (auto-fixable)"
+        )
+
+    if is_valid:
+        summary = "Dependency graph is healthy"
+    else:
+        summary = "; ".join(summary_parts)
+
+    return {
+        "is_valid": is_valid,
+        "self_references": self_references,
+        "cycles": cycles,
+        "missing_targets": missing_targets,
+        "issues": issues,
+        "summary": summary,
+    }
+
+
+def _detect_cycles_for_validation(
+    features: list[dict], feature_map: dict
+) -> list[list[int]]:
+    """Detect cycles in the dependency graph for validation purposes.
+
+    Similar to _detect_cycles but returns unique cycles without duplicates.
+
+    Args:
+        features: List of features to check for cycles
+        feature_map: Map of feature_id -> feature dict
+
+    Returns:
+        List of unique cycles, where each cycle is a list of feature IDs
+    """
+    cycles: list[list[int]] = []
+    visited: set[int] = set()
+    rec_stack: set[int] = set()
+    path: list[int] = []
+    found_cycles: set[tuple[int, ...]] = set()  # Track unique cycles
+
+    def dfs(fid: int) -> None:
+        visited.add(fid)
+        rec_stack.add(fid)
+        path.append(fid)
+
+        feature = feature_map.get(fid)
+        if feature:
+            for dep_id in feature.get("dependencies") or []:
+                # Skip self-references (handled separately)
+                if dep_id == fid:
+                    continue
+                # Skip dependencies to non-existent features
+                if dep_id not in feature_map:
+                    continue
+
+                if dep_id not in visited:
+                    dfs(dep_id)
+                elif dep_id in rec_stack:
+                    # Found a cycle - extract the cycle path
+                    try:
+                        cycle_start = path.index(dep_id)
+                        cycle = path[cycle_start:]
+                        # Normalize cycle for deduplication (start from smallest ID)
+                        min_idx = cycle.index(min(cycle))
+                        normalized = tuple(cycle[min_idx:] + cycle[:min_idx])
+                        if normalized not in found_cycles:
+                            found_cycles.add(normalized)
+                            cycles.append(list(normalized))
+                    except ValueError:
+                        pass  # dep_id not in path, shouldn't happen
+
+        path.pop()
+        rec_stack.remove(fid)
+
+    for f in features:
+        if f["id"] not in visited:
+            dfs(f["id"])
+
+    return cycles
 
 
 def _detect_cycles(features: list[dict], feature_map: dict) -> list[list[int]]:
