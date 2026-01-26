@@ -11,6 +11,7 @@ These schemas provide:
 
 Mirrors the SQLAlchemy models in api/agentspec_models.py
 """
+from __future__ import annotations
 
 from datetime import datetime
 from typing import Any, Literal
@@ -374,21 +375,77 @@ class AcceptanceSpecResponse(BaseModel):
 # =============================================================================
 
 class AgentRunResponse(BaseModel):
-    """Response schema for an AgentRun."""
+    """Response schema for an AgentRun.
+
+    Includes status and verdict validation, plus computed duration_seconds
+    when both started_at and completed_at are present.
+    """
 
     id: str
     agent_spec_id: str
-    status: str
+    status: RUN_STATUSES = Field(
+        ...,
+        description="Current run status"
+    )
     started_at: datetime | None
     completed_at: datetime | None
     turns_used: int
     tokens_in: int
     tokens_out: int
-    final_verdict: str | None
+    final_verdict: VERDICTS | None = Field(
+        default=None,
+        description="Final acceptance verdict"
+    )
     acceptance_results: list[dict[str, Any]] | None
     error: str | None
     retry_count: int
     created_at: datetime
+
+    # Computed field for duration
+    duration_seconds: float | None = Field(
+        default=None,
+        description="Duration in seconds (computed from timestamps)"
+    )
+
+    @field_validator("status", mode="before")
+    @classmethod
+    def validate_status(cls, v: str) -> str:
+        """Validate status is one of the allowed values."""
+        allowed = ["pending", "running", "paused", "completed", "failed", "timeout"]
+        if v not in allowed:
+            raise ValueError(f"status must be one of {allowed}, got '{v}'")
+        return v
+
+    @field_validator("final_verdict", mode="before")
+    @classmethod
+    def validate_final_verdict(cls, v: str | None) -> str | None:
+        """Validate final_verdict is one of the allowed values or None."""
+        if v is None:
+            return v
+        allowed = ["passed", "failed", "partial"]
+        if v not in allowed:
+            raise ValueError(f"final_verdict must be one of {allowed} or None, got '{v}'")
+        return v
+
+    def __init__(self, **data):
+        """Compute duration_seconds from timestamps if both present."""
+        # Compute duration before calling super().__init__
+        started = data.get("started_at")
+        completed = data.get("completed_at")
+
+        if started is not None and completed is not None:
+            # Both timestamps present - compute duration
+            if isinstance(started, str):
+                from datetime import datetime as dt
+                started = dt.fromisoformat(started.replace("Z", "+00:00"))
+            if isinstance(completed, str):
+                from datetime import datetime as dt
+                completed = dt.fromisoformat(completed.replace("Z", "+00:00"))
+
+            duration = (completed - started).total_seconds()
+            data["duration_seconds"] = duration
+
+        super().__init__(**data)
 
     class Config:
         from_attributes = True
@@ -426,23 +483,112 @@ class ArtifactCreate(BaseModel):
 
 
 class ArtifactResponse(BaseModel):
-    """Response schema for an artifact."""
+    """Response schema for an artifact.
+
+    Represents the output from an agent run, such as file changes, test results,
+    logs, metrics, or snapshots.
+
+    Example:
+        {
+            "id": "abc123-...",
+            "run_id": "def456-...",
+            "artifact_type": "test_result",
+            "path": "/path/to/test/output.log",
+            "content_ref": ".autobuildr/artifacts/abc123/sha256.blob",
+            "content_hash": "abc123def456...",
+            "size_bytes": 1024,
+            "created_at": "2024-01-27T12:00:00Z",
+            "metadata": {"test_suite": "unit", "passed": true},
+            "content_inline": null,
+            "has_inline_content": false
+        }
+    """
 
     id: str
     run_id: str
-    artifact_type: str
-    path: str | None
-    content_ref: str | None
-    content_hash: str | None
-    size_bytes: int | None
-    created_at: datetime
-    metadata: dict[str, Any] | None
+    artifact_type: ARTIFACT_TYPES = Field(
+        ...,
+        description="Type of artifact: file_change, test_result, log, metric, or snapshot"
+    )
+    path: str | None = Field(
+        default=None,
+        description="Source path for file artifacts"
+    )
+    content_ref: str | None = Field(
+        default=None,
+        description="Path to content file for large artifacts (>4KB)"
+    )
+    content_hash: str | None = Field(
+        default=None,
+        description="SHA256 hash of content for integrity and deduplication"
+    )
+    size_bytes: int | None = Field(
+        default=None,
+        description="Size of artifact content in bytes"
+    )
+    created_at: datetime = Field(
+        ...,
+        description="Timestamp when artifact was created"
+    )
+    metadata: dict[str, Any] | None = Field(
+        default=None,
+        description="Type-specific metadata (e.g., test results, diff stats)"
+    )
 
     # Content included for small artifacts
-    content_inline: str | None = None
+    content_inline: str | None = Field(
+        default=None,
+        description="Inline content for small artifacts (<=4KB)"
+    )
+
+    @field_validator("artifact_type", mode="before")
+    @classmethod
+    def validate_artifact_type(cls, v: str) -> str:
+        """Validate artifact_type is one of the allowed values.
+
+        Args:
+            v: The artifact type string to validate
+
+        Returns:
+            The validated artifact type
+
+        Raises:
+            ValueError: If artifact_type is not one of the allowed values
+        """
+        allowed = ["file_change", "test_result", "log", "metric", "snapshot"]
+        if v not in allowed:
+            raise ValueError(f"artifact_type must be one of {allowed}, got '{v}'")
+        return v
+
+    @property
+    def has_inline_content(self) -> bool:
+        """Check if this artifact has inline content.
+
+        Returns True if content_inline is not None and not empty.
+        This is useful for determining whether to fetch content from
+        content_ref or use the inline content directly.
+
+        Returns:
+            True if inline content is available, False otherwise
+        """
+        return self.content_inline is not None and len(self.content_inline) > 0
 
     class Config:
         from_attributes = True
+        json_schema_extra = {
+            "example": {
+                "id": "abc12345-6789-def0-1234-567890abcdef",
+                "run_id": "run12345-6789-def0-1234-567890abcdef",
+                "artifact_type": "test_result",
+                "path": "/tmp/test_output.log",
+                "content_ref": None,
+                "content_hash": "sha256:abc123def456...",
+                "size_bytes": 256,
+                "created_at": "2024-01-27T12:00:00Z",
+                "metadata": {"test_suite": "unit", "passed": True, "duration_ms": 1234},
+                "content_inline": "Test passed: 10/10 assertions",
+            }
+        }
 
 
 # =============================================================================
@@ -458,20 +604,103 @@ class EventCreate(BaseModel):
 
 
 class AgentEventResponse(BaseModel):
-    """Response schema for an AgentEvent."""
+    """Response schema for an AgentEvent.
 
-    id: int
-    run_id: str
-    event_type: str
-    timestamp: datetime
-    sequence: int
-    payload: dict[str, Any] | None
-    payload_truncated: int | None
-    artifact_ref: str | None
-    tool_name: str | None
+    Represents an immutable audit trail entry from an agent run. Events capture
+    every significant action: tool calls, results, acceptance checks, and state
+    transitions.
+
+    Event types:
+        - started: Run began execution
+        - tool_call: Agent invoked a tool
+        - tool_result: Tool returned a result
+        - turn_complete: One API round-trip finished
+        - acceptance_check: Verification gate was evaluated
+        - completed: Run finished successfully
+        - failed: Run failed with error
+        - paused: Run was paused
+        - resumed: Run was resumed from paused state
+
+    Example:
+        {
+            "id": 42,
+            "run_id": "abc123-...",
+            "event_type": "tool_call",
+            "timestamp": "2024-01-27T12:00:00Z",
+            "sequence": 5,
+            "payload": {"tool": "feature_get_by_id", "args": {"feature_id": 10}},
+            "payload_truncated": null,
+            "artifact_ref": null,
+            "tool_name": "feature_get_by_id"
+        }
+    """
+
+    id: int = Field(..., description="Sequential event ID (auto-incremented)")
+    run_id: str = Field(..., description="ID of the parent AgentRun")
+    event_type: EVENT_TYPES = Field(
+        ...,
+        description="Type of event: started, tool_call, tool_result, turn_complete, acceptance_check, completed, failed, paused, or resumed"
+    )
+    timestamp: datetime = Field(..., description="When the event occurred")
+    sequence: int = Field(
+        ...,
+        ge=1,
+        description="Ordering within the run, starts at 1"
+    )
+    payload: dict[str, Any] | None = Field(
+        default=None,
+        description="Event-specific data (capped at 4KB, larger content uses artifact_ref)"
+    )
+    payload_truncated: int | None = Field(
+        default=None,
+        description="Original payload size if truncated (indicates content was externalized)"
+    )
+    artifact_ref: str | None = Field(
+        default=None,
+        description="Artifact ID if payload was externalized due to size"
+    )
+    tool_name: str | None = Field(
+        default=None,
+        description="Tool name for tool_call/tool_result events (denormalized for queries)"
+    )
+
+    @field_validator("event_type", mode="before")
+    @classmethod
+    def validate_event_type(cls, v: str) -> str:
+        """Validate event_type is one of the allowed values.
+
+        Args:
+            v: The event type string to validate
+
+        Returns:
+            The validated event type
+
+        Raises:
+            ValueError: If event_type is not one of the allowed values
+        """
+        allowed = [
+            "started", "tool_call", "tool_result", "turn_complete",
+            "acceptance_check", "completed", "failed", "paused", "resumed"
+        ]
+        if v not in allowed:
+            raise ValueError(f"event_type must be one of {allowed}, got '{v}'")
+        return v
 
     class Config:
         from_attributes = True
+        json_schema_extra = {
+            "example": {
+                "id": 42,
+                "run_id": "abc12345-6789-def0-1234-567890abcdef",
+                "event_type": "tool_call",
+                "timestamp": "2024-01-27T12:00:00Z",
+                "sequence": 5,
+                "payload": {"tool": "feature_get_by_id", "args": {"feature_id": 10}},
+                "payload_truncated": None,
+                "artifact_ref": None,
+                "tool_name": "feature_get_by_id"
+            }
+        }
 
 
 # =============================================================================
@@ -509,3 +738,79 @@ class EventListResponse(BaseModel):
     events: list[AgentEventResponse]
     total: int
     has_more: bool = False
+
+
+class AgentEventListResponse(BaseModel):
+    """Response schema for timeline queries of AgentEvents.
+
+    Provides a paginated list of events with metadata useful for displaying
+    an event timeline in the Run Inspector UI. Events are ordered by sequence
+    number within a run.
+
+    This schema is optimized for timeline display, including:
+    - Total event count for progress indication
+    - Start/end sequence numbers for navigation
+    - Optional run metadata for context
+
+    Example:
+        {
+            "events": [...],
+            "total": 150,
+            "run_id": "abc123-...",
+            "start_sequence": 1,
+            "end_sequence": 50,
+            "has_more": true
+        }
+    """
+
+    events: list[AgentEventResponse] = Field(
+        ...,
+        description="List of events in sequence order"
+    )
+    total: int = Field(
+        ...,
+        ge=0,
+        description="Total number of events for this run"
+    )
+    run_id: str = Field(
+        ...,
+        description="ID of the AgentRun these events belong to"
+    )
+    start_sequence: int | None = Field(
+        default=None,
+        ge=1,
+        description="Sequence number of first event in this response"
+    )
+    end_sequence: int | None = Field(
+        default=None,
+        ge=1,
+        description="Sequence number of last event in this response"
+    )
+    has_more: bool = Field(
+        default=False,
+        description="True if there are more events beyond end_sequence"
+    )
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "events": [
+                    {
+                        "id": 1,
+                        "run_id": "abc12345-6789-def0-1234-567890abcdef",
+                        "event_type": "started",
+                        "timestamp": "2024-01-27T12:00:00Z",
+                        "sequence": 1,
+                        "payload": {"objective": "Implement feature X"},
+                        "payload_truncated": None,
+                        "artifact_ref": None,
+                        "tool_name": None
+                    }
+                ],
+                "total": 150,
+                "run_id": "abc12345-6789-def0-1234-567890abcdef",
+                "start_sequence": 1,
+                "end_sequence": 50,
+                "has_more": True
+            }
+        }
