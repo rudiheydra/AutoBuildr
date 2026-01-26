@@ -19,6 +19,7 @@ from pathlib import Path
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
+# Import Base from database module directly to avoid api/__init__.py (which has dspy dependency)
 from api.database import Base
 from api.agentspec_models import (
     AgentSpec,
@@ -28,6 +29,7 @@ from api.agentspec_models import (
     EVENT_TYPES,
     generate_uuid,
 )
+# Import directly from api.tool_policy to avoid dspy dependency in api/__init__.py
 from api.tool_policy import (
     # Feature #44 exports
     PolicyViolation,
