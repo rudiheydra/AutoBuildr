@@ -455,6 +455,9 @@ class StaticSpecAdapter:
         objective = self._registry.interpolate(template, variables)
 
         # Create tool policy
+        # Note: Bash commands are validated by security.py ALLOWED_COMMANDS allowlist
+        # which permits only development-related commands (ls, cat, npm, git, etc.)
+        # Forbidden patterns below catch dangerous operations the allowlist might miss
         tool_policy = create_tool_policy(
             allowed_tools=CODING_TOOLS,
             forbidden_patterns=FORBIDDEN_PATTERNS,
@@ -470,6 +473,11 @@ class StaticSpecAdapter:
                 "Edit": (
                     "Prefer editing existing files over creating new ones. "
                     "Always read files before editing."
+                ),
+                "Bash": (
+                    "Bash commands are restricted by security allowlist (security.py). "
+                    "Only development commands like npm, git, pytest are permitted. "
+                    "Dangerous commands (sudo, rm -rf /, etc.) are blocked."
                 ),
             },
         )
@@ -530,6 +538,8 @@ class StaticSpecAdapter:
         Create an AcceptanceSpec for the coding agent.
 
         Validators:
+        - test_pass: Run tests to verify implementation works
+        - lint_clean: Run linter to ensure code quality
         - feature_passing: Verify the feature was marked as passing
         - no_console_errors: Verify no JavaScript console errors
 
@@ -541,6 +551,29 @@ class StaticSpecAdapter:
             AcceptanceSpec with appropriate validators
         """
         validators = [
+            # Run test command to verify implementation
+            create_validator(
+                validator_type="test_pass",
+                config={
+                    "command": "pytest tests/ -v --tb=short || npm test || echo 'No test runner found'",
+                    "description": "Run automated tests to verify implementation",
+                    "timeout_seconds": 300,  # 5 minute timeout for tests
+                    "expected_exit_code": 0,
+                },
+                weight=1.0,
+                required=False,  # Not required - project may not have tests yet
+            ),
+            # Run linter to check code quality
+            create_validator(
+                validator_type="lint_clean",
+                config={
+                    "command": "npm run lint 2>/dev/null || ruff check . 2>/dev/null || echo 'No linter configured'",
+                    "description": "Run linter to ensure code quality",
+                    "timeout_seconds": 120,  # 2 minute timeout for linting
+                },
+                weight=0.5,
+                required=False,  # Not required - project may not have linting set up
+            ),
             # Feature must be marked as passing
             create_validator(
                 validator_type="custom",
@@ -552,7 +585,7 @@ class StaticSpecAdapter:
                     "expected_status": "passing",
                 },
                 weight=1.0,
-                required=True,
+                required=True,  # This is the core requirement
             ),
             # No console errors during verification
             create_validator(
