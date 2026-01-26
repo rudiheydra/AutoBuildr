@@ -1,6 +1,58 @@
 # AutoBuildr Progress Log
 # ======================
 
+## Session: 2026-01-27 (Coding Agent - Feature #92)
+
+### Feature #92: Iteration limit exceeded logs specific algorithm name and context - COMPLETED
+
+**Status:** PASSING
+
+**Category:** error-handling
+
+**Description:** When the iteration limit is hit in compute_scheduling_scores, the error log should include the algorithm name, current iteration count, and feature count for debugging.
+
+**Dependencies:** None
+
+**Implementation Summary:**
+
+The iteration limit logging was already properly implemented as part of Feature #91. This feature verification confirmed the logging format includes all required fields:
+
+1. **Algorithm name**: `algorithm=BFS` and `compute_scheduling_scores:` in the log message
+2. **Iteration count**: `iterations={iteration_count}` - shows exact count when limit was hit
+3. **Feature count**: `feature_count={len(features)}` - shows total features being processed
+4. **Log level**: Uses `_logger.error()` for high visibility
+
+**Log Message Format:**
+```
+compute_scheduling_scores: BFS iteration limit exceeded - algorithm=BFS, iterations={N}, limit={N}, feature_count={N}. Possible unexpected graph structure. Returning partial results.
+```
+
+**Defense in Depth:**
+The BFS implementation now has two protection mechanisms:
+1. **Visited set (Feature #90)**: Prevents nodes from being processed multiple times
+2. **Iteration limit (Feature #91/92)**: Safety net for unexpected edge cases
+
+The iteration limit won't trigger in normal operation because the visited set properly handles cycles, but the code exists as defense-in-depth.
+
+**Verification Steps:**
+- Step 1: Verify iteration limit code exists - PASS
+- Step 2: Verify log includes algorithm name (BFS) - PASS
+- Step 3: Verify log includes iteration count - PASS
+- Step 4: Verify log includes feature count - PASS
+- Step 5: Verify log level is ERROR - PASS
+
+**Test Results:**
+- tests/test_feature_92_iteration_limit_logging.py: 17/17 tests PASS
+- tests/verify_feature_92.py: All 5 verification steps PASS
+
+**Files Created:**
+- tests/test_feature_92_iteration_limit_logging.py: Comprehensive test suite (265 lines)
+- tests/verify_feature_92.py: Feature verification script (179 lines)
+
+**Commit:** 8c6afa7 - "feat: Add verification tests for Feature #92 - Iteration limit logging format"
+
+---
+
 ## Session: 2026-01-27 (Feature #27)
 
 ### Feature #27: Max Turns Budget Enforcement - COMPLETED
