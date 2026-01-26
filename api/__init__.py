@@ -158,6 +158,23 @@ from api.dspy_signatures import (
     VALID_TASK_TYPES,
     DEFAULT_BUDGETS as DSPY_DEFAULT_BUDGETS,
 )
+from api.spec_name_generator import (
+    # Feature #59: Unique Spec Name Generation
+    SPEC_NAME_MAX_LENGTH,
+    SPEC_NAME_PATTERN,
+    STOP_WORDS,
+    check_name_exists,
+    extract_keywords,
+    generate_sequence_suffix,
+    generate_slug,
+    generate_spec_name,
+    generate_spec_name_for_feature,
+    generate_timestamp_suffix,
+    generate_unique_spec_name,
+    get_existing_names_with_prefix,
+    normalize_slug,
+    validate_spec_name,
+)
 
 __all__ = [
     "Feature",
@@ -304,4 +321,19 @@ __all__ = [
     "validate_spec_output",
     "VALID_TASK_TYPES",
     "DSPY_DEFAULT_BUDGETS",
+    # Feature #59: Unique Spec Name Generation exports
+    "SPEC_NAME_MAX_LENGTH",
+    "SPEC_NAME_PATTERN",
+    "STOP_WORDS",
+    "check_name_exists",
+    "extract_keywords",
+    "generate_sequence_suffix",
+    "generate_slug",
+    "generate_spec_name",
+    "generate_spec_name_for_feature",
+    "generate_timestamp_suffix",
+    "generate_unique_spec_name",
+    "get_existing_names_with_prefix",
+    "normalize_slug",
+    "validate_spec_name",
 ]
