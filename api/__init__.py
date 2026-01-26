@@ -28,6 +28,19 @@ from api.static_spec_adapter import (
     TESTING_TOOLS,
     DEFAULT_BUDGETS,
 )
+from api.tool_policy import (
+    CompiledPattern,
+    PatternCompilationError,
+    ToolCallBlocked,
+    ToolPolicyEnforcer,
+    ToolPolicyError,
+    check_arguments_against_patterns,
+    compile_forbidden_patterns,
+    create_enforcer_for_run,
+    extract_forbidden_patterns,
+    record_blocked_tool_call_event,
+    serialize_tool_arguments,
+)
 
 __all__ = [
     "Feature",
@@ -52,4 +65,16 @@ __all__ = [
     "CODING_TOOLS",
     "TESTING_TOOLS",
     "DEFAULT_BUDGETS",
+    # Tool policy exports
+    "CompiledPattern",
+    "PatternCompilationError",
+    "ToolCallBlocked",
+    "ToolPolicyEnforcer",
+    "ToolPolicyError",
+    "check_arguments_against_patterns",
+    "compile_forbidden_patterns",
+    "create_enforcer_for_run",
+    "extract_forbidden_patterns",
+    "record_blocked_tool_call_event",
+    "serialize_tool_arguments",
 ]
