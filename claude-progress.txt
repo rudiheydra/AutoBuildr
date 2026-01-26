@@ -1,0 +1,39 @@
+# AutoBuildr Progress Log
+# ======================
+
+## Session: 2026-01-27
+
+### Feature #3: AgentRun SQLite Table Schema - COMPLETED
+
+**Status:** PASSING
+
+**Description:** Create the agent_runs table tracking execution instances with all required columns and constraints.
+
+**Verification Summary:**
+- Step 1: PRAGMA table_info(agent_runs) - PASS (table exists with 13 columns)
+- Step 2: id column is VARCHAR(36) primary key - PASS
+- Step 3: agent_spec_id FK -> agent_specs.id ON DELETE CASCADE - PASS
+- Step 4: status column is VARCHAR(20) with default 'pending' - PASS
+- Step 5: started_at and completed_at are DATETIME nullable - PASS
+- Step 6: turns_used, tokens_in, tokens_out are INTEGER with CHECK >= 0 - PASS
+- Step 7: final_verdict is VARCHAR(20) nullable - PASS
+- Step 8: acceptance_results is JSON type - PASS
+- Step 9: error is TEXT nullable - PASS
+- Step 10: retry_count is INTEGER with CHECK >= 0 - PASS
+- Step 11: Indexes ix_agentrun_spec and ix_agentrun_status exist - PASS
+
+**Implementation Notes:**
+- The AgentRun model was already defined in api/agentspec_models.py
+- Database migration ran successfully via _migrate_add_agentspec_tables()
+- All 5 AutoBuildr tables created: agent_specs, acceptance_specs, agent_runs, artifacts, agent_events
+- All CHECK constraints verified for non-negative integer columns
+- Foreign key with ON DELETE CASCADE properly set up
+- Default values for status ('pending') and integer columns (0) verified
+
+**Current Progress:**
+- Feature #3: AgentRun SQLite Table Schema - PASSING
+- Total: 1/85 features passing
+
+**Next Steps:**
+- Continue with other assigned features
+- The agent_runs table is now ready for use by the HarnessKernel
