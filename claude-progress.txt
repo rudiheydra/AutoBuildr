@@ -629,3 +629,107 @@
 - Continue with UI features (Phase 3 Dynamic Cards)
 - DynamicAgentCard WebSocket integration
 - Run Inspector panel
+
+## Regression Test Session: 2026-01-27 03:01
+
+### Feature #26: AgentRun Status Transition State Machine - VERIFIED (No Regression)
+
+**Test Results:**
+- All 64 unit tests in tests/test_agentrun_state_machine.py PASS
+- Step 1: Valid state transitions adjacency map - PASS
+- Step 2: pending can transition to running only - PASS
+- Step 3: running can transition to paused, completed, failed, timeout - PASS
+- Step 4: paused can transition to running, failed - PASS
+- Step 5: completed, failed, timeout are terminal states - PASS
+- Step 6: Transition validation methods in AgentRun model - PASS
+- Step 7: InvalidStateTransition exception for invalid transitions - PASS
+- Step 8: Logging state transitions with timestamps - PASS
+- Step 9: Transitions are atomic (within transaction) - PASS
+
+**Convenience Methods Verified:**
+- start(): pending -> running (sets started_at)
+- pause(): running -> paused
+- resume(): paused -> running
+- complete(): running -> completed (sets completed_at)
+- fail(): running/paused -> failed (sets error message)
+- timeout(): running -> timeout (sets error message)
+
+**State Machine Properties:**
+- is_terminal property correctly identifies terminal states
+- can_transition_to() validates allowed transitions
+- get_valid_transitions() returns valid targets
+- Invalid transitions raise InvalidStateTransition with detailed messages
+
+**Conclusion:** Feature #26 passes all verification steps. No regression detected.
+
+[Testing] Feature #26 verified - still passing
+
+---
+
+### Feature #8: AcceptanceSpec Pydantic Schemas - COMPLETED
+
+**Status:** PASSING
+
+**Category:** M. Form Validation
+
+**Description:** Create Pydantic models for AcceptanceSpec: AcceptanceSpecCreate, AcceptanceSpecResponse. Validate validators array structure, gate_mode enum, retry_policy enum.
+
+**Verification Summary:**
+- Step 1: Define ValidatorConfig model with type, config dict, weight, required fields - PASS
+  - Validator class has all required fields: type (VALIDATOR_TYPES), config (dict), weight (0.0-10.0), required (bool)
+  - Default values work correctly (weight=1.0, required=False)
+  - Rejects invalid validator types and weight bounds
+
+- Step 2: Define AcceptanceSpecCreate with validators array, gate_mode, min_score, retry_policy, max_retries - PASS
+  - All fields present with correct types and defaults
+  - Validators array has min_length=1, max_length=20
+  - max_retries has bounds 0-10
+
+- Step 3: Add Field validator for gate_mode in [all_pass, any_pass, weighted] - PASS
+  - Added field_validator that accepts: all_pass, any_pass, weighted
+  - Rejects invalid gate_mode values with descriptive error message
+
+- Step 4: Add Field validator for retry_policy in [none, fixed, exponential] - PASS
+  - Added field_validator that accepts: none, fixed, exponential
+  - Rejects invalid retry_policy values with descriptive error message
+
+- Step 5: Add Field validator for min_score range 0.0-1.0 when gate_mode is weighted - PASS
+  - Uses model_validator(mode="after") to validate cross-field dependency
+  - Requires min_score when gate_mode='weighted'
+  - Validates min_score range 0.0-1.0 using Field(ge=0.0, le=1.0)
+  - Non-weighted modes don't require min_score
+
+- Step 6: Define AcceptanceSpecResponse matching database model output - PASS
+  - Response schema has all fields from AcceptanceSpec.to_dict()
+  - Added field validators for gate_mode and retry_policy in response
+  - JSON schema example provided for documentation
+  - Database integration test passed: to_dict() -> AcceptanceSpecResponse works
+
+**Implementation Notes:**
+- Enhanced AcceptanceSpecCreate with comprehensive docstrings and examples
+- Added model_validator import to pydantic imports
+- Added validate_min_score_for_weighted_mode() model validator
+- Enhanced AcceptanceSpecResponse with field descriptions and validation
+- Created tests/verify_feature_8.py with all 6 verification steps
+- Database integration test verified end-to-end flow
+
+**Files Modified:**
+- server/schemas/agentspec.py: Enhanced AcceptanceSpecCreate and AcceptanceSpecResponse
+
+**Files Added:**
+- tests/verify_feature_8.py: Comprehensive verification script
+
+**Commit:** b4aa5d7 - Add verification script for Feature #8: AcceptanceSpec Pydantic Schemas
+
+---
+
+**Current Progress:**
+- Feature #1: AgentSpec SQLite Table Schema - PASSING
+- Feature #2: AcceptanceSpec SQLite Table Schema - PASSING
+- Feature #3: AgentRun SQLite Table Schema - PASSING
+- Feature #4: Artifact SQLite Table Schema - PASSING
+- Feature #5: AgentEvent SQLite Table Schema - PASSING
+- Feature #7: AgentSpec Pydantic Request/Response Schemas - PASSING
+- Feature #8: AcceptanceSpec Pydantic Schemas - PASSING
+- Total: 8/85 features passing (approximately 9.4%)
+
