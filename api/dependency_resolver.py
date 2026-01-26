@@ -536,43 +536,40 @@ def compute_scheduling_scores(features: list[dict]) -> dict[int, float]:
                 children[dep_id].append(f["id"])
                 parents[f["id"]].append(dep_id)
 
-    # Calculate depths via BFS from roots with iteration limit and queued tracking
-    # MAX_ITERATIONS prevents infinite loops from unexpected graph structures
-    # queued_depths tracks the best (highest) depth we've queued for each node
-    # to prevent redundant queue entries while still allowing depth updates
+    # Calculate depths via BFS from roots with visited tracking and iteration limit
+    # visited set prevents re-processing nodes in cycles
+    # iteration limit provides defense-in-depth against unexpected graph issues
     max_iterations = len(features) * 2
     iteration_count = 0
 
     depths: dict[int, int] = {}
-    queued_depths: dict[int, int] = {}  # Track highest depth queued for each node
+    visited: set[int] = set()  # Track visited nodes to prevent re-processing
     roots = [f["id"] for f in features if not parents[f["id"]]]
     queue = [(root, 0) for root in roots]
 
-    # Mark roots as queued initially
+    # Mark roots as visited initially
     for root in roots:
-        queued_depths[root] = 0
+        visited.add(root)
 
     while queue:
-        # Check iteration limit to prevent infinite loops
+        # Check iteration limit to prevent infinite loops (defense in depth)
         iteration_count += 1
         if iteration_count > max_iterations:
             _logger.error(
                 "compute_scheduling_scores: BFS iteration limit exceeded - "
                 f"algorithm=BFS, iterations={iteration_count}, "
                 f"limit={max_iterations}, feature_count={len(features)}. "
-                "Possible cycle or unexpected graph structure. Returning partial results."
+                "Possible unexpected graph structure. Returning partial results."
             )
             break
 
         node_id, depth = queue.pop(0)
-        if node_id not in depths or depth > depths[node_id]:
-            depths[node_id] = depth
+        depths[node_id] = depth
         for child_id in children[node_id]:
-            new_depth = depth + 1
-            # Only queue if we haven't seen this node or found a longer path
-            if child_id not in queued_depths or new_depth > queued_depths[child_id]:
-                queued_depths[child_id] = new_depth
-                queue.append((child_id, new_depth))
+            # Only add unvisited children to queue - prevents infinite loops in cycles
+            if child_id not in visited:
+                visited.add(child_id)
+                queue.append((child_id, depth + 1))
 
     # Handle orphaned nodes (shouldn't happen but be safe)
     for f in features:
