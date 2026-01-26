@@ -2220,3 +2220,115 @@ Added `validate_dependency_graph()` function to api/dependency_resolver.py that:
 
 **Note:** The implementation was already complete in api/dependency_resolver.py (lines 289-302). This session added comprehensive verification tests and confirmed functionality.
 
+
+## Regression Test Session: 2026-01-26 16:38 UTC
+
+### Feature #1: AgentSpec SQLite Table Schema - VERIFIED (No Regression)
+
+**Status:** PASSING
+
+**Category:** G. State & Persistence
+
+**Verification Summary (14 Steps):**
+1. SQLite database file exists at project root (features.db) - PASS
+2. agent_specs table exists with all required columns - PASS
+3. id column is VARCHAR(36) PRIMARY KEY - PASS
+4. name column is VARCHAR(100) NOT NULL - PASS
+5. display_name column is VARCHAR(255) NOT NULL - PASS
+6. icon column is VARCHAR(50) nullable - PASS
+7. spec_version column is VARCHAR(20) NOT NULL - PASS
+8. objective column is TEXT NOT NULL - PASS
+9. task_type column is VARCHAR(50) NOT NULL - PASS
+10. context column stores valid JSON - PASS (verified with insert/select)
+11. tool_policy column is JSON NOT NULL - PASS (verified with insert/select)
+12. max_turns column is INTEGER with CHECK(1-500) - PASS
+13. timeout_seconds column is INTEGER with CHECK(60-7200) - PASS
+14. Indexes exist: ix_agentspec_source_feature, ix_agentspec_task_type, ix_agentspec_created - PASS
+
+**Additional columns verified present:**
+- parent_spec_id: VARCHAR(36) with FK to agent_specs(id)
+- source_feature_id: INTEGER with FK to features(id) ON DELETE SET NULL
+- created_at: DATETIME NOT NULL
+- priority: INTEGER NOT NULL
+- tags: JSON nullable
+
+**Test Details:**
+- Inserted test AgentSpec with complex JSON context and tool_policy
+- Verified JSON serialization/deserialization works correctly
+- Clean test data removed after verification
+
+**Conclusion:** Feature #1 passes all verification steps. No regression detected.
+
+[Testing] Feature #1 verified - still passing
+
+---
+
+## Session: 2026-01-27 (Coding Agent - Feature #91)
+
+### Feature #91: Graph algorithms enforce iteration limit based on feature count - COMPLETED
+
+**Status:** PASSING
+
+**Category:** error-handling
+
+**Description:** All graph traversal algorithms should enforce an iteration limit of len(features) * 2 to prevent infinite loops even with unexpected graph structures.
+
+**Dependencies:** None
+
+**Verification Summary (5 Steps):**
+
+1. Add iteration counter to compute_scheduling_scores BFS loop - PASS
+   - Added iteration_count variable initialized to 0
+   - Added max_iterations = len(features) * 2
+   - Counter incremented on each BFS iteration
+
+2. Set MAX_ITERATIONS = len(features) * 2 - PASS
+   - Formula used: max_iterations = len(features) * 2
+   - Applied to all three graph traversal functions
+
+3. When limit is exceeded, log error with algorithm name and bail out - PASS
+   - compute_scheduling_scores: logs "BFS iteration limit exceeded" with algorithm name
+   - _detect_cycles: logs "DFS iteration limit exceeded" with function name
+   - _detect_cycles_for_validation: logs "DFS iteration limit exceeded" with function name
+   - All use _logger.error() with detailed context
+
+4. Return partial/safe results rather than hanging - PASS
+   - compute_scheduling_scores returns dict with partial scores
+   - _detect_cycles returns list with detected cycles so far
+   - _detect_cycles_for_validation returns list with detected cycles so far
+   - All functions complete in under 1 second on any graph
+
+5. Verify the iteration limit is hit before 100ms on a cyclic graph - PASS
+   - compute_scheduling_scores: 0.02ms on cyclic graph
+   - _detect_cycles: 0.01ms on cyclic graph
+   - _detect_cycles_for_validation: 0.01ms on cyclic graph
+
+**Implementation Details:**
+
+Modified api/dependency_resolver.py:
+- Added logging import and _logger = logging.getLogger(__name__)
+- compute_scheduling_scores(): Added iteration_count, max_iterations, and check with break on limit
+- _detect_cycles(): Added iteration limit with early return on limit exceeded
+- _detect_cycles_for_validation(): Added iteration limit with early return on limit exceeded
+
+**Test Results:**
+- tests/test_feature_91_iteration_limits.py: 27/27 tests PASS
+- tests/verify_feature_91.py: All 5 verification steps PASS
+- Existing tests: 67/67 dependency graph tests still PASS (no regressions)
+
+**Files Modified:**
+- api/dependency_resolver.py: Added iteration limits to all graph algorithms
+
+**Files Created:**
+- tests/test_feature_91_iteration_limits.py: 27 comprehensive unit tests
+- tests/verify_feature_91.py: Feature verification script
+
+**Commit:** 4ae8660 - "feat: Implement iteration limits for graph algorithms (Feature #91)"
+
+---
+
+**Updated Progress:**
+- Total: 29/103 features passing (approximately 28.2%)
+- Feature #91: Graph algorithms enforce iteration limit based on feature count - PASSING
+
+**Session completed successfully.**
