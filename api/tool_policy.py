@@ -1746,6 +1746,460 @@ def get_supported_task_types() -> list[str]:
 
 
 # =============================================================================
+# Budget Derivation (Feature #58: Budget Derivation from Task Complexity)
+# =============================================================================
+
+# Base budgets per task_type (as specified in Feature #58)
+BASE_BUDGETS: dict[str, dict[str, int]] = {
+    "coding": {
+        "max_turns": 50,
+        "timeout_seconds": 1800,  # 30 minutes
+    },
+    "testing": {
+        "max_turns": 30,
+        "timeout_seconds": 600,  # 10 minutes
+    },
+    "documentation": {
+        "max_turns": 25,
+        "timeout_seconds": 900,  # 15 minutes
+    },
+    "refactoring": {
+        "max_turns": 40,
+        "timeout_seconds": 1200,  # 20 minutes
+    },
+    "audit": {
+        "max_turns": 20,
+        "timeout_seconds": 600,  # 10 minutes
+    },
+    "custom": {
+        "max_turns": 30,
+        "timeout_seconds": 900,  # 15 minutes (default)
+    },
+}
+
+# Minimum bounds for budgets (safety floor)
+MIN_BUDGET: dict[str, int] = {
+    "max_turns": 5,  # At least 5 turns for any task
+    "timeout_seconds": 60,  # At least 1 minute
+}
+
+# Maximum bounds for budgets (safety ceiling)
+MAX_BUDGET: dict[str, int] = {
+    "max_turns": 200,  # No task should need more than 200 turns
+    "timeout_seconds": 7200,  # 2 hours maximum
+}
+
+# Adjustment factors
+DESCRIPTION_LENGTH_THRESHOLDS: list[tuple[int, float]] = [
+    # (character_threshold, multiplier)
+    # Longer descriptions typically indicate more complex tasks
+    (500, 1.0),    # Short: base budget
+    (1000, 1.2),   # Medium: 20% increase
+    (2000, 1.4),   # Long: 40% increase
+    (5000, 1.6),   # Very long: 60% increase
+]
+
+STEPS_COUNT_THRESHOLDS: list[tuple[int, float]] = [
+    # (step_count_threshold, multiplier)
+    # More steps typically require more turns
+    (3, 1.0),      # Simple: base budget
+    (5, 1.15),     # Medium: 15% increase
+    (10, 1.3),     # Complex: 30% increase
+    (20, 1.5),     # Very complex: 50% increase
+]
+
+
+@dataclass
+class BudgetResult:
+    """
+    Result of budget derivation calculation.
+
+    Contains the derived budget values and metadata about the derivation.
+    """
+    max_turns: int
+    timeout_seconds: int
+    task_type: str
+    base_max_turns: int
+    base_timeout_seconds: int
+    description_multiplier: float
+    steps_multiplier: float
+    description_length: int
+    steps_count: int
+    adjustments_applied: list[str]
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization or API response."""
+        return {
+            "max_turns": self.max_turns,
+            "timeout_seconds": self.timeout_seconds,
+            "task_type": self.task_type,
+            "base_max_turns": self.base_max_turns,
+            "base_timeout_seconds": self.base_timeout_seconds,
+            "description_multiplier": self.description_multiplier,
+            "steps_multiplier": self.steps_multiplier,
+            "description_length": self.description_length,
+            "steps_count": self.steps_count,
+            "adjustments_applied": self.adjustments_applied,
+        }
+
+
+def _get_description_multiplier(description_length: int) -> float:
+    """
+    Calculate the multiplier based on description length.
+
+    Args:
+        description_length: Number of characters in the description
+
+    Returns:
+        Multiplier value (>= 1.0)
+    """
+    multiplier = 1.0
+    for threshold, mult in DESCRIPTION_LENGTH_THRESHOLDS:
+        if description_length >= threshold:
+            multiplier = mult
+        else:
+            break
+    return multiplier
+
+
+def _get_steps_multiplier(steps_count: int) -> float:
+    """
+    Calculate the multiplier based on number of acceptance steps.
+
+    Args:
+        steps_count: Number of acceptance/verification steps
+
+    Returns:
+        Multiplier value (>= 1.0)
+    """
+    multiplier = 1.0
+    for threshold, mult in STEPS_COUNT_THRESHOLDS:
+        if steps_count >= threshold:
+            multiplier = mult
+        else:
+            break
+    return multiplier
+
+
+def _apply_bounds(value: int, min_val: int, max_val: int) -> int:
+    """
+    Apply minimum and maximum bounds to a value.
+
+    Args:
+        value: The value to bound
+        min_val: Minimum allowed value
+        max_val: Maximum allowed value
+
+    Returns:
+        Bounded value
+    """
+    return max(min_val, min(value, max_val))
+
+
+def derive_budget(
+    task_type: str,
+    *,
+    description: str | None = None,
+    steps: list[str] | None = None,
+    description_length: int | None = None,
+    steps_count: int | None = None,
+) -> dict[str, int]:
+    """
+    Derive appropriate max_turns and timeout_seconds based on task complexity.
+
+    Feature #58: Budget Derivation from Task Complexity
+
+    This function calculates execution budgets based on:
+    1. Base budgets per task_type
+    2. Adjustment for description length (longer = more complex)
+    3. Adjustment for number of acceptance steps
+    4. Minimum and maximum bounds for safety
+
+    Args:
+        task_type: The task type (coding, testing, refactoring, documentation, audit, custom)
+        description: Optional task description (used to calculate length)
+        steps: Optional list of acceptance/verification steps
+        description_length: Optional explicit description length (overrides description)
+        steps_count: Optional explicit step count (overrides steps)
+
+    Returns:
+        Dictionary with 'max_turns' and 'timeout_seconds' keys
+
+    Example:
+        >>> budget = derive_budget("coding")
+        >>> budget["max_turns"]
+        50
+        >>> budget["timeout_seconds"]
+        1800
+
+        >>> budget = derive_budget("coding", description="A" * 2000, steps=["Step 1"] * 10)
+        >>> budget["max_turns"] > 50  # Increased due to complexity
+        True
+
+        >>> budget = derive_budget("testing")
+        >>> budget["max_turns"]
+        30
+        >>> budget["timeout_seconds"]
+        600
+    """
+    # Normalize task type
+    task_type_lower = task_type.lower().strip() if task_type else "custom"
+
+    # Fall back to custom for unknown task types
+    if task_type_lower not in BASE_BUDGETS:
+        _logger.warning(
+            "Unknown task_type '%s' for budget derivation, using 'custom'",
+            task_type
+        )
+        task_type_lower = "custom"
+
+    # Step 1: Get base budgets
+    base = BASE_BUDGETS[task_type_lower]
+    base_max_turns = base["max_turns"]
+    base_timeout = base["timeout_seconds"]
+
+    # Step 2: Calculate description length multiplier
+    if description_length is not None:
+        desc_len = description_length
+    elif description is not None:
+        desc_len = len(description)
+    else:
+        desc_len = 0
+
+    desc_multiplier = _get_description_multiplier(desc_len)
+
+    # Step 3: Calculate steps count multiplier
+    if steps_count is not None:
+        step_cnt = steps_count
+    elif steps is not None:
+        step_cnt = len(steps)
+    else:
+        step_cnt = 0
+
+    steps_multiplier = _get_steps_multiplier(step_cnt)
+
+    # Step 4: Apply multipliers (combined effect)
+    # Use the average of multipliers to avoid exponential growth
+    combined_multiplier = (desc_multiplier + steps_multiplier) / 2
+
+    # If both are 1.0, combined should be 1.0
+    if desc_multiplier == 1.0 and steps_multiplier == 1.0:
+        combined_multiplier = 1.0
+
+    adjusted_max_turns = int(base_max_turns * combined_multiplier)
+    adjusted_timeout = int(base_timeout * combined_multiplier)
+
+    # Step 5: Apply bounds
+    final_max_turns = _apply_bounds(
+        adjusted_max_turns,
+        MIN_BUDGET["max_turns"],
+        MAX_BUDGET["max_turns"]
+    )
+    final_timeout = _apply_bounds(
+        adjusted_timeout,
+        MIN_BUDGET["timeout_seconds"],
+        MAX_BUDGET["timeout_seconds"]
+    )
+
+    _logger.debug(
+        "Derived budget for task_type '%s': max_turns=%d (base=%d), timeout=%d (base=%d), "
+        "desc_len=%d, steps=%d, desc_mult=%.2f, steps_mult=%.2f",
+        task_type_lower,
+        final_max_turns,
+        base_max_turns,
+        final_timeout,
+        base_timeout,
+        desc_len,
+        step_cnt,
+        desc_multiplier,
+        steps_multiplier,
+    )
+
+    return {
+        "max_turns": final_max_turns,
+        "timeout_seconds": final_timeout,
+    }
+
+
+def derive_budget_detailed(
+    task_type: str,
+    *,
+    description: str | None = None,
+    steps: list[str] | None = None,
+    description_length: int | None = None,
+    steps_count: int | None = None,
+) -> BudgetResult:
+    """
+    Derive budget with detailed derivation information.
+
+    Similar to derive_budget but returns a BudgetResult with full metadata
+    about how the budget was calculated. Useful for debugging and transparency.
+
+    Args:
+        task_type: The task type
+        description: Optional task description
+        steps: Optional list of acceptance steps
+        description_length: Optional explicit description length
+        steps_count: Optional explicit step count
+
+    Returns:
+        BudgetResult with budget values and derivation metadata
+
+    Example:
+        >>> result = derive_budget_detailed("coding", description="Complex task...")
+        >>> result.max_turns
+        50
+        >>> result.description_multiplier
+        1.0
+        >>> result.adjustments_applied
+        ['base_budget_coding']
+    """
+    # Normalize task type
+    task_type_lower = task_type.lower().strip() if task_type else "custom"
+
+    # Fall back to custom for unknown task types
+    if task_type_lower not in BASE_BUDGETS:
+        task_type_lower = "custom"
+
+    # Get base budgets
+    base = BASE_BUDGETS[task_type_lower]
+    base_max_turns = base["max_turns"]
+    base_timeout = base["timeout_seconds"]
+
+    # Calculate description length
+    if description_length is not None:
+        desc_len = description_length
+    elif description is not None:
+        desc_len = len(description)
+    else:
+        desc_len = 0
+
+    # Calculate steps count
+    if steps_count is not None:
+        step_cnt = steps_count
+    elif steps is not None:
+        step_cnt = len(steps)
+    else:
+        step_cnt = 0
+
+    # Get multipliers
+    desc_multiplier = _get_description_multiplier(desc_len)
+    steps_multiplier = _get_steps_multiplier(step_cnt)
+
+    # Track adjustments
+    adjustments: list[str] = [f"base_budget_{task_type_lower}"]
+
+    if desc_multiplier > 1.0:
+        adjustments.append(f"description_length_adjustment_{desc_multiplier:.2f}x")
+    if steps_multiplier > 1.0:
+        adjustments.append(f"steps_count_adjustment_{steps_multiplier:.2f}x")
+
+    # Calculate combined multiplier
+    combined_multiplier = (desc_multiplier + steps_multiplier) / 2
+    if desc_multiplier == 1.0 and steps_multiplier == 1.0:
+        combined_multiplier = 1.0
+
+    # Calculate adjusted values
+    adjusted_max_turns = int(base_max_turns * combined_multiplier)
+    adjusted_timeout = int(base_timeout * combined_multiplier)
+
+    # Apply bounds
+    final_max_turns = _apply_bounds(
+        adjusted_max_turns,
+        MIN_BUDGET["max_turns"],
+        MAX_BUDGET["max_turns"]
+    )
+    final_timeout = _apply_bounds(
+        adjusted_timeout,
+        MIN_BUDGET["timeout_seconds"],
+        MAX_BUDGET["timeout_seconds"]
+    )
+
+    # Track bound adjustments
+    if final_max_turns != adjusted_max_turns:
+        if final_max_turns == MIN_BUDGET["max_turns"]:
+            adjustments.append("min_turns_bound_applied")
+        else:
+            adjustments.append("max_turns_bound_applied")
+
+    if final_timeout != adjusted_timeout:
+        if final_timeout == MIN_BUDGET["timeout_seconds"]:
+            adjustments.append("min_timeout_bound_applied")
+        else:
+            adjustments.append("max_timeout_bound_applied")
+
+    return BudgetResult(
+        max_turns=final_max_turns,
+        timeout_seconds=final_timeout,
+        task_type=task_type_lower,
+        base_max_turns=base_max_turns,
+        base_timeout_seconds=base_timeout,
+        description_multiplier=desc_multiplier,
+        steps_multiplier=steps_multiplier,
+        description_length=desc_len,
+        steps_count=step_cnt,
+        adjustments_applied=adjustments,
+    )
+
+
+def get_base_budget(task_type: str) -> dict[str, int]:
+    """
+    Get the base budget for a task type without any adjustments.
+
+    Args:
+        task_type: The task type
+
+    Returns:
+        Dictionary with 'max_turns' and 'timeout_seconds' keys
+
+    Example:
+        >>> get_base_budget("coding")
+        {'max_turns': 50, 'timeout_seconds': 1800}
+    """
+    task_type_lower = task_type.lower().strip() if task_type else "custom"
+
+    if task_type_lower not in BASE_BUDGETS:
+        task_type_lower = "custom"
+
+    return dict(BASE_BUDGETS[task_type_lower])
+
+
+def get_budget_bounds() -> dict[str, dict[str, int]]:
+    """
+    Get the minimum and maximum budget bounds.
+
+    Returns:
+        Dictionary with 'min' and 'max' keys, each containing budget limits
+
+    Example:
+        >>> bounds = get_budget_bounds()
+        >>> bounds["min"]["max_turns"]
+        5
+        >>> bounds["max"]["timeout_seconds"]
+        7200
+    """
+    return {
+        "min": dict(MIN_BUDGET),
+        "max": dict(MAX_BUDGET),
+    }
+
+
+def get_all_base_budgets() -> dict[str, dict[str, int]]:
+    """
+    Get all base budgets for all task types.
+
+    Returns:
+        Dictionary mapping task_type to base budget
+
+    Example:
+        >>> budgets = get_all_base_budgets()
+        >>> budgets["coding"]["max_turns"]
+        50
+    """
+    return {k: dict(v) for k, v in BASE_BUDGETS.items()}
+
+
+# =============================================================================
 # Tool Filtering (Feature #40: ToolPolicy Allowed Tools Filtering)
 # =============================================================================
 

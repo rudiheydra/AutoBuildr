@@ -139,6 +139,13 @@ from api.event_recorder import (
     get_event_recorder,
     clear_recorder_cache,
 )
+from api.dspy_signatures import (
+    SpecGenerationSignature,
+    get_spec_generator,
+    validate_spec_output,
+    VALID_TASK_TYPES,
+    DEFAULT_BUDGETS as DSPY_DEFAULT_BUDGETS,
+)
 
 __all__ = [
     "Feature",
@@ -209,6 +216,20 @@ __all__ = [
     "filter_tools_for_spec",
     "get_filtered_tool_names",
     "validate_tool_names",
+    # Feature #44: Policy Violation Event Logging exports
+    "PolicyViolation",
+    "ViolationAggregation",
+    "VIOLATION_TYPES",
+    "create_allowed_tools_violation",
+    "create_directory_sandbox_violation",
+    "create_forbidden_patterns_violation",
+    "get_violation_aggregation",
+    "record_allowed_tools_violation",
+    "record_and_aggregate_violation",
+    "record_directory_sandbox_violation",
+    "record_forbidden_patterns_violation",
+    "record_policy_violation_event",
+    "update_run_violation_metadata",
     # Display derivation exports
     "derive_display_name",
     "derive_display_properties",
@@ -253,4 +274,10 @@ __all__ = [
     "EventRecorder",
     "get_event_recorder",
     "clear_recorder_cache",
+    # DSPy signature exports (Feature #50)
+    "SpecGenerationSignature",
+    "get_spec_generator",
+    "validate_spec_output",
+    "VALID_TASK_TYPES",
+    "DSPY_DEFAULT_BUDGETS",
 ]

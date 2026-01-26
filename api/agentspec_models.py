@@ -79,6 +79,7 @@ EVENT_TYPES = [
     "failed",
     "paused",
     "resumed",
+    "policy_violation",  # Feature #44: Tool policy violation logging
 ]
 
 # Artifact types - outputs from agent runs
