@@ -2717,6 +2717,41 @@ All graph traversal functions in api/dependency_resolver.py have proper cycle pr
 
 [Testing] Feature #18 verified - still passing
 
+## Regression Test Session: 2026-01-27 03:55 UTC
+
+### Feature #20: GET /api/agent-runs/:id/artifacts List Artifacts - REGRESSION FOUND AND FIXED
+
+**Status:** PASSING (after fix)
+
+**Category:** F. UI-Backend Integration
+
+**Description:** Implement GET /api/agent-runs/:id/artifacts endpoint to list artifacts without inline content for performance.
+
+**Regression Found:**
+- The endpoint was returning HTTP 500 Internal Server Error
+- Root cause: The Artifact model renamed metadata column to artifact_metadata to avoid SQLAlchemy reserved word conflict
+- The router was still using a.metadata which accessed SQLAlchemy MetaData() object instead of the actual data
+- Pydantic validation error: Input should be a valid dictionary input_value=MetaData()
+
+**Fix Applied:**
+- Changed metadata=a.metadata to metadata=a.artifact_metadata in server/routers/agent_runs.py line 287
+
+**Verification Summary (6 Steps):**
+1. Define FastAPI route GET /api/agent-runs/{run_id}/artifacts - PASS
+2. Add query parameter: artifact_type filter - PASS (file_change returns 1, log returns 1)
+3. Query Artifacts by run_id - PASS (3 total artifacts)
+4. Filter by artifact_type if provided - PASS
+5. Exclude content_inline from list response for performance - PASS (has_inline_content flag present)
+6. Return list of ArtifactResponse without content - PASS
+
+**Additional Tests:**
+- Invalid artifact_type returns HTTP 400 with proper error message - PASS
+- Non-existent run_id returns HTTP 404 - PASS
+
+**Commit:** 59391d3 - fix: Fix regression in GET /api/agent-runs/:id/artifacts endpoint
+
+[Testing] Feature #20 regression fixed and verified - now passing
+
 ## Session: 2026-01-27 (Coding Agent - Feature #96)
 
 ### Feature #96: Startup health check auto-fixes self-references with warning - COMPLETED
@@ -2986,5 +3021,81 @@ The `_run_dependency_health_check()` method in parallel_orchestrator.py:
 **Updated Progress:**
 - Total: 32/103 features passing (approximately 31.1%)
 - Feature #95: Orchestrator runs validate_dependency_graph on startup - PASSING
+
+**Session completed successfully.**
+
+
+## Session: 2026-01-27 (Coding Agent - Feature #100)
+
+### Feature #100: Auto-repair function removes orphaned dependency references - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Description:** Implement repair_orphaned_dependencies() function that removes references to non-existent feature IDs.
+
+**Dependencies:** None
+
+**Verification Summary (5 Steps):**
+
+- Step 1: Create repair_orphaned_dependencies(session) function - PASS
+  - Function exists in api/dependency_resolver.py
+  - Function is callable
+  - Function signature: repair_orphaned_dependencies(session)
+
+- Step 2: Get set of all valid feature IDs - PASS
+  - Queries all features from database
+  - Builds set of valid feature IDs
+  - Correctly identifies orphans vs valid dependencies
+
+- Step 3: For each feature, filter dependencies to only valid IDs - PASS
+  - Removes orphan dependencies from each feature
+  - Preserves valid dependencies
+  - Handles mixed valid/orphan dependencies correctly
+
+- Step 4: Update features with orphaned refs in single transaction - PASS
+  - All changes committed in single session.commit()
+  - Changes persist to database (verified with new session)
+  - No partial commits
+
+- Step 5: Return dict of {feature_id: [removed_orphan_ids]} for logging - PASS
+  - Returns dict type
+  - Keys are feature IDs
+  - Values are lists of removed orphan IDs
+  - Returns empty dict when no orphans found
+
+**Implementation Details:**
+- Function: api/dependency_resolver.py::repair_orphaned_dependencies()
+- Uses get_dependencies_safe() for robust dependency extraction
+- Builds valid_ids set for O(1) lookup
+- Structured logging with before/after fix messages
+- Single transaction commit for atomicity
+
+**Test Results:**
+- tests/test_repair_orphaned_dependencies.py: 21/21 tests PASS
+  - TestFunctionExistsAndSignature: 4 tests
+  - TestGetValidFeatureIds: 1 test
+  - TestFiltersToValidDependencies: 3 tests
+  - TestSingleTransactionCommit: 2 tests
+  - TestReturnDictFormat: 2 tests
+  - TestEdgeCases: 7 tests
+  - TestLogging: 2 tests
+- tests/verify_feature_100.py: All 5 verification steps PASS
+
+**Files Created:**
+- tests/test_repair_orphaned_dependencies.py: Comprehensive test suite (569 lines)
+- tests/verify_feature_100.py: Verification script (247 lines)
+
+**Files Modified:**
+- api/dependency_resolver.py: Added repair_orphaned_dependencies() function
+
+**Commit:** 309dcaf - "feat: Implement repair_orphaned_dependencies() function (Feature #100)"
+
+---
+
+**Updated Progress:**
+- Total: 37/103 features passing (approximately 35.9%)
+- Feature #100: Auto-repair function removes orphaned dependency references - PASSING
 
 **Session completed successfully.**
