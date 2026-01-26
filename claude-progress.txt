@@ -1,6 +1,43 @@
 # AutoBuildr Progress Log
 # ======================
 
+## Session: 2026-01-27 (Feature #12)
+
+### Feature #12: GET /api/agent-specs List AgentSpecs Endpoint - COMPLETED
+
+**Status:** PASSING
+
+**Description:** Implement GET /api/agent-specs endpoint with filtering by task_type, source_feature_id, tags and pagination support.
+
+**Verification Summary:**
+- Step 1: Define FastAPI route GET /api/agent-specs - PASS (route defined at /api/projects/{project_name}/agent-specs)
+- Step 2: Add query parameters - PASS (task_type, source_feature_id, tags, limit, offset)
+- Step 3: Build SQLAlchemy query with conditional filters - PASS
+- Step 4: Filter by task_type if provided - PASS (tested with coding, testing, invalid)
+- Step 5: Filter by source_feature_id if provided - PASS (implemented)
+- Step 6: Filter by tags using JSON contains - PASS (uses SQLite json_extract with LIKE)
+- Step 7: Apply pagination with limit and offset - PASS (default 50, max 100)
+- Step 8: Execute count query for total - PASS (returns total count)
+- Step 9: Return list of AgentSpecResponse with total count header - PASS (X-Total-Count header)
+
+**Implementation Notes:**
+- The endpoint is project-scoped: /api/projects/{project_name}/agent-specs
+- Uses get_db_session context manager for database access
+- Validates task_type against allowed values: coding, testing, refactoring, documentation, audit, custom
+- Returns AgentSpecListResponse with specs array and pagination metadata
+- Also fixed schema exports in server/schemas/__init__.py for missing legacy schemas
+
+**Tests Run:**
+```
+curl http://localhost:8890/api/projects/AutoBuildr/agent-specs  # Returns specs
+curl http://localhost:8890/api/projects/AutoBuildr/agent-specs?task_type=testing  # Filters by type
+curl http://localhost:8890/api/projects/AutoBuildr/agent-specs?task_type=coding  # Returns empty array
+curl http://localhost:8890/api/projects/AutoBuildr/agent-specs?task_type=invalid  # Returns 400
+curl -i http://localhost:8890/api/projects/AutoBuildr/agent-specs  # Verifies X-Total-Count header
+```
+
+---
+
 ## Session: 2026-01-27
 
 ### Feature #3: AgentRun SQLite Table Schema - COMPLETED
