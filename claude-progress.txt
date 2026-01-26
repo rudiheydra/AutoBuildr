@@ -2438,3 +2438,195 @@ Modified api/dependency_resolver.py:
 
 **Session completed successfully.**
 
+
+## Regression Test Session: 2026-01-26 16:42 UTC
+
+### Feature #91: Graph algorithms enforce iteration limit - VERIFIED (No Regression)
+
+**Status:** PASSING
+
+**Verification Summary:**
+- 27/27 feature-specific tests pass (tests/test_feature_91_iteration_limits.py)
+- 127/127 related dependency/graph tests pass (no regressions)
+- Code review confirmed implementation in api/dependency_resolver.py:
+  - compute_scheduling_scores: BFS iteration limit with error logging (lines 542-564)
+  - _detect_cycles: DFS iteration limit with error logging (lines 462-506)
+  - _detect_cycles_for_validation: DFS iteration limit with error logging (lines 383-441)
+
+**Conclusion:** Feature #91 passes all verification steps. No regression detected.
+
+[Testing] Feature #91 verified - still passing
+
+
+## Session: 2026-01-27 (Coding Agent - Feature #90)
+
+### Feature #90: BFS in compute_scheduling_scores uses visited set to prevent re-processing - COMPLETED
+
+**Status:** PASSING
+
+**Category:** error-handling
+
+**Description:** The BFS algorithm in compute_scheduling_scores() must use a visited set to prevent infinite loops when cycles exist in the dependency graph.
+
+**Dependencies:** None
+
+**Verification Summary (5 Steps):**
+
+- Step 1: Create features with a cycle: A -> B -> C -> A - PASS
+  - Created 3 features with circular dependencies
+  - Cycle formed: 1 -> 2 -> 3 -> 1 (A -> B -> C -> A)
+
+- Step 2: Call compute_scheduling_scores() with these features - PASS
+  - Function called successfully
+  - Returned in 0.0001 seconds
+
+- Step 3: Verify the function returns without hanging - PASS
+  - Function completed in < 1 second (threshold)
+  - No infinite loop detected
+
+- Step 4: Verify all features have valid scores assigned - PASS
+  - Feature 1: score = 1109.00
+  - Feature 2: score = 441.33
+  - Feature 3: score = 773.67
+  - All scores are valid floats >= 0
+
+- Step 5: Verify the visited set prevents nodes from being processed multiple times - PASS
+  - Source code analysis confirms:
+    - visited set declaration: YES (`visited: set[int] = set()`)
+    - visited check before add: YES (`if child_id not in visited`)
+    - visited.add() call: YES (`visited.add(child_id)`)
+
+**Implementation Details:**
+- Function: api/dependency_resolver.py::compute_scheduling_scores()
+- Uses visited set to track processed nodes
+- Roots marked as visited before adding to queue
+- Only unvisited children added to queue
+- Prevents infinite loops in cyclic graphs
+- Also has iteration limit as defense-in-depth
+
+**Test Results:**
+- tests/test_feature_90_bfs_visited.py: 15/15 tests PASS
+- tests/verify_feature_90.py: All 6 verification steps PASS
+
+**Test Categories:**
+- TestBFSWithCycles: 4 tests (simple, three-node, four-node cycles, self-reference)
+- TestBFSValidScores: 2 tests (all features have scores, mixed cycle/non-cycle)
+- TestBFSVisitedSet: 3 tests (diamond pattern, complex graph, long chain)
+- TestBFSPerformance: 2 tests (many interconnected, multiple separate cycles)
+- TestEdgeCases: 4 tests (empty, single feature, self-dep, missing target)
+
+**Files Created:**
+- tests/test_feature_90_bfs_visited.py: 15 comprehensive unit tests (~250 lines)
+- tests/verify_feature_90.py: Feature verification script (~180 lines)
+
+---
+
+**Updated Progress:**
+- Total: 32/103 features passing (approximately 31.1%)
+- Feature #90: BFS in compute_scheduling_scores uses visited set to prevent re-processing - PASSING
+
+**Session completed successfully.**
+
+
+---
+
+## Session: 2026-01-27 (Coding Agent - Feature #93)
+
+### Feature #93: All graph traversal functions have cycle protection - COMPLETED
+
+**Status:** PASSING
+
+**Category:** error-handling
+
+**Description:** Audit all graph traversal functions (resolve_dependencies, _detect_cycles, compute_scheduling_scores, would_create_circular_dependency) to ensure they all have visited sets.
+
+**Dependencies:** None
+
+**Verification Summary (5 Steps):**
+
+- Step 1: Review resolve_dependencies() - verify visited tracking in Kahn's algorithm - PASS
+  - Uses in_degree tracking for Kahn's algorithm (inherent cycle protection)
+  - Uses heap for priority-aware node selection
+  - Correctly detects cycles (features left with non-zero in_degree)
+
+- Step 2: Review _detect_cycles() - verify visited and rec_stack sets - PASS
+  - Uses visited set to track processed nodes
+  - Uses rec_stack set for recursion tracking (detecting back edges)
+  - Has max_iterations limit (len(features) * 2) to prevent infinite loops
+  - Logs error via _logger.error when limit exceeded
+
+- Step 3: Review compute_scheduling_scores() - add visited set to BFS - PASS
+  - Added visited set to prevent re-processing nodes in cycles
+  - Added max_iterations limit as defense-in-depth
+  - Logs error when iteration limit exceeded
+  - Correctly handles diamond dependency patterns
+
+- Step 4: Review would_create_circular_dependency() - verify visited set in DFS - PASS
+  - Uses visited set for DFS traversal
+  - Uses MAX_DEPENDENCY_DEPTH (50) limit to prevent stack overflow
+  - Returns True (fail-safe) when depth exceeded
+  - Correctly detects when adding dependency would create cycle
+
+- Step 5: Add iteration limits to any function missing them - PASS
+  - _detect_cycles(): has max_iterations = len(features) * 2
+  - _detect_cycles_for_validation(): has max_iterations = len(features) * 2
+  - compute_scheduling_scores(): has max_iterations = len(features) * 2
+  - would_create_circular_dependency(): has MAX_DEPENDENCY_DEPTH = 50
+  - resolve_dependencies(): uses Kahn's algorithm (inherently terminates)
+
+**Implementation Details:**
+
+All graph traversal functions in api/dependency_resolver.py have proper cycle protection:
+
+1. **resolve_dependencies()** (lines 49-116):
+   - Uses Kahn's algorithm with in_degree tracking
+   - No visited set needed - Kahn's algorithm processes each node exactly once
+   - Nodes in cycles never reach in_degree=0, so they're detected as circular
+
+2. **_detect_cycles()** (lines 445-507):
+   - visited: set[int] - tracks all visited nodes
+   - rec_stack: set[int] - tracks nodes in current recursion path
+   - max_iterations = len(features) * 2 - prevents infinite loops
+   - Logs error when limit exceeded
+
+3. **_detect_cycles_for_validation()** (lines 362-442):
+   - Same protections as _detect_cycles
+   - Also normalizes and deduplicates cycles
+
+4. **compute_scheduling_scores()** (lines 510-592):
+   - visited: set[int] - prevents re-processing nodes in BFS
+   - max_iterations = len(features) * 2 - defense in depth
+   - Logs error when limit exceeded
+
+5. **would_create_circular_dependency()** (lines 167-218):
+   - visited: set[int] - tracks visited nodes in DFS
+   - MAX_DEPENDENCY_DEPTH = 50 - prevents stack overflow
+   - Returns True (fail-safe) when depth exceeded
+
+**Test Results:**
+- tests/test_graph_cycle_protection.py: 33/33 tests PASS
+- tests/verify_feature_93.py: All 5 verification steps PASS
+
+**Test Categories:**
+- TestResolveDependenciesKahnsAlgorithm: 5 tests
+- TestDetectCyclesVisitedTracking: 3 tests
+- TestDetectCyclesForValidationVisitedTracking: 3 tests
+- TestComputeSchedulingScoresQueuedTracking: 5 tests
+- TestWouldCreateCircularDependencyVisited: 5 tests
+- TestIterationLimitsLogging: 3 tests
+- TestCycleProtectionCodeAudit: 5 tests
+- TestEdgeCases: 4 tests
+
+**Files Created:**
+- tests/test_graph_cycle_protection.py: Comprehensive test suite (365 lines)
+- tests/verify_feature_93.py: Feature verification script (157 lines)
+
+**Commit:** 86f371a - "feat: Add comprehensive cycle protection tests for Feature #93"
+
+---
+
+**Updated Progress:**
+- Total: 31/103 features passing (approximately 30.1%)
+- Feature #93: All graph traversal functions have cycle protection - PASSING
+
+**Session completed successfully.**
