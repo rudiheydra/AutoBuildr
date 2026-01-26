@@ -4633,3 +4633,308 @@ Modified server/websocket.py:
 - Feature #62: WebSocket agent_event_logged Event - PASSING
 
 **Session completed successfully.**
+
+---
+
+## Session: 2026-01-27 (Coding Agent - Feature #64)
+
+### Feature #64: DynamicAgentCard React Component - COMPLETED
+
+**Status:** PASSING
+
+**Category:** O. Responsive & Layout
+
+**Description:** Create DynamicAgentCard component rendering from AgentSpec + AgentRun data with status and progress display.
+
+**Dependencies:** #12 (GET /api/agent-specs List Endpoint - PASSING), #18 (GET /api/agent-runs/:id Get Run Details - PASSING)
+
+**Verification Summary (10 Steps - All Passed):**
+
+- Step 1: Create DynamicAgentCard.tsx component - PASS
+- Step 2: Props: spec (AgentSpec), run (AgentRun | null) - PASS
+- Step 3: Display spec.display_name as card title - PASS
+- Step 4: Display spec.icon as card icon - PASS
+- Step 5: If run exists, show status with color coding - PASS
+- Step 6: Show turns_used / max_turns progress bar - PASS
+- Step 7: Show validator status indicators - PASS (ADDED in this session)
+- Step 8: Add click handler to open Run Inspector - PASS
+- Step 9: Style with Tailwind neobrutalism tokens - PASS
+- Step 10: Make responsive for mobile - PASS
+
+**Implementation Details:**
+
+The DynamicAgentCard component was mostly complete, but was missing validator status indicators (Step 7). Added:
+
+1. **ValidatorStatusIndicators Component:**
+   - Extracts acceptance_results from AgentRun
+   - Computes passedCount and totalCount
+   - Shows summary line: "Validators: X/Y"
+   - Renders individual badges for each validator with:
+     - Check icon (passed) or X icon (failed)
+     - Truncated validator name
+     - Tooltip with full message
+   - Uses neobrutalism status colors
+
+2. **New imports:**
+   - Added Check and X icons from lucide-react
+   - Added AgentRun type import
+
+3. **Export:**
+   - Exported ValidatorStatusIndicators for reuse in other components
+
+**Test Results:**
+- TypeScript build: SUCCESS (no errors)
+- tests/verify_feature_64.py: 10/10 verification steps PASS
+- npm run build: SUCCESS (frontend builds correctly)
+
+**Files Modified:**
+- ui/src/components/DynamicAgentCard.tsx: +55 lines (ValidatorStatusIndicators component)
+
+**Files Created:**
+- tests/verify_feature_64.py: Verification script (165 lines)
+
+**Commit:** d96aace - "feat: Add ValidatorStatusIndicators to DynamicAgentCard (Feature #64)"
+
+---
+
+**Updated Progress:**
+- Total: 59/103 features passing (approximately 57.3%)
+- Feature #64: DynamicAgentCard React Component - PASSING
+
+**Session completed successfully.**
+
+---
+
+## Session: 2026-01-27 (Coding Agent - Feature #63)
+
+### Feature #63: WebSocket agent_acceptance_update Event - COMPLETED
+
+**Status:** PASSING
+
+**Category:** F. UI-Backend Integration
+
+**Description:** Broadcast WebSocket message when validators run with per-validator results.
+
+**Dependencies:** #36 (StaticSpecAdapter for Legacy Initializer) - PASSING
+
+**Verification Summary (4 Steps):**
+
+- Step 1: After acceptance gate evaluation, publish message - PASS
+  - Created broadcast_acceptance_update() async function
+  - Created broadcast_acceptance_update_sync() sync wrapper for kernel integration
+  - Created build_acceptance_update_from_results() helper for easy integration
+
+- Step 2: Message type: agent_acceptance_update - PASS
+  - AcceptanceUpdatePayload.to_message() returns dict with type="agent_acceptance_update"
+  - Message type verified in all tests
+
+- Step 3: Payload: run_id, final_verdict, validator_results array - PASS
+  - AcceptanceUpdatePayload contains run_id, final_verdict, validator_results
+  - Additional fields: gate_mode, timestamp
+  - All fields serialized correctly to JSON
+
+- Step 4: Each validator result: index, type, passed, message - PASS
+  - ValidatorResultPayload contains index, type, passed, message
+  - Additional fields: score, details
+  - Integration with ValidatorResult from api.validators works correctly
+
+**Implementation Details:**
+
+Created api/websocket_events.py:
+- ValidatorResultPayload dataclass: Per-validator result for WebSocket messages
+- AcceptanceUpdatePayload dataclass: Complete acceptance update message
+- broadcast_acceptance_update(): Async function for WebSocket broadcasting
+- broadcast_acceptance_update_sync(): Sync wrapper for kernel integration
+- create_validator_result_payload(): Converts ValidatorResult to payload
+- build_acceptance_update_from_results(): Builds payload from evaluate_acceptance_spec output
+
+Key design decisions:
+- Uses server.websocket.manager for broadcasting when available
+- Gracefully handles missing manager (returns False instead of failing)
+- Supports multiple input formats: ValidatorResultPayload, ValidatorResult, dict
+- JSON serializable for WebSocket transmission
+
+**Test Results:**
+- tests/test_feature_63_websocket_acceptance_update.py: 28/28 tests PASS
+  - TestValidatorResultPayload: 4 tests
+  - TestAcceptanceUpdatePayload: 7 tests
+  - TestBroadcastAcceptanceUpdate: 6 tests
+  - TestCreateValidatorResultPayload: 1 test
+  - TestBuildAcceptanceUpdateFromResults: 3 tests
+  - TestFeature63VerificationSteps: 4 tests
+  - TestIntegrationWithValidators: 2 tests
+  - TestBroadcastAcceptanceUpdateSync: 1 test
+
+- tests/verify_feature_63.py: All verification steps PASS
+  - 40+ individual checks across all steps
+
+- No regressions in existing tests (140 related tests pass)
+
+**Files Created:**
+- api/websocket_events.py: WebSocket event broadcasting utilities (377 lines)
+- tests/test_feature_63_websocket_acceptance_update.py: Comprehensive test suite (730 lines)
+- tests/verify_feature_63.py: Feature verification script (307 lines)
+
+**Files Modified:**
+- api/__init__.py: Added exports for new functions
+
+**Commit:** 183ad4e - "feat: Implement WebSocket agent_acceptance_update Event (Feature #63)"
+
+---
+
+**Updated Progress:**
+- Total: 59/103 features passing (approximately 57.3%)
+- Feature #63: WebSocket agent_acceptance_update Event - PASSING
+
+**Session completed successfully.**
+[Testing] 2026-01-27 09:12:13 - Feature #16 regression test PASSED
+  - Feature: POST /api/agent-specs/:id/execute Trigger Execution
+  - Verification: All 8 steps pass
+  - E2E tests: 2/2 tests pass
+  - API verification: All endpoints responding correctly
+  - All verification steps confirmed working:
+    - Step 1: FastAPI route POST defined at correct path
+    - Step 2: Query AgentSpec by id works correctly
+    - Step 3: Return 404 for non-existent spec (verified)
+    - Step 4: Create new AgentRun with status=pending
+    - Step 5: created_at set to current UTC timestamp
+    - Step 6: Run record committed to database
+    - Step 7: Background task queued (run transitions to 'running')
+    - Step 8: Returns AgentRunResponse with 202 Accepted
+  - Note: Browser automation unavailable - verified via API and unit tests
+  - No regression found - feature still working correctly
+[Testing] 2026-01-27 09:23:14 - Feature #98 regression test PASSED
+  - Feature: Startup health check auto-removes orphaned dependency references
+  - Verification: All 5 steps pass
+  - Unit tests: 15/15 tests pass
+  - Verified functionality:
+    - Step 1: Feature with orphaned dependency [999] created correctly
+    - Step 2: Health check runs successfully on orchestrator startup
+    - Step 3: Orphaned dependency references are auto-removed
+    - Step 4: WARNING level log emitted with feature ID and removed deps
+    - Step 5: Orchestrator continues to normal operation (returns True)
+  - No regression found - feature still working correctly
+[Testing] 2026-01-27 09:25:00 - Feature #52 regression test PASSED
+  - Feature: Feature to AgentSpec Compiler
+  - Verification: All 10 steps pass
+  - Unit tests: 66/66 tests pass
+  - Verification script: 21/21 checks pass
+  - Module import and basic functionality: All tests pass
+  - All verification steps confirmed working:
+    - Step 1: FeatureCompiler class with compile(feature) -> AgentSpec method
+    - Step 2: Generate spec name from feature: feature-{id}-{slug}
+    - Step 3: Generate display_name from feature name
+    - Step 4: Set objective from feature description
+    - Step 5: Determine task_type from feature category
+    - Step 6: Derive tool_policy based on category conventions
+    - Step 7: Create acceptance validators from feature steps
+    - Step 8: Set source_feature_id for traceability
+    - Step 9: Set priority from feature priority
+    - Step 10: Return complete AgentSpec ready for execution
+  - Note: Browser automation unavailable - verified via unit tests and verification script
+  - No regression found - feature still working correctly
+[Testing] 2026-01-27 09:27:47 - Feature #96 regression test PASSED
+  - Feature: Startup health check auto-fixes self-references with warning
+  - Verification: All 5 steps pass
+  - Unit tests: 9/9 tests pass
+  - Additional self-reference tests: 19/19 tests pass
+  - Dependency graph validation tests: 14/14 tests pass
+  - Verified functionality:
+    - Step 1: Feature with self-reference [999] created correctly
+    - Step 2: Health check runs successfully on orchestrator startup
+    - Step 3: Self-reference automatically removed from the feature
+    - Step 4: WARNING level log emitted with feature ID and action taken
+    - Step 5: Orchestrator continues to normal operation after fix
+  - Note: Browser automation unavailable - verified via unit tests and verification script
+  - No regression found - feature still working correctly
+
+---
+
+## Session: 2026-01-27 (Coding Agent - Feature #71)
+
+### Feature #71: Real-time Card Updates via WebSocket - COMPLETED
+
+**Status:** PASSING
+
+**Category:** F. UI-Backend Integration
+
+**Description:** Connect DynamicAgentCard to WebSocket for real-time status, progress, and event updates.
+
+**Dependencies:** [62, 63, 64, 65] - All passing
+- Feature #62: WebSocket agent_event_logged Event
+- Feature #63: WebSocket agent_acceptance_update Event
+- Feature #64: DynamicAgentCard React Component
+- Feature #65: AgentRun Status Color Coding
+
+**Verification Steps (All 8 Passed):**
+
+1. Create useAgentRunUpdates hook - PASS
+   - Created hook file at ui/src/hooks/useAgentRunUpdates.ts
+   - Exported UseAgentRunUpdatesOptions, UseAgentRunUpdatesReturn interfaces
+   - Exported AgentRunUpdateState interface with all required fields
+
+2. Subscribe to run-specific WebSocket channel - PASS
+   - WebSocket URL includes project name: /ws/projects/{projectName}
+   - Messages filtered by runId using shouldProcessMessage function
+   - Protocol detection for ws/wss based on window.location
+
+3. Handle agent_run_started message - PASS
+   - handleRunStarted function defined
+   - Updates status to 'running' when message received
+   - Filters by run_id to only process relevant messages
+
+4. Handle agent_event_logged message to update turns_used - PASS
+   - handleEventLogged function defined
+   - Updates turnsUsed on turn_complete events
+   - Tracks lastEvent with type, sequence, toolName, timestamp
+
+5. Handle agent_acceptance_update message - PASS
+   - handleAcceptanceUpdate function defined
+   - Converts validator_results array to acceptanceResults record
+   - Updates finalVerdict and status based on verdict (passed/failed)
+
+6. Update component state on message - PASS
+   - useState for state management with AgentRunUpdateState
+   - setState with spread pattern (...prev) for immutable updates
+   - useCallback for memoized message handlers
+   - useMemo for optimized run_id filtering
+
+7. Unsubscribe on unmount - PASS
+   - useEffect with cleanup function returned
+   - WebSocket closed on cleanup
+   - mountedRef prevents updates after unmount
+   - clearInterval cleans up ping interval
+
+8. Handle reconnection gracefully - PASS
+   - RECONNECT_DELAYS with exponential backoff: [1000, 2000, 4000, 8000, 15000, 30000]
+   - reconnectAttemptRef tracks reconnection attempts
+   - isReconnecting state exposed for UI feedback
+   - clearTimeout clears reconnect timeout on cleanup
+
+**Additional Features:**
+
+- useMultipleAgentRunUpdates hook for tracking multiple runs simultaneously
+- Map-based state management for efficient multi-run tracking
+- Ping/pong heartbeat every 30 seconds to keep connection alive
+- Initial state extraction from initialRun parameter
+- Reset function to reinitialize state
+
+**Test Results:**
+- tests/test_feature_71_realtime_card_updates.py: 51/51 tests PASS
+- tests/verify_feature_71.py: All verification steps PASS
+- Frontend build: SUCCESS (no TypeScript errors)
+
+**Files Created:**
+- ui/src/hooks/useAgentRunUpdates.ts: Main hook implementation (577 lines)
+- tests/test_feature_71_realtime_card_updates.py: Unit tests (409 lines)
+- tests/verify_feature_71.py: Verification script (434 lines)
+
+**Commit:** 3497664 - "feat: Implement Real-time Card Updates via WebSocket (Feature #71)"
+
+---
+
+**Updated Progress:**
+- Total: 64/103 features passing (approximately 62.1%)
+- Feature #71: Real-time Card Updates via WebSocket - PASSING
+
+**Session completed successfully.**
