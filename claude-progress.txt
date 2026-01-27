@@ -1,6 +1,115 @@
 # AutoBuildr Progress Log
 # ======================
 
+## Session: 2026-01-27 (Coding Agent - Feature #123)
+
+### Feature #123: Verification: All pytest tests pass for test_dspy_pipeline_e2e.py - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Description:** All tests in tests/test_dspy_pipeline_e2e.py pass when run with pytest. This includes all 9 test classes (Steps 1-9), the full pipeline E2E test, and all 7 Proof of Scope runtime wiring tests.
+
+**Verification Summary (All 4 Feature Steps Passed):**
+
+1. **Run: python -m pytest tests/test_dspy_pipeline_e2e.py -v** - PASS
+   - All 46 tests collected and executed successfully
+   - 3 consecutive runs all passed (no flaky tests)
+
+2. **All tests pass (0 failures, 0 errors)** - PASS
+   - 46 passed, 0 failed, 0 errors across all runs
+   - Test breakdown:
+     - TestStep1-9 (9 classes): 38 tests
+     - TestFullPipelineE2E: 1 test
+     - Proof tests (#116-#122): 7 tests
+     - Total: 46 tests
+
+3. **No warnings that indicate test logic issues** - PASS
+   - Only warning: SQLAlchemy MovedIn20Warning (deprecation, not test logic)
+   - No test logic warnings or issues detected
+
+4. **Tests run without requiring a real ANTHROPIC_API_KEY** - PASS
+   - Verified ANTHROPIC_API_KEY is NOT SET in environment
+   - All DSPy calls use @patch("api.spec_builder.dspy") mocking
+   - env_with_fake_key fixture provides fake key for tests that need one
+
+**No code changes needed** - all tests were already implemented and passing.
+
+**Updated Progress:**
+- Total: 121/124 features passing (approximately 97.6%)
+- Feature #123: All pytest tests pass for test_dspy_pipeline_e2e.py - PASSING
+
+**Session completed successfully.**
+
+---
+
+## Session: 2026-01-27 (Coding Agent - Feature #121)
+
+### Accomplished
+- Implemented Feature #121: Smoke test proving full Feature→Spec→Kernel→DB→Gate wiring without API key
+- Created TestSmokeFullWiring class with test_smoke_full_wiring_no_api_key() in tests/test_dspy_pipeline_e2e.py
+- Test creates Feature in in-memory SQLite, compiles via FeatureCompiler (no mock), persists AgentSpec,
+  executes via HarnessKernel with mock turn_executor (boundary mock only), asserts DB has correct FK relationships
+  for AgentSpec/AgentRun/AgentEvent, and evaluates AcceptanceGate returning GateResult
+- All 46 tests in test_dspy_pipeline_e2e.py pass (zero regressions)
+- Added GateResult import to test file
+- Marked Feature #121 as passing
+
+### Current Status
+- 118/124 features passing (95.2%)
+
+---
+
+## Session: 2026-01-27 (Coding Agent - Feature #122)
+
+### Feature #122: Proof: ForbiddenPatternsValidator catches forbidden output deterministically - COMPLETED
+
+**Status:** PASSING
+
+**Category:** security
+
+**Description:** Prove ForbiddenPatternsValidator works deterministically against agent run events containing forbidden patterns.
+
+**Verification Summary (All 7 Feature Steps Passed):**
+
+1. **Create test_forbidden_patterns_catches_violations() in tests/test_dspy_pipeline_e2e.py** - PASS
+   - Function added at end of test file
+   - Uses db_session fixture with in-memory SQLite
+
+2. **Create AgentRun with AgentEvent(event_type='tool_result') containing forbidden text** - PASS
+   - Created AgentSpec + AgentRun + AgentEvent(payload="Executing command: rm -rf / --no-preserve-root")
+
+3. **Configure ForbiddenPatternsValidator with patterns ['rm -rf']** - PASS
+   - Instantiated ForbiddenPatternsValidator directly
+   - Config: patterns=['rm -rf'], case_sensitive=True
+
+4. **Evaluate validator with run context** - PASS
+   - Called validator.evaluate(config=config, context={}, run=run)
+
+5. **Assert result.passed is False (forbidden pattern detected)** - PASS
+   - Confirmed result.passed is False
+
+6. **Assert result.details contains match information** - PASS
+   - Verified 'matches' key exists with >= 1 match
+   - Verified first_match['pattern'] == 'rm -rf'
+   - Verified first_match['matched_text'] == 'rm -rf'
+   - Verified patterns_checked and events_checked fields
+
+7. **Test passes: python -m pytest tests/test_dspy_pipeline_e2e.py -k forbidden_patterns_catches -v** - PASS
+   - 1 passed in 4.29s
+   - Full suite: 45/45 tests pass in 4.73s (no regressions)
+
+**Commit:** 9d48aa8
+
+**Updated Progress:**
+- Total: 119/124 features passing (approximately 96.0%)
+- Feature #122: Proof: ForbiddenPatternsValidator catches forbidden output deterministically - PASSING
+
+**Session completed successfully.**
+
+---
+
 ## Session: 2026-01-27 (Coding Agent - Feature #119)
 
 ### Feature #119: Proof: Acceptance gate PASS case — deterministic validators only - COMPLETED
@@ -8846,3 +8955,19 @@ Created comprehensive test suite:
 **Files:** tests/test_dspy_pipeline_e2e.py (added TestPersistenceAfterKernelRun)
 **Commit:** b08d115
 **Suite:** 43/43 tests pass
+[Testing] 2026-01-27 19:55:43 - Feature #96 regression test PASSED
+  - Feature: Startup health check auto-fixes self-references with warning
+  - Category: functional
+  - All 5 verification steps passed:
+    Step 1: Insert a feature with self-reference into database - PASS
+    Step 2: Start the orchestrator (run health check) - PASS
+    Step 3: Verify the self-reference is automatically removed - PASS
+    Step 4: Verify a WARNING level log is emitted with feature ID - PASS
+    Step 5: Verify orchestrator continues to normal operation after fix - PASS
+  - Unit tests: 9/9 passed (test_feature_96_self_reference_auto_fix.py)
+  - Standalone verification: 5/5 passed (verify_feature_96.py)
+  - E2E inline verification: 5/5 passed
+  - Additional repair_self_references() direct test: PASS
+  - Live API dependency-health endpoint: healthy (no issues)
+  - Browser automation unavailable (Chrome launch failure in container)
+  - No regression found - feature still working correctly
