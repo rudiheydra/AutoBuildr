@@ -100,6 +100,36 @@ class ToolCallBlocked(ToolPolicyError):
         super().__init__(message)
 
 
+class ForbiddenToolBlocked(ToolPolicyError):
+    """
+    Raised when a tool call is blocked because the tool is in forbidden_tools list.
+
+    Feature #47: Forbidden Tools Explicit Blocking
+
+    This exception is raised when a tool is explicitly blacklisted in the
+    forbidden_tools list, regardless of whether it's in allowed_tools.
+
+    The forbidden_tools blacklist takes precedence over allowed_tools whitelist.
+    """
+
+    def __init__(
+        self,
+        tool_name: str,
+        forbidden_tools: list[str],
+        message: str | None = None,
+    ):
+        self.tool_name = tool_name
+        self.forbidden_tools = forbidden_tools
+
+        if message is None:
+            message = (
+                f"Tool '{tool_name}' is explicitly blocked: "
+                f"tool is in the forbidden_tools blacklist"
+            )
+
+        super().__init__(message)
+
+
 class DirectoryAccessBlocked(ToolPolicyError):
     """
     Raised when a file operation targets a path outside allowed_directories.
@@ -1333,12 +1363,14 @@ class ToolPolicyEnforcer:
         spec_id: ID of the AgentSpec this enforcer belongs to
         forbidden_patterns: List of compiled forbidden patterns
         allowed_tools: List of allowed tool names (may be None for all)
+        forbidden_tools: List of explicitly blocked tool names (Feature #47)
         strict_mode: If True, fail on pattern compilation errors
     """
 
     spec_id: str
     forbidden_patterns: list[CompiledPattern] = field(default_factory=list)
     allowed_tools: list[str] | None = None  # None means all tools allowed
+    forbidden_tools: list[str] = field(default_factory=list)  # Feature #47: Explicit blacklist
     allowed_directories: list[Path] = field(default_factory=list)  # Feature #42: Sandbox
     base_dir: str | None = None  # Base directory for relative path resolution
     strict_mode: bool = False
@@ -2807,6 +2839,76 @@ def extract_allowed_tools(tool_policy: dict[str, Any] | None) -> list[str] | Non
     # Feature #40, Step 2: If None or empty, allow all available tools
     if not valid_tools:
         return None
+
+    return valid_tools
+
+
+def extract_forbidden_tools(tool_policy: dict[str, Any] | None) -> list[str]:
+    """
+    Extract forbidden_tools from a tool_policy dict.
+
+    Feature #47, Step 1: Extract forbidden_tools from spec.tool_policy
+
+    The forbidden_tools blacklist explicitly blocks tools, taking precedence
+    over allowed_tools. This allows fine-grained control where you can:
+    - Allow all tools except specific dangerous ones
+    - Have an allowed list but also block specific tools within it
+
+    Handles various edge cases:
+    - None tool_policy -> empty list (no tools blocked)
+    - Missing forbidden_tools key -> empty list (no tools blocked)
+    - Empty list -> empty list (no tools blocked)
+    - None value -> empty list (no tools blocked)
+    - Non-list values (with warning) -> empty list
+
+    Args:
+        tool_policy: Tool policy dictionary from AgentSpec
+
+    Returns:
+        List of tool name strings to block, or empty list if none
+
+    Example:
+        >>> policy = {
+        ...     "policy_version": "v1",
+        ...     "allowed_tools": None,  # All allowed
+        ...     "forbidden_tools": ["Bash", "shell", "exec"]  # But block these
+        ... }
+        >>> extract_forbidden_tools(policy)
+        ['Bash', 'shell', 'exec']
+
+        >>> extract_forbidden_tools(None)  # No tools blocked
+        []
+
+        >>> extract_forbidden_tools({"forbidden_tools": []})  # No tools blocked
+        []
+    """
+    if tool_policy is None:
+        return []
+
+    forbidden = tool_policy.get("forbidden_tools")
+
+    if forbidden is None:
+        return []
+
+    if not isinstance(forbidden, list):
+        _logger.warning(
+            "forbidden_tools is not a list: %r (type: %s), treating as empty (none blocked)",
+            forbidden, type(forbidden).__name__
+        )
+        return []
+
+    # Filter to only valid string entries
+    valid_tools = []
+    for tool in forbidden:
+        if isinstance(tool, str):
+            stripped = tool.strip()
+            if stripped:
+                valid_tools.append(stripped)
+        else:
+            _logger.warning(
+                "Skipping non-string tool in forbidden_tools: %r (type: %s)",
+                tool, type(tool).__name__
+            )
 
     return valid_tools
 
