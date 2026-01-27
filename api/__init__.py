@@ -33,6 +33,15 @@ from api.harness_kernel import (
     ExecutionResult,
     HarnessKernel,
     MaxTurnsExceeded,
+    TimeoutSecondsExceeded,
+    # Feature #77: Database Transaction Safety
+    TransactionError,
+    ConcurrentModificationError,
+    DatabaseLockError,
+    commit_with_retry,
+    rollback_and_record_error,
+    get_run_with_lock,
+    safe_add_and_commit_event,
 )
 from api.static_spec_adapter import (
     StaticSpecAdapter,
@@ -363,6 +372,15 @@ __all__ = [
     "ExecutionResult",
     "HarnessKernel",
     "MaxTurnsExceeded",
+    "TimeoutSecondsExceeded",
+    # Feature #77: Database Transaction Safety exports
+    "TransactionError",
+    "ConcurrentModificationError",
+    "DatabaseLockError",
+    "commit_with_retry",
+    "rollback_and_record_error",
+    "get_run_with_lock",
+    "safe_add_and_commit_event",
     # Static spec adapter exports
     "StaticSpecAdapter",
     "get_static_spec_adapter",

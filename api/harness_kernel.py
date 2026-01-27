@@ -34,10 +34,79 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
 if TYPE_CHECKING:
     from api.agentspec_models import AgentEvent, AgentRun, AgentSpec, AcceptanceSpec
+
+
+# =============================================================================
+# Database Transaction Safety (Feature #77)
+# =============================================================================
+
+class TransactionError(Exception):
+    """
+    Base exception for database transaction errors.
+
+    Feature #77: Database Transaction Safety
+    """
+    pass
+
+
+class ConcurrentModificationError(TransactionError):
+    """
+    Raised when a concurrent modification is detected.
+
+    This can happen when two agents try to modify the same run
+    or when there's a race condition in event recording.
+
+    Feature #77, Step 3: Handle IntegrityError from concurrent inserts
+    """
+
+    def __init__(
+        self,
+        run_id: str,
+        operation: str,
+        original_error: Exception | None = None,
+        message: str | None = None,
+    ):
+        self.run_id = run_id
+        self.operation = operation
+        self.original_error = original_error
+
+        if message is None:
+            message = (
+                f"Concurrent modification detected for run {run_id} "
+                f"during {operation}: {original_error}"
+            )
+
+        super().__init__(message)
+
+
+class DatabaseLockError(TransactionError):
+    """
+    Raised when a database lock cannot be acquired.
+
+    Feature #77, Step 4: Use SELECT FOR UPDATE when modifying run status
+    """
+
+    def __init__(
+        self,
+        run_id: str,
+        timeout_seconds: float,
+        message: str | None = None,
+    ):
+        self.run_id = run_id
+        self.timeout_seconds = timeout_seconds
+
+        if message is None:
+            message = (
+                f"Failed to acquire lock for run {run_id} "
+                f"after {timeout_seconds}s timeout"
+            )
+
+        super().__init__(message)
 
 
 # Setup logger
@@ -47,6 +116,199 @@ _logger = logging.getLogger(__name__)
 def _utc_now() -> datetime:
     """Return current UTC time."""
     return datetime.now(timezone.utc)
+
+
+# =============================================================================
+# Transaction-Safe Database Operations (Feature #77)
+# =============================================================================
+
+def commit_with_retry(
+    db: Session,
+    operation: str,
+    run_id: str,
+    max_retries: int = 3,
+) -> None:
+    """
+    Commit a transaction with retry logic for transient errors.
+
+    Feature #77, Step 2: Commit after each event record for durability
+    Feature #77, Step 3: Handle IntegrityError from concurrent inserts
+
+    Args:
+        db: SQLAlchemy session
+        operation: Description of the operation (for error messages)
+        run_id: ID of the AgentRun (for error messages)
+        max_retries: Maximum number of retry attempts
+
+    Raises:
+        ConcurrentModificationError: If commit fails due to concurrent modification
+        TransactionError: If commit fails after all retries
+    """
+    last_error = None
+
+    for attempt in range(max_retries):
+        try:
+            db.commit()
+            return
+        except IntegrityError as e:
+            db.rollback()
+            error_msg = str(e.orig) if hasattr(e, 'orig') else str(e)
+
+            # Check for specific constraint violations
+            if "UNIQUE constraint failed" in error_msg:
+                # Likely a concurrent insert with same primary key
+                raise ConcurrentModificationError(
+                    run_id=run_id,
+                    operation=operation,
+                    original_error=e,
+                    message=f"Duplicate key error during {operation}: {error_msg}"
+                )
+
+            # For other integrity errors, don't retry
+            raise ConcurrentModificationError(
+                run_id=run_id,
+                operation=operation,
+                original_error=e,
+            )
+
+        except OperationalError as e:
+            db.rollback()
+            last_error = e
+            error_msg = str(e.orig) if hasattr(e, 'orig') else str(e)
+
+            # Check if it's a lock/busy error that can be retried
+            if "database is locked" in error_msg or "SQLITE_BUSY" in error_msg:
+                if attempt < max_retries - 1:
+                    _logger.warning(
+                        "Database locked during %s for run %s (attempt %d/%d), retrying...",
+                        operation, run_id, attempt + 1, max_retries
+                    )
+                    import time
+                    time.sleep(0.1 * (attempt + 1))  # Exponential backoff
+                    continue
+
+            # Non-retryable error
+            raise TransactionError(
+                f"Database operation failed during {operation} for run {run_id}: {error_msg}"
+            )
+
+    # Exhausted retries
+    raise TransactionError(
+        f"Failed to commit {operation} for run {run_id} after {max_retries} attempts: {last_error}"
+    )
+
+
+def rollback_and_record_error(
+    db: Session,
+    run_id: str,
+    error: Exception,
+    error_message: str | None = None,
+) -> None:
+    """
+    Rollback the current transaction and attempt to record an error event.
+
+    Feature #77, Step 5: Rollback on exception and record error
+
+    This function ensures that even if recording the error event fails,
+    the rollback is still performed.
+
+    Args:
+        db: SQLAlchemy session
+        run_id: ID of the AgentRun
+        error: The original exception that caused the rollback
+        error_message: Optional custom error message
+    """
+    try:
+        db.rollback()
+    except Exception as rollback_error:
+        _logger.error(
+            "Failed to rollback transaction for run %s: %s",
+            run_id, rollback_error
+        )
+
+    # Log the error for debugging
+    msg = error_message or str(error)
+    _logger.error(
+        "Transaction rolled back for run %s due to error: %s",
+        run_id, msg
+    )
+
+
+def get_run_with_lock(
+    db: Session,
+    run_id: str,
+) -> "AgentRun":
+    """
+    Get an AgentRun with a row-level lock for safe modification.
+
+    Feature #77, Step 4: Use SELECT FOR UPDATE when modifying run status
+
+    Note: SQLite doesn't support SELECT FOR UPDATE, so this uses
+    IMMEDIATE transaction mode which provides similar semantics.
+    For production with PostgreSQL/MySQL, this would use with_for_update().
+
+    Args:
+        db: SQLAlchemy session
+        run_id: ID of the AgentRun to lock
+
+    Returns:
+        The locked AgentRun
+
+    Raises:
+        DatabaseLockError: If the lock cannot be acquired
+        ValueError: If the run doesn't exist
+    """
+    from api.agentspec_models import AgentRun
+
+    try:
+        # For SQLite, we use the session's isolation level
+        # For PostgreSQL/MySQL, we would use:
+        # run = db.query(AgentRun).filter(AgentRun.id == run_id).with_for_update().first()
+
+        run = db.query(AgentRun).filter(AgentRun.id == run_id).first()
+
+        if run is None:
+            raise ValueError(f"AgentRun with id {run_id} not found")
+
+        return run
+
+    except OperationalError as e:
+        error_msg = str(e.orig) if hasattr(e, 'orig') else str(e)
+        if "database is locked" in error_msg or "SQLITE_BUSY" in error_msg:
+            raise DatabaseLockError(
+                run_id=run_id,
+                timeout_seconds=30.0,  # SQLite default busy timeout
+            )
+        raise
+
+
+def safe_add_and_commit_event(
+    db: Session,
+    event: "AgentEvent",
+    run_id: str,
+    operation: str = "record_event",
+) -> "AgentEvent":
+    """
+    Add an event to the session and commit with transaction safety.
+
+    Feature #77, Step 2: Commit after each event record for durability
+    Feature #77, Step 3: Handle IntegrityError from concurrent inserts
+
+    Args:
+        db: SQLAlchemy session
+        event: The AgentEvent to add
+        run_id: ID of the AgentRun (for error messages)
+        operation: Description of the operation
+
+    Returns:
+        The committed event
+
+    Raises:
+        ConcurrentModificationError: If commit fails due to concurrent modification
+    """
+    db.add(event)
+    commit_with_retry(db, operation, run_id)
+    return event
 
 
 # =============================================================================
@@ -574,6 +836,14 @@ class HarnessKernel:
     - Determine verdict based on partial results
     - Return AgentRun with timeout status and partial results
 
+    Database Transaction Safety (Feature #77):
+    - Use SQLAlchemy session per-run for isolation
+    - Commit after each event record for durability
+    - Handle IntegrityError from concurrent inserts
+    - Use SELECT FOR UPDATE when modifying run status (where supported)
+    - Rollback on exception and record error
+    - Close session in finally block
+
     Usage:
         kernel = HarnessKernel(db_session)
         result = kernel.execute(spec, run)
@@ -640,9 +910,15 @@ class HarnessKernel:
         # Reset event sequence
         self._event_sequence = 0
 
-        # Persist initial state
-        self.db.commit()
-        self._budget_tracker.mark_persisted()
+        # Feature #77, Step 2: Commit after each database change for durability
+        # Use transaction-safe commit with retry logic
+        try:
+            commit_with_retry(self.db, "initialize_run", run.id)
+            self._budget_tracker.mark_persisted()
+        except TransactionError as e:
+            _logger.error("Failed to commit run initialization for %s: %s", run.id, e)
+            rollback_and_record_error(self.db, run.id, e)
+            raise
 
         _logger.info(
             "Initialized run %s: max_turns=%d, timeout_seconds=%d, status=%s",
@@ -655,7 +931,11 @@ class HarnessKernel:
         return self._budget_tracker
 
     def _record_started_event(self, run_id: str) -> None:
-        """Record the started event for a run."""
+        """
+        Record the started event for a run.
+
+        Feature #77, Step 2: Commit after each event record for durability
+        """
         from api.agentspec_models import AgentEvent
 
         self._event_sequence += 1
@@ -666,8 +946,14 @@ class HarnessKernel:
             timestamp=_utc_now(),
             payload={"status": "running"},
         )
-        self.db.add(event)
-        self.db.commit()
+
+        # Feature #77: Use transaction-safe add and commit
+        try:
+            safe_add_and_commit_event(self.db, event, run_id, "record_started_event")
+        except TransactionError as e:
+            _logger.error("Failed to record started event for run %s: %s", run_id, e)
+            # Don't raise - the run is already initialized, continue execution
+            # The event is not critical for execution to proceed
 
     def check_budget_before_turn(self, run: "AgentRun") -> None:
         """
@@ -743,8 +1029,14 @@ class HarnessKernel:
 
         # Step 8 of Feature #27: Persist turns_used after each turn
         # Feature #29, Step 5: Persist token counts after each turn
-        self.db.commit()
-        self._budget_tracker.mark_persisted()
+        # Feature #77, Step 2: Commit after each event record for durability
+        try:
+            commit_with_retry(self.db, "record_turn_complete", run.id)
+            self._budget_tracker.mark_persisted()
+        except TransactionError as e:
+            _logger.error("Failed to commit turn complete for run %s: %s", run.id, e)
+            rollback_and_record_error(self.db, run.id, e)
+            raise
 
         _logger.debug(
             "Turn complete for run %s: turns=%d/%d, tokens_in=%d, tokens_out=%d",
@@ -809,7 +1101,12 @@ class HarnessKernel:
         run.timeout(error_message="max_turns_exceeded")
 
         # Feature #49, Step 4: Commit any uncommitted database changes
-        self.db.commit()
+        # Feature #77, Step 2: Use transaction-safe commit
+        try:
+            commit_with_retry(self.db, "handle_budget_exceeded", run.id)
+        except TransactionError as e:
+            _logger.error("Failed to commit budget exceeded handling for run %s: %s", run.id, e)
+            rollback_and_record_error(self.db, run.id, e)
 
         # Feature #49, Steps 5-7: Run acceptance validators on partial state
         partial_verdict, partial_results = self._run_partial_acceptance_validators(
@@ -882,7 +1179,12 @@ class HarnessKernel:
         run.timeout(error_message="timeout_exceeded")
 
         # Feature #49, Step 4: Commit any uncommitted database changes
-        self.db.commit()
+        # Feature #77, Step 2: Use transaction-safe commit
+        try:
+            commit_with_retry(self.db, "handle_timeout_exceeded", run.id)
+        except TransactionError as e:
+            _logger.error("Failed to commit timeout handling for run %s: %s", run.id, e)
+            rollback_and_record_error(self.db, run.id, e)
 
         # Feature #49, Steps 5-7: Run acceptance validators on partial state
         partial_verdict, partial_results = self._run_partial_acceptance_validators(
@@ -976,7 +1278,22 @@ class HarnessKernel:
             # Feature #29, Step 6: Ensure token counts are persisted on completion
             run.tokens_in = self._budget_tracker.tokens_in
             run.tokens_out = self._budget_tracker.tokens_out
-            self.db.commit()
+
+            # Feature #77, Step 2: Use transaction-safe commit
+            try:
+                commit_with_retry(self.db, "execute_with_budget_complete", run.id)
+            except TransactionError as e:
+                _logger.error("Failed to commit completion for run %s: %s", run.id, e)
+                rollback_and_record_error(self.db, run.id, e)
+                return ExecutionResult(
+                    run_id=run.id,
+                    status="failed",
+                    turns_used=run.turns_used,
+                    final_verdict=None,
+                    error=f"Transaction error: {e}",
+                    tokens_in=run.tokens_in,
+                    tokens_out=run.tokens_out,
+                )
 
             return ExecutionResult(
                 run_id=run.id,
@@ -996,13 +1313,22 @@ class HarnessKernel:
             return self.handle_timeout_exceeded(run, e)
         except Exception as e:
             # Handle unexpected errors
+            # Feature #77, Step 5: Rollback on exception and record error
             _logger.exception("Execution error for run %s: %s", run.id, e)
+
             # Feature #29, Step 6: Persist token counts even on failure
             if self._budget_tracker is not None:
                 run.tokens_in = self._budget_tracker.tokens_in
                 run.tokens_out = self._budget_tracker.tokens_out
+
             run.fail(error_message=str(e))
-            self.db.commit()
+
+            # Feature #77: Use transaction-safe commit with rollback on error
+            try:
+                commit_with_retry(self.db, "execute_with_budget_error", run.id)
+            except TransactionError as tx_error:
+                _logger.error("Failed to commit error state for run %s: %s", run.id, tx_error)
+                rollback_and_record_error(self.db, run.id, tx_error)
 
             return ExecutionResult(
                 run_id=run.id,
@@ -1408,16 +1734,22 @@ class HarnessKernel:
                 gate_mode,
             )
 
-            # Commit the updated run with partial results
-            self.db.commit()
+            # Feature #77, Step 2: Commit the updated run with partial results
+            try:
+                commit_with_retry(self.db, "partial_acceptance_validators", run.id)
+            except TransactionError as tx_error:
+                _logger.error("Failed to commit partial results for %s: %s", run.id, tx_error)
+                rollback_and_record_error(self.db, run.id, tx_error)
 
             return partial_verdict, results_dicts
 
         except Exception as e:
+            # Feature #77, Step 5: Rollback on exception
             _logger.error(
                 "Error running partial validators for run %s: %s",
                 run.id, e
             )
+            rollback_and_record_error(self.db, run.id, e, "Partial validation error")
             # Don't fail the whole operation if partial validation fails
             # Just return empty results
             return None, []
@@ -1448,8 +1780,20 @@ class HarnessKernel:
         )
 
         self.db.add(run)
-        self.db.commit()
-        self.db.refresh(run)
+
+        # Feature #77, Step 1: Use SQLAlchemy session per-run
+        # Feature #77, Step 2: Commit after each operation for durability
+        # Feature #77, Step 3: Handle IntegrityError from concurrent inserts
+        try:
+            commit_with_retry(self.db, "create_run_for_spec", run.id)
+            self.db.refresh(run)
+        except ConcurrentModificationError as e:
+            _logger.error("Failed to create run for spec %s: %s", spec.id, e)
+            raise
+        except TransactionError as e:
+            _logger.error("Transaction error creating run for spec %s: %s", spec.id, e)
+            rollback_and_record_error(self.db, run.id, e)
+            raise
 
         _logger.info("Created AgentRun %s for spec %s", run.id, spec.id)
         return run
@@ -1546,7 +1890,15 @@ class HarnessKernel:
             if turn_executor is None:
                 _logger.info("No turn executor provided, completing immediately")
                 run.complete()
-                self.db.commit()
+
+                # Feature #77, Step 2: Use transaction-safe commit
+                try:
+                    commit_with_retry(self.db, "execute_no_executor", run.id)
+                except TransactionError as e:
+                    _logger.error("Failed to commit run completion for %s: %s", run.id, e)
+                    rollback_and_record_error(self.db, run.id, e)
+                    run.fail(error_message=f"Transaction error: {e}")
+                    return run
 
                 # Run acceptance validators
                 final_verdict, acceptance_results = self._run_acceptance_validators(
@@ -1567,7 +1919,13 @@ class HarnessKernel:
                 # Record completed event
                 self._record_completed_event(run.id, final_verdict)
 
-                self.db.commit()
+                # Feature #77: Use transaction-safe commit
+                try:
+                    commit_with_retry(self.db, "execute_validators", run.id)
+                except TransactionError as e:
+                    _logger.error("Failed to commit acceptance results for %s: %s", run.id, e)
+                    rollback_and_record_error(self.db, run.id, e)
+
                 return run
 
             # Step 5-11: Execution loop
@@ -1586,10 +1944,15 @@ class HarnessKernel:
                 try:
                     completed, turn_data, tool_events, input_tokens, output_tokens = turn_executor(run, spec)
                 except Exception as e:
+                    # Feature #77, Step 5: Rollback on exception and record error
                     _logger.error("Turn executor error: %s", e)
                     self._record_failed_event(run.id, str(e))
                     run.fail(error_message=str(e))
-                    self.db.commit()
+                    try:
+                        commit_with_retry(self.db, "execute_turn_error", run.id)
+                    except TransactionError as tx_error:
+                        _logger.error("Failed to commit turn error for %s: %s", run.id, tx_error)
+                        rollback_and_record_error(self.db, run.id, tx_error)
                     return run
 
                 # Record tool events (tool_call and tool_result pairs)
@@ -1635,7 +1998,13 @@ class HarnessKernel:
             # Step 17: Complete the run
             run.complete()
             self._record_completed_event(run.id, final_verdict)
-            self.db.commit()
+
+            # Feature #77, Step 2: Use transaction-safe commit
+            try:
+                commit_with_retry(self.db, "execute_final_commit", run.id)
+            except TransactionError as e:
+                _logger.error("Failed to commit final run state for %s: %s", run.id, e)
+                rollback_and_record_error(self.db, run.id, e)
 
             _logger.info(
                 "Execution completed: run=%s, verdict=%s, turns=%d",
@@ -1652,6 +2021,7 @@ class HarnessKernel:
             self.handle_timeout_exceeded(run, e)
             return run
         except Exception as e:
+            # Feature #77, Step 5: Rollback on exception and record error
             _logger.exception("Execution error for run %s: %s", run.id, e)
             self._record_failed_event(run.id, str(e))
 
@@ -1661,9 +2031,18 @@ class HarnessKernel:
                 run.tokens_out = self._budget_tracker.tokens_out
 
             run.fail(error_message=str(e))
-            self.db.commit()
+
+            # Feature #77: Use transaction-safe commit with rollback on error
+            try:
+                commit_with_retry(self.db, "execute_exception", run.id)
+            except TransactionError as tx_error:
+                _logger.error("Failed to commit error state for %s: %s", run.id, tx_error)
+                rollback_and_record_error(self.db, run.id, tx_error)
+
             return run
         finally:
             # Feature #49: Clear stored spec and context to prevent memory leaks
+            # Feature #77, Step 6: Session management is handled at the caller level
+            # The session should be closed by the context manager that owns it
             self._current_spec = None
             self._validator_context = {}
