@@ -1,6 +1,57 @@
 # AutoBuildr Progress Log
 # ======================
 
+## Session: 2026-01-27 (Coding Agent - Feature #78)
+
+### Feature #78: Invalid AgentSpec Graceful Handling - COMPLETED
+
+**Status:** PASSING
+
+**Category:** E. Error Handling
+
+**Description:** Handle invalid or malformed AgentSpecs gracefully with clear validation error responses.
+
+**Dependencies:** [7, 26] - All passing
+- Feature #7: AgentSpec Pydantic Request/Response Schemas
+- Feature #26: AgentRun Status Transition State Machine
+
+**Implementation Summary:**
+
+1. **Step 1: Validate AgentSpec before kernel execution** - PASS
+   - Integrated `validate_spec()` into execute endpoint in `server/routers/agent_specs.py`
+   - Validation happens BEFORE any AgentRun is created
+
+2. **Step 2: Check required fields are present** - PASS
+   - `_validate_required_fields()` in `api/spec_validator.py`
+   - Checks: name, display_name, objective, task_type, tool_policy
+
+3. **Step 3: Validate tool_policy structure** - PASS
+   - `_validate_tool_policy_structure()` in `api/spec_validator.py`
+   - Validates allowed_tools, forbidden_patterns (regex), tool_hints
+
+4. **Step 4: Validate budget values within constraints** - PASS
+   - `_validate_budget_constraints()` in `api/spec_validator.py`
+   - max_turns: 1-500, timeout_seconds: 60-7200
+
+5. **Step 5: If invalid, return error without creating run** - PASS
+   - Execute endpoint returns HTTP 400 before creating AgentRun
+   - No database records created for invalid specs
+
+6. **Step 6: Include validation error details in response** - PASS
+   - New Pydantic schemas: `ValidationErrorItem`, `SpecValidationErrorResponse`
+   - Each error includes: field, message, code, value
+
+**Files Changed:**
+- `api/__init__.py`: Export spec_validator functions and constants
+- `server/routers/agent_specs.py`: Integrate validation in execute endpoint
+- `server/schemas/agentspec.py`: Add validation error response schemas
+- `tests/test_feature_78_spec_validation.py`: 85 unit tests
+- `tests/test_feature_78_api_integration.py`: 12 integration tests
+
+**Test Results:** 97 tests passing
+
+---
+
 ## Session: 2026-01-27 (Coding Agent - Feature #67)
 
 ### Feature #67: Run Inspector Slide-Out Panel - COMPLETED
@@ -6300,4 +6351,87 @@ The feature was already implemented with:
     - Step 9: test_pass validators generated from feature steps - PASS
     - Step 10: source_feature_id linked to feature - PASS
     - Step 11: Returns complete static AgentSpec with unique ID, name, icon - PASS
+  - No regression found - feature still working correctly
+
+---
+
+## Session: 2026-01-27 (Coding Agent - Feature #79)
+
+### Feature #79: Orphaned Run Cleanup on Startup - COMPLETED
+
+**Status:** PASSING
+
+**Category:** J. Data Cleanup & Cascade
+
+**Description:** On server startup, clean up orphaned runs stuck in running/pending status.
+
+**Dependencies:** [3, 27] - Both passing
+
+**Verification Summary (All 6 Feature Steps Passed):**
+
+1. On startup, query runs where status in (running, pending) - PASS
+2. Check if run started_at is older than max timeout - PASS
+3. For stale runs, set status to failed - PASS
+4. Set error to orphaned_on_restart - PASS
+5. Record failed event - PASS
+6. Log cleanup actions - PASS
+
+**Implementation Details:**
+
+Integrated orphaned run cleanup into server startup:
+- Added cleanup_orphaned_runs call in server/main.py lifespan context manager
+- Cleanup runs after database initialization, before scheduler starts
+- Added proper error handling to prevent startup failures
+- Added logging for cleanup actions and any errors
+
+**Test Results:**
+- tests/test_feature_79_orphaned_run_cleanup.py: 45/45 tests PASS
+- tests/test_feature_79_integration.py: 3/3 tests PASS
+- tests/verify_feature_79.py: 7/7 verification steps PASS
+
+**Files Modified:**
+- server/main.py: Added cleanup call in lifespan context manager
+- api/__init__.py: Added exports for orphaned_run_cleanup module
+
+**Commit:** 8fc90cf
+
+---
+
+**Updated Progress:**
+- Total: 79/103 features passing (approximately 76.7%)
+- Feature #79: Orphaned Run Cleanup on Startup - PASSING
+
+**Session completed successfully.**
+[Testing] 2026-01-27 13:19:31 - Feature #16 regression test PASSED
+  - Feature: POST /api/agent-specs/:id/execute Trigger Execution
+  - Category: D. Workflow Completeness
+  - Verification: All 8 feature steps pass
+  - Unit tests: 2/2 tests pass (test_feature_16_e2e.py)
+  - Verification script: 6/6 checks pass (verify_feature_16.py)
+  - All verification steps confirmed working:
+    - Step 1: FastAPI route POST /api/projects/{project}/agent-specs/{spec_id}/execute defined - PASS
+    - Step 2: Queries AgentSpec by id and verifies exists - PASS
+    - Step 3: Returns 404 if spec not found - PASS
+    - Step 4: Creates new AgentRun with status=pending - PASS
+    - Step 5: Sets created_at to current UTC timestamp - PASS
+    - Step 6: Commits run record to database - PASS
+    - Step 7: Queues execution task (async background via asyncio.create_task) - PASS
+    - Step 8: Returns AgentRunResponse with status 202 Accepted - PASS
+  - Live API test: Created run a8ee4841-efac-47d9-8e0d-c0903300addb successfully
+  - No regression found - feature still working correctly
+[Testing] 2026-01-27 13:21:09 - Feature #34 regression test PASSED
+  - Feature: forbidden_patterns Acceptance Validator
+  - Category: D. Workflow Completeness
+  - Verification: All 8 feature steps pass (verify_feature_34.py)
+  - Unit tests: 56/56 tests pass (test_feature_34_forbidden_patterns_validator.py)
+  - Integration tests: AcceptanceGate integration verified
+  - All verification steps confirmed working:
+    - Step 1: ForbiddenPatternsValidator class exists, inherits from Validator - PASS
+    - Step 2: Extract patterns array from validator config - PASS
+    - Step 3: Compile patterns as regex (case sensitive/insensitive) - PASS
+    - Step 4: Query all tool_result events for the run - PASS
+    - Step 5: Check each payload (str/dict/nested) against all patterns - PASS
+    - Step 6: Return passed=false on match, score=0.0 - PASS
+    - Step 7: Include matched pattern, event_id, context in result - PASS
+    - Step 8: Return passed=true if no matches, score=1.0 - PASS
   - No regression found - feature still working correctly
