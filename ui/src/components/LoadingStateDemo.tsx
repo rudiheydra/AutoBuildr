@@ -169,7 +169,8 @@ export function LoadingStateDemo() {
         </SubSection>
 
         <SubSection title="DynamicAgentCard Skeleton">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Uses neo-agent-card-grid for responsive layout: 1 col mobile, 2 tablet, 3 desktop, 4 large */}
+          <div className="neo-agent-card-grid" role="grid" aria-label="Agent cards demo">
             <DynamicAgentCardSkeleton />
             <DynamicAgentCard data={mockSpecData} onClick={() => openInspector()} />
           </div>
