@@ -1,6 +1,76 @@
 # AutoBuildr Progress Log
 # ======================
 
+## Session: 2026-01-27 (Coding Agent - Feature #39)
+
+### Feature #39: AUTOBUILDR_USE_KERNEL Migration Flag - COMPLETED
+
+**Status:** PASSING
+
+**Category:** K. Default & Reset
+
+**Description:** Implement migration flag logic to choose between legacy agent execution and new HarnessKernel based on environment variable.
+
+**Dependencies:** [26, 37, 38] - All passing
+- Feature #26: AgentRun Status Transition State Machine
+- Feature #37: StaticSpecAdapter for Legacy Coding Agent
+- Feature #38: StaticSpecAdapter for Legacy Testing Agent
+
+**Implementation Summary:**
+
+1. **Step 1: Read AUTOBUILDR_USE_KERNEL from environment** - PASS
+   - Created `get_use_kernel_env_value()` function
+   - Reads from `os.environ.get(ENV_VAR_NAME)`
+
+2. **Step 2: Default to false for backwards compatibility** - PASS
+   - `DEFAULT_USE_KERNEL = False`
+   - Returns False when env var not set or empty
+
+3. **Step 3: When false, use existing agent execution path** - PASS
+   - `execute_feature_legacy()` handles legacy path
+   - Returns `ExecutionPath.LEGACY` in result
+
+4. **Step 4: When true, compile Feature -> AgentSpec -> HarnessKernel** - PASS
+   - `execute_feature_kernel()` compiles Feature to AgentSpec
+   - Uses `compile_feature()` from feature_compiler
+   - Executes via `HarnessKernel.execute()`
+
+5. **Step 5: Wrap kernel execution in try/except** - PASS
+   - Main `execute_feature()` function catches all exceptions
+   - Errors trigger fallback behavior
+
+6. **Step 6: On kernel error, log warning and fallback to legacy** - PASS
+   - Logs warning with `exc_info=True` for traceback
+   - Falls back to `execute_feature_legacy()`
+   - Sets `execution_path=ExecutionPath.FALLBACK`
+
+7. **Step 7: Report which path was used in response** - PASS
+   - `FeatureExecutionResult` dataclass includes `execution_path`
+   - `ExecutionPath` enum: LEGACY, KERNEL, FALLBACK
+   - `to_dict()` method for JSON serialization
+
+**New Files:**
+- `api/migration_flag.py`: Core implementation (~400 lines)
+- `tests/test_feature_39_migration_flag.py`: 61 comprehensive tests
+
+**Exports Added to api/__init__.py:**
+- `MIGRATION_ENV_VAR_NAME`, `DEFAULT_USE_KERNEL`
+- `MIGRATION_TRUTHY_VALUES`, `MIGRATION_FALSY_VALUES`
+- `ExecutionPath`, `FeatureExecutionResult`
+- `is_kernel_enabled()`, `set_kernel_enabled()`, `clear_kernel_flag()`
+- `execute_feature()`, `execute_feature_legacy()`, `execute_feature_kernel()`
+- `get_execution_path_string()`, `get_migration_status()`
+
+**Test Coverage:**
+- 61 tests across 10 test classes
+- Tests for each feature step
+- Value parsing tests (truthy, falsy, case-insensitive)
+- Utility function tests
+- ExecutionPath enum tests
+- Integration tests
+
+---
+
 ## Session: 2026-01-27 (Coding Agent - Feature #80)
 
 ### Feature #80: Keyboard Navigation for Agent Cards - COMPLETED
@@ -6751,3 +6821,432 @@ comprehensive code analysis and unit tests.
 
 **Session completed successfully.**
 
+[Testing] 2026-01-27 13:27:48 - Feature #19 regression test PASSED
+  - Feature: GET /api/agent-runs/:id/events Event Timeline
+  - Category: F. UI-Backend Integration
+  - Verification: All 6 feature steps pass
+  - API endpoint /api/agent-runs/{run_id}/events tested:
+    - Step 1: FastAPI route defined - PASS
+    - Step 2: Query params (event_type, limit, offset) work correctly - PASS
+    - Step 3: Events returned ordered by sequence (1,2,3,4,5...) - PASS
+    - Step 4: event_type filtering works (tested with tool_call) - PASS
+    - Step 5: Pagination works (offset=5 skips first 5, limit=3 returns 3) - PASS
+    - Step 6: Returns AgentEventListResponse with all fields - PASS
+  - Error handling: 404 for missing run, 400 for invalid event_type - PASS
+  - No regression found - feature still working correctly
+[Testing] 2026-01-27 13:30:58 - Feature #84 regression test PASSED
+  - Feature: Loading State Indicators
+  - Category: N. Feedback & Notification
+  - Verification: All 6 feature steps verified through code analysis
+  - Step 1: DynamicAgentCardSkeleton component exists with full layout - PASS
+  - Step 2: RunInspector shows skeleton during isLoading state - PASS
+  - Step 3: LoadingButton with Loader2 spinner and animate-spin - PASS
+  - Step 4: ActionButton has try/catch error handling with auto-dismiss - PASS
+  - Step 5: RunInspectorSkeleton with comprehensive layout - PASS
+  - Step 6: EventTimeline has isLoadingMore state with spinner in Load More button - PASS
+  - Frontend build: PASS (2164 modules, 8.67s)
+  - No regression found - feature still working correctly
+
+---
+
+## Session: 2026-01-27 (Coding Agent - Feature #45)
+
+### Feature #45: ToolProvider Interface Definition - VERIFIED AND PASSING
+
+**Status:** PASSING
+
+**Category:** F. UI-Backend Integration
+
+**Description:** Define the ToolProvider interface for external tool sources with capability negotiation.
+
+**Dependencies:** [26] - AgentRun Status Transition State Machine (passing)
+
+**Verification Summary (7 Steps - All Passed):**
+
+1. Define ToolProvider abstract base class - PASS
+   - Inherits from ABC
+   - Cannot instantiate directly
+   - Has provider_type class variable
+   - Has abstract name property
+
+2. Define list_tools() -> list[ToolDefinition] method - PASS
+   - Abstract method in ToolProvider
+   - Returns list of ToolDefinition objects
+   - ToolDefinition has name, description, input_schema, category, etc.
+
+3. Define execute_tool(name, args) -> ToolResult method - PASS
+   - Abstract method in ToolProvider
+   - Returns ToolResult with success/error info
+   - Raises ToolNotFoundError for unknown tools
+   - Has success_result and error_result factory methods
+
+4. Define get_capabilities() -> ProviderCapabilities method - PASS
+   - Abstract method in ToolProvider
+   - Returns ProviderCapabilities with:
+     - supports_async, supports_streaming, supports_batching
+     - max_concurrent_calls, rate_limit_per_minute
+     - supported_auth_methods, tool_categories
+     - version, metadata
+
+5. Define authenticate(credentials) method stub for future OAuth - PASS
+   - Non-abstract method with default implementation
+   - AuthCredentials supports API_KEY, OAUTH2, TOKEN, BASIC, CUSTOM
+   - AuthCredentials has is_expired() method
+   - Returns AuthResult with success/error info
+   - Default implementation returns success=True
+
+6. Create LocalToolProvider implementing interface for MCP tools - PASS
+   - Inherits from ToolProvider
+   - name property returns "local"
+   - Provides MCP tools:
+     - Feature management: feature_get_by_id, feature_mark_passing, etc.
+     - File system: Read, Write, Edit, Glob, Grep
+     - Code execution: Bash
+     - Browser: browser_navigate, browser_click, browser_snapshot
+   - Has add_tool() and remove_tool() methods
+   - Supports custom tool initialization
+
+7. Create ToolProviderRegistry for managing multiple providers - PASS
+   - Has register/unregister methods
+   - Raises ProviderAlreadyRegisteredError for duplicates
+   - Has get_provider, has_provider, list_providers methods
+   - Has list_all_tools for all providers
+   - Has execute_tool for routing to specific provider
+   - Has find_tool for searching across providers
+   - Has execute_tool_any for auto-routing
+   - Has get_provider_status for health checks
+
+**Implementation Details:**
+
+Created api/tool_provider.py (1334 lines) with:
+
+Exceptions:
+- ToolProviderError (base)
+- ToolNotFoundError
+- ProviderNotFoundError
+- ProviderAlreadyRegisteredError
+- AuthenticationError
+- ToolExecutionError
+
+Enums:
+- ToolCategory (file_system, database, network, browser, etc.)
+- AuthMethod (none, api_key, oauth2, basic, token, custom)
+- ProviderStatus (available, unavailable, auth_required, rate_limited, error)
+
+Data Classes:
+- ToolDefinition (name, description, input_schema, output_schema, category, etc.)
+- ToolResult (success, output, error, error_code, execution_time_ms)
+- ProviderCapabilities (supports_async, max_concurrent_calls, etc.)
+- AuthCredentials (method, api_key, access_token, expires_at, etc.)
+- AuthResult (success, credentials, error, requires_refresh)
+
+Classes:
+- ToolProvider (ABC)
+- LocalToolProvider (implementation)
+- ToolProviderRegistry
+
+Module Functions:
+- get_tool_registry() - singleton pattern
+- reset_tool_registry()
+- register_provider()
+- execute_tool()
+
+**Test Results:**
+- tests/test_feature_45_tool_provider.py: 83/83 tests PASS
+- tests/verify_feature_45.py: 49/49 verification checks PASS
+
+**Files Created:**
+- api/tool_provider.py: Main implementation (1334 lines)
+- tests/test_feature_45_tool_provider.py: Unit tests (971 lines)
+- tests/verify_feature_45.py: Verification script (432 lines)
+
+**Files Modified:**
+- api/__init__.py: Added exports for ToolProvider module
+
+**Commits:**
+- 44c6934 - feat: Implement ToolProvider Interface Definition (Feature #45)
+- 998861d - feat: Add ToolProvider implementation and tests (Feature #45)
+
+---
+
+**Updated Progress:**
+- Feature #45: ToolProvider Interface Definition - PASSING
+
+**Session completed successfully.**
+[Testing] 2026-01-27 13:33:57 - Feature #13 regression test PASSED
+  - Feature: GET /api/agent-specs/:id Get Single AgentSpec
+  - Category: F. UI-Backend Integration
+  - Verification: All 5 feature steps pass
+  - Step 1: FastAPI route defined at /api/projects/{project_name}/agent-specs/{spec_id} - PASS
+  - Step 2: UUID validation works correctly (400 for invalid format) - PASS
+  - Step 3: Eager loading with joinedload(acceptance_spec) - PASS
+  - Step 4: 404 returned for non-existent specs - PASS
+  - Step 5: AgentSpecWithAcceptanceResponse with nested AcceptanceSpec - PASS
+  - API tests confirmed via curl:
+    - Valid UUID: Returns full spec with all fields
+    - Invalid UUID: Returns 400 with proper error message
+    - Non-existent UUID: Returns 404 with proper error message
+  - No regression found - feature still working correctly
+
+---
+
+## Session: 2026-01-27 (Coding Agent - Feature #46)
+
+### Feature #46: Symlink Target Validation - COMPLETED
+
+**Status:** PASSING
+
+**Category:** A. Security & Access Control
+
+**Description:** When validating file paths in sandbox, resolve symlinks and
+validate final target is within allowed directories.
+
+**Dependencies:** [43] - Tool Hints System Prompt Injection (passing)
+
+**Implementation Summary:**
+
+Enhanced the tool_policy.py module with comprehensive symlink target validation:
+
+1. **BrokenSymlinkError Exception Class**
+   - New exception for broken symlink handling
+   - Includes symlink_path and target_path attributes
+   - Descriptive error messages
+
+2. **is_broken_symlink(path: Path) -> bool**
+   - Detects broken symlinks (symlink with non-existent target)
+   - Uses is_symlink() + exists() pattern
+   - Handles OSError gracefully
+
+3. **get_symlink_target(path: Path) -> str | None**
+   - Returns immediate symlink target without full resolution
+   - Used for debug logging
+   - Returns None for non-symlinks or errors
+
+4. **resolve_target_path() Enhanced**
+   - Changed return from 2-tuple to 3-tuple: (path, was_symlink, is_broken)
+   - Feature #46 Step 1: Check is_symlink() before resolution
+   - Feature #46 Step 2: Use Path.resolve() for symlink resolution
+   - Feature #46 Step 4: Detect and flag broken symlinks
+   - Feature #46 Step 5: Debug logging for all symlink operations
+   - Handles symlink loops (RuntimeError from resolve())
+
+5. **validate_directory_access() Enhanced**
+   - Feature #46 Step 3: Validate resolved path against allowed_directories
+   - New allow_broken_symlinks parameter (default: False)
+   - Blocks broken symlinks by default with descriptive error
+   - Details dict includes is_broken_symlink flag
+   - Comprehensive logging for symlink resolution
+
+**All 5 Feature Steps Verified:**
+
+1. Check if path is symlink using Path.is_symlink() - PASS
+2. Resolve symlink to final target using Path.resolve() - PASS
+3. Validate resolved target against allowed_directories - PASS
+4. Handle broken symlinks gracefully - PASS
+5. Log symlink resolution in debug output - PASS
+
+**Test Results:**
+- tests/test_feature_46_symlink_validation.py: 39/39 tests PASS
+- tests/test_feature_42_directory_sandbox.py: 66/66 tests PASS (updated for new 3-tuple return)
+- tests/verify_feature_46.py: All 14 verification checks PASS
+
+**Files Created:**
+- tests/test_feature_46_symlink_validation.py: Comprehensive test suite
+- tests/verify_feature_46.py: Feature verification script
+
+**Files Modified:**
+- api/tool_policy.py: Added symlink validation functions and enhanced existing functions
+- api/__init__.py: Added exports for new functions
+- tests/test_feature_42_directory_sandbox.py: Updated to use new 3-tuple return
+
+**Commit:** 3bff07d - "feat: Implement Symlink Target Validation (Feature #46)"
+
+---
+
+**Updated Progress:**
+- Total: 87/103 features passing (approximately 84.5%)
+- Feature #46: Symlink Target Validation - PASSING
+
+**Session completed successfully.**
+
+---
+
+## Session: 2026-01-27 (Coding Agent - Feature #48)
+
+### Feature #48: Path Traversal Attack Detection - COMPLETED
+
+**Status:** PASSING
+
+**Category:** A. Security & Access Control
+
+**Description:** Detect and block path traversal attempts including .., URL-encoded sequences, and null bytes.
+
+**Dependencies:** [43] - Tool Hints System Prompt Injection (passing)
+
+**Verification Summary (6 Steps - All Passed):**
+
+1. **Check for .. sequences in raw path string** - PASS
+   - Implemented in detect_path_traversal_attack()
+   - Checks each path component for ".." using Path.parts
+   - Returns attack_type="dotdot_traversal" with matched_pattern=".."
+
+2. **Check for URL-encoded traversal %2e%2e** - PASS
+   - Detects standard URL-encoded: %2e%2e/, /%2e%2e
+   - Detects double URL-encoded: %252e%252e/
+   - Detects Unicode overlong encoding: ..%c0%af, ..%c1%9c
+   - Case-insensitive detection
+   - Returns encoding_type in details for audit
+
+3. **Check for null bytes that could truncate paths** - PASS
+   - contains_null_byte() helper function
+   - Detects actual null bytes (\x00)
+   - Detects URL-encoded null (%00, %2500)
+   - Reports null_position and effective_path in details
+
+4. **Normalize path and compare to original** - PASS
+   - normalize_path_for_comparison() using os.path.normpath
+   - Removes redundant slashes, ./ sequences, and collapses ..
+   - path_differs_after_normalization() compares original vs normalized
+
+5. **Block if normalized differs (indicates traversal attempt)** - PASS
+   - Detection via normalization comparison catches edge cases
+   - Integrated into validate_directory_access()
+   - Details include original, normalized, and parts
+
+6. **Log detailed violation info for security audit** - PASS
+   - PathTraversalResult dataclass with comprehensive audit info
+   - Warning-level logging for all detected attacks
+   - Security audit messages include tool, path, attack type, pattern, and full details
+
+**Implementation Details:**
+
+Created new functions/classes:
+- PathTraversalResult: Dataclass for detection results with audit details
+- contains_null_byte(): Detect null bytes including URL-encoded variants
+- normalize_path_for_comparison(): Normalize path for comparison
+- path_differs_after_normalization(): Check if normalization reveals traversal
+- detect_path_traversal_attack(): Comprehensive detection with audit logging
+
+Enhanced functions:
+- contains_path_traversal(): Now wraps detect_path_traversal_attack() for backward compatibility
+- validate_directory_access(): Now uses detect_path_traversal_attack() for detailed audit logging
+
+**Security Patterns Detected:**
+- Direct traversal: ../, /..
+- URL-encoded: %2e%2e/, %2e./
+- Double URL-encoded: %252e%252e/
+- Unicode overlong: ..%c0%af, ..%c1%9c
+- Null byte injection: %00, \x00, %2500
+- Mixed encoding patterns
+
+**Test Results:**
+- tests/test_feature_48_path_traversal_detection.py: 63/63 tests PASS
+- tests/verify_feature_48.py: All 6 verification steps PASS
+
+**Files Modified:**
+- api/tool_policy.py: Added PathTraversalResult, detect_path_traversal_attack(), etc.
+- api/__init__.py: Added exports for new functions
+
+**Files Created:**
+- tests/test_feature_48_path_traversal_detection.py: Comprehensive test suite
+- tests/verify_feature_48.py: Feature verification script
+
+**Commit:** 5b88c41 - "feat: Implement Path Traversal Attack Detection (Feature #48)"
+
+---
+
+**Updated Progress:**
+- Total: 88/103 features passing (approximately 85.4%)
+- Feature #48: Path Traversal Attack Detection - PASSING
+
+**Session completed successfully.**
+
+---
+
+## Session: 2026-01-27 (Coding Agent - Feature #49)
+
+### Feature #49: Graceful Budget Exhaustion Handling - COMPLETED
+
+**Status:** PASSING
+
+**Category:** E. Error Handling
+
+**Description:** When max_turns or timeout is reached, handle gracefully by saving partial
+work and running validators on partial results.
+
+**Dependencies:** [28, 29, 36] - All passing
+- Feature #28: Timeout Seconds Wall-Clock Enforcement
+- Feature #29: Token Usage Tracking
+- Feature #36: StaticSpecAdapter for Legacy Initializer
+
+**Verification Summary (All 8 Feature Steps Passed):**
+
+1. Detect budget exhaustion before next turn - PASS
+   - MaxTurnsExceeded exception raised when turns_used >= max_turns
+   - TimeoutSecondsExceeded exception raised when elapsed_seconds >= timeout_seconds
+
+2. Set status to timeout (not failed) - PASS
+   - run.status set to "timeout", not "failed"
+   - result.status also returns "timeout"
+
+3. Record timeout event with resource that was exhausted - PASS
+   - Timeout event recorded with payload containing reason="max_turns_exceeded" or "timeout_exceeded"
+   - Payload includes turns_used, elapsed_seconds, and other budget info
+
+4. Commit any uncommitted database changes - PASS
+   - Token counts persisted (tokens_in, tokens_out)
+   - Run status committed before validation
+
+5. Run acceptance validators on partial state - PASS
+   - _run_partial_acceptance_validators() method added
+   - Validators run with context including partial_execution=True and exhaustion_reason
+
+6. Store partial acceptance_results - PASS
+   - run.acceptance_results populated with validator results
+   - acceptance_check event recorded
+
+7. Determine verdict based on partial results - PASS
+   - "partial" verdict if any validators pass
+   - "failed" verdict if no validators pass
+   - None if no acceptance spec
+
+8. Return AgentRun with timeout status and partial results - PASS
+   - ExecutionResult contains status="timeout", final_verdict (partial/failed/passed)
+   - run.acceptance_results and run.final_verdict populated
+
+**Implementation Details:**
+
+Modified HarnessKernel class:
+- Added _current_spec and _validator_context instance variables
+- Modified handle_budget_exceeded() to call _run_partial_acceptance_validators()
+- Modified handle_timeout_exceeded() to call _run_partial_acceptance_validators()
+- Created _run_partial_acceptance_validators() method for partial state validation
+- Added cleanup in execute() finally block to clear stored spec/context
+
+The implementation ensures that when a run times out due to budget exhaustion,
+any completed work is not lost. Validators run on the partial state to determine
+how much progress was made, and this is recorded in the acceptance_results.
+
+**Test Results:**
+- tests/test_feature_49_graceful_budget_exhaustion.py: 24/24 tests PASS
+- tests/verify_feature_49.py: All 8 feature steps PASS
+- tests/test_harness_kernel.py: 56/56 tests PASS (no regressions)
+- tests/test_feature_28_timeout_seconds.py: All tests PASS
+- tests/test_feature_29_token_tracking.py: All tests PASS
+
+**Files Created:**
+- tests/test_feature_49_graceful_budget_exhaustion.py: Comprehensive test suite (24 tests)
+- tests/verify_feature_49.py: Feature verification script
+
+**Files Modified:**
+- api/harness_kernel.py: Added partial validation on budget exhaustion
+
+**Commit:** fda2651 - "feat: Implement Graceful Budget Exhaustion Handling (Feature #49)"
+
+---
+
+**Updated Progress:**
+- Total: 88/103 features passing (approximately 85.4%)
+- Feature #49: Graceful Budget Exhaustion Handling - PASSING
+
+**Session completed successfully.**
