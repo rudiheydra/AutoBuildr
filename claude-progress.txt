@@ -6047,3 +6047,169 @@ Created `api/spec_name_generator.py` with the following functionality:
 - Feature #59: Unique Spec Name Generation - PASSING
 
 **Session completed successfully.**
+[Testing] 2026-01-27 09:52:38 - Feature #2 regression test PASSED
+  - Feature: AcceptanceSpec SQLite Table Schema
+  - Category: G. State & Persistence
+  - Verification: All 10 feature steps pass
+  - All verification steps confirmed working:
+    - Step 1: PRAGMA table_info(acceptance_specs) returns all columns - PASS
+    - Step 2: id column is VARCHAR(36) primary key - PASS
+    - Step 3: agent_spec_id is VARCHAR(36) NOT NULL UNIQUE - PASS
+    - Step 4: agent_spec_id FK references agent_specs.id ON DELETE CASCADE - PASS
+    - Step 5: validators column stores JSON array - PASS
+    - Step 6: gate_mode column is VARCHAR(20) with default all_pass - PASS
+    - Step 7: min_score column is FLOAT nullable - PASS
+    - Step 8: retry_policy column is VARCHAR(20) with default none - PASS
+    - Step 9: max_retries column is INTEGER with default 0 - PASS
+    - Step 10: fallback_spec_id FK references agent_specs.id nullable - PASS
+  - Verified via Python/SQLAlchemy direct database inspection
+  - No regression found - feature still working correctly
+[Testing] 2026-01-27 13:14:49 - Feature #89 regression test PASSED
+  - Feature: Core validate_dependency_graph function detects missing dependency targets
+  - Category: error-handling
+  - Verification: All 4 feature steps pass
+  - Unit tests: 21/21 tests pass (test_validate_dependency_graph_missing_targets.py)
+  - All verification steps confirmed working:
+    - Step 1: Create feature A (id=1) with dependencies=[999] (non-existent) - PASS
+    - Step 2: Call validate_dependency_graph() with this feature - PASS
+    - Step 3: Result includes missing_targets dict with {1: [999]} - PASS
+    - Step 4: Function returns structured ValidationResult with all issue types - PASS
+  - API endpoint /api/projects/{project}/features/dependency-health uses function correctly
+  - No regression found - feature still working correctly
+
+---
+
+## Session: 2026-01-27 (Coding Agent - Feature #73)
+
+### Feature #73: Error Display in Agent Card - VERIFIED
+
+**Assigned Feature ID:** 73
+**Result:** PASSING
+
+**Category:** E. Error Handling
+
+**Description:** Display error information in DynamicAgentCard when run fails with link to full details.
+
+**Dependencies:** [65, 68] - Both passing
+- Feature #65: AgentRun Color Coding
+- Feature #68: Event Timeline Component
+
+**Verification Summary (5 Steps - All Passed):**
+
+1. Check run.status is failed or timeout - PASS
+   - Condition: const isErrorStatus = status is failed OR timeout
+   - Returns null for non-error statuses
+
+2. Display error icon in card - PASS
+   - AlertCircle icon for failed
+   - Timer icon for timeout
+   - Icon selection logic implemented
+
+3. Show truncated error message (first 100 chars) - PASS
+   - truncateError function with maxLength default 100
+   - Adds ellipsis when truncating
+   - Returns truncated string and wasLong boolean
+   - Shows full message in title on hover when truncated
+
+4. Add View Details link to open inspector - PASS
+   - Uses ExternalLink icon
+   - View Details button with handleViewDetails onClick
+   - Stops event propagation to prevent card click
+   - Has aria-label for accessibility
+
+5. Style with error colors - PASS
+   - Failed: uses color-status-failed-bg and color-status-failed-text
+   - Timeout: uses color-status-timeout-bg and color-status-timeout-text
+   - Conditional color based on isTimeout flag
+
+**Implementation Details:**
+
+The ErrorDisplay component is implemented in ui/src/components/DynamicAgentCard.tsx (lines 274-342):
+- ErrorDisplayProps interface with status, error, onClick props
+- truncateError helper function for message truncation
+- Default messages for missing error text
+- Proper accessibility with aria-label and data-testid
+
+**Test Results:**
+- tests/test_feature_73_error_display.py: 40/40 tests PASS
+- Verification script: All 5 steps with 24 checks PASS
+
+**Note:** Browser automation unavailable in this environment. Feature verified through
+comprehensive code analysis and unit tests.
+
+---
+
+**Updated Progress:**
+- Total: 79/103 features passing (approximately 76.7%)
+- Feature #73: Error Display in Agent Card - PASSING
+
+**Session completed successfully.**
+
+---
+
+## Session: 2026-01-27 (Coding Agent - Feature #72)
+
+### Feature #72: Agent Thinking State Animation - VERIFIED AND PASSING
+
+**Status:** PASSING
+
+**Category:** O. Responsive & Layout
+
+**Description:** Add animated thinking indicator to DynamicAgentCard showing current activity state.
+
+**Dependencies:** [65] - AgentRun Status Color Coding (passing)
+
+**Verification Summary (7 Steps - All Passed):**
+
+1. Define thinking states: thinking, coding, testing, validating - PASS
+   - types.ts line 233: export type ThinkingState = idle | thinking | coding | testing | validating
+
+2. Add animated indicator to card header - PASS
+   - ThinkingStateIndicator component exists (lines 194-235)
+   - Rendered alongside StatusBadge in card header (line 440)
+
+3. Pulse animation while waiting for response - PASS
+   - animate-pulse class applied to label (line 232)
+   - Animation keyframes: thinking, working, testing (globals.css lines 1038-1075)
+
+4. Update state based on latest event type - PASS
+   - deriveThinkingState(latestEventType, status) function (lines 103-134)
+   - Called with latestEventType prop (line 403)
+
+5. tool_call -> working (coding) - PASS
+   - Lines 119-122: case tool_call and tool_result return coding
+
+6. turn_complete -> thinking - PASS
+   - Lines 123-126: case turn_complete and started return thinking
+
+7. acceptance_check -> validating - PASS
+   - Lines 127-129: case acceptance_check returns validating
+
+**Implementation Details:**
+
+The feature was already implemented with:
+- ThinkingState type in types.ts with 5 states (idle, thinking, coding, testing, validating)
+- ThinkingStateIndicator component with proper accessibility (role=status, aria-live, aria-label)
+- deriveThinkingState() function mapping event types to thinking states
+- CSS animations: animate-thinking (1.5s), animate-working (0.3s), animate-testing (0.8s)
+- Icons: Brain, Code, TestTube, Shield for different states
+- Integration with DynamicAgentCard via latestEventType prop
+
+**Test Results:**
+- tests/test_feature_72_thinking_state_animation.py: 32/32 tests PASS
+- TypeScript compilation: PASS (frontend builds successfully)
+
+**Files:**
+- ui/src/components/DynamicAgentCard.tsx: ThinkingStateIndicator component and deriveThinkingState function
+- ui/src/lib/types.ts: ThinkingState type definition
+- ui/src/styles/globals.css: Animation keyframes and classes
+
+**Note:** Browser automation unavailable - verified via unit tests and code analysis.
+
+---
+
+**Updated Progress:**
+- Total: 79/103 features passing (approximately 76.7%)
+- Feature #72: Agent Thinking State Animation - PASSING
+
+**Session completed successfully.**
