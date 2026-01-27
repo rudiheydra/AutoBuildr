@@ -12,7 +12,7 @@ ruff check .
 
 # Security tests
 
-python test_security.py
+python tests/test_security.py
 
 From ui/ directory:
 cd ui
@@ -26,7 +26,7 @@ npm run lint
 npm run build
 
 One-liner to run everything:
-ruff check . && python test_security.py && cd ui && npm run lint && npm run build
+ruff check . && python tests/test_security.py && cd ui && npm run lint && npm run build
 
 Or if you want to see all failures at once (doesn't stop on first error):
-ruff check .; python test_security.py; cd ui && npm run lint; npm run build
+ruff check .; python tests/test_security.py; cd ui && npm run lint; npm run build

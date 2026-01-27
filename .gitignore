@@ -12,6 +12,7 @@ issues/
 # Log files
 logs/
 *.log
+claude-progress.txt
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

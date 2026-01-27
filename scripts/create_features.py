@@ -11,14 +11,14 @@ import sys
 from pathlib import Path
 
 # Add project root to path
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from api.database import Feature, Base
 
 # Project directory
-PROJECT_DIR = Path(__file__).parent.resolve()
+PROJECT_DIR = Path(__file__).resolve().parent.parent
 
 # Initialize database directly (avoiding the migration that imports broken models)
 db_path = PROJECT_DIR / "features.db"

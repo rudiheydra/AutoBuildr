@@ -1,8 +1,8 @@
-# AutoCoder
-
-[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-FFDD00?style=flat&logo=buy-me-a-coffee&logoColor=black)](https://www.buymeacoffee.com/leonvanzyl)
+# AutoBuildr
 
 A long-running autonomous coding agent powered by the Claude Agent SDK. This tool can build complete applications over multiple sessions using a two-agent pattern (initializer + coding agent). Includes a React-based UI for monitoring progress in real-time.
+
+> **Note:** AutoBuildr is a fork of [AutoCoder](https://github.com/leonvanzyl/autocoder) by Leon van Zyl.
 
 ## Video Tutorial
 
@@ -130,7 +130,7 @@ Features are stored in SQLite via SQLAlchemy and managed through an MCP server t
 ## Project Structure
 
 ```
-autonomous-coding/
+AutoBuildr/
 ├── start.bat                 # Windows CLI start script
 ├── start.sh                  # macOS/Linux CLI start script
 ├── start_ui.bat              # Windows Web UI start script
@@ -145,14 +145,24 @@ autonomous-coding/
 ├── prompts.py                # Prompt loading utilities
 ├── api/
 │   └── database.py           # SQLAlchemy models (Feature table)
+├── docs/                     # Supplementary documentation
+│   ├── PHASE3_SPEC.md        # Phase 3 specification
+│   └── SAMPLE_PROMPT.md      # Sample prompt reference
 ├── mcp_server/
 │   └── feature_mcp.py        # MCP server for feature management tools
+├── scripts/                  # Utility scripts
+│   ├── create_features.py    # Feature initializer script
+│   └── create_dependency_features.py
 ├── server/
 │   ├── main.py               # FastAPI REST API server
 │   ├── websocket.py          # WebSocket handler for real-time updates
 │   ├── schemas.py            # Pydantic schemas
 │   ├── routers/              # API route handlers
 │   └── services/             # Business logic services
+├── tests/                    # Test suite
+│   ├── test_security.py      # Security hook unit tests
+│   ├── test_security_integration.py
+│   └── ...                   # Feature tests
 ├── ui/                       # React frontend
 │   ├── src/
 │   │   ├── App.tsx           # Main app component
@@ -290,7 +300,7 @@ When test progress increases, the agent sends:
 
 ### Using GLM Models (Alternative to Claude)
 
-To use Zhipu AI's GLM models instead of Claude, add these variables to your `.env` file in the AutoCoder directory:
+To use Zhipu AI's GLM models instead of Claude, add these variables to your `.env` file in the AutoBuildr directory:
 
 ```bash
 ANTHROPIC_BASE_URL=https://api.z.ai/api/anthropic
@@ -301,7 +311,7 @@ ANTHROPIC_DEFAULT_OPUS_MODEL=glm-4.7
 ANTHROPIC_DEFAULT_HAIKU_MODEL=glm-4.5-air
 ```
 
-This routes AutoCoder's API requests through Zhipu's Claude-compatible API, allowing you to use GLM-4.7 and other models. **This only affects AutoCoder** - your global Claude Code settings remain unchanged.
+This routes AutoBuildr's API requests through Zhipu's Claude-compatible API, allowing you to use GLM-4.7 and other models. **This only affects AutoBuildr** - your global Claude Code settings remain unchanged.
 
 Get an API key at: https://z.ai/subscribe
 

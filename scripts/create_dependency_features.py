@@ -5,17 +5,17 @@ Script to create dependency validation and guardrail features.
 Based on error report: Orchestrator Infinite Loop caused by circular dependencies
 in compute_scheduling_scores() BFS algorithm.
 
-Run with: python create_dependency_features.py
+Run with: python scripts/create_dependency_features.py
 """
 
 import sys
-sys.path.insert(0, '.')
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from api.database import Feature, create_database
-from pathlib import Path
 # Initialize database
 
-PROJECT_DIR = Path('.').resolve()
+PROJECT_DIR = Path(__file__).resolve().parent.parent
 engine, session_maker = create_database(PROJECT_DIR)
 session = session_maker()
 
