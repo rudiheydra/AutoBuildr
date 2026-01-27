@@ -568,6 +568,12 @@ class HarnessKernel:
     - Ensure partial work is committed before termination
     - Handle long-running tool calls that exceed timeout
 
+    Graceful Budget Exhaustion (Feature #49):
+    - When budget exhausted, run validators on partial state
+    - Store partial acceptance_results
+    - Determine verdict based on partial results
+    - Return AgentRun with timeout status and partial results
+
     Usage:
         kernel = HarnessKernel(db_session)
         result = kernel.execute(spec, run)
@@ -583,6 +589,9 @@ class HarnessKernel:
         self.db = db
         self._budget_tracker: Optional[BudgetTracker] = None
         self._event_sequence: int = 0
+        # Feature #49: Store spec and context for graceful budget exhaustion handling
+        self._current_spec: Optional["AgentSpec"] = None
+        self._validator_context: dict[str, Any] = {}
 
     def initialize_run(self, run: "AgentRun", spec: "AgentSpec") -> BudgetTracker:
         """
@@ -759,12 +768,18 @@ class HarnessKernel:
         - Record timeout event with turns_used in payload
         - Ensure partial work is committed
 
+        Feature #49: Graceful Budget Exhaustion Handling:
+        - Run acceptance validators on partial state
+        - Store partial acceptance_results
+        - Determine verdict based on partial results
+        - Return AgentRun with timeout status and partial results
+
         Args:
             run: The AgentRun that exceeded budget
             error: The MaxTurnsExceeded exception
 
         Returns:
-            ExecutionResult with timeout status
+            ExecutionResult with timeout status and partial results
         """
         if self._budget_tracker is None:
             raise RuntimeError("Budget tracker not initialized")
@@ -778,7 +793,9 @@ class HarnessKernel:
         run.tokens_in = self._budget_tracker.tokens_in
         run.tokens_out = self._budget_tracker.tokens_out
 
-        # Step 6: Record timeout event with turns_used in payload
+        # Feature #49, Step 1: Detect budget exhaustion before next turn (done via exception)
+
+        # Feature #49, Step 3: Record timeout event with resource that was exhausted
         self._event_sequence += 1
         record_timeout_event(
             db=self.db,
@@ -788,18 +805,23 @@ class HarnessKernel:
             reason="max_turns_exceeded",
         )
 
-        # Step 4 & 5: Set status to timeout with error message
+        # Feature #49, Step 2: Set status to timeout (not failed)
         run.timeout(error_message="max_turns_exceeded")
 
-        # Step 7: Ensure partial work is committed before termination
-        # Feature #29: Token counts are now included in the commit
+        # Feature #49, Step 4: Commit any uncommitted database changes
         self.db.commit()
 
+        # Feature #49, Steps 5-7: Run acceptance validators on partial state
+        partial_verdict, partial_results = self._run_partial_acceptance_validators(
+            run, "max_turns_exceeded"
+        )
+
+        # Feature #49, Step 8: Return AgentRun with timeout status and partial results
         return ExecutionResult(
             run_id=run.id,
             status="timeout",
             turns_used=run.turns_used,
-            final_verdict=None,
+            final_verdict=partial_verdict,  # Feature #49: Include partial verdict
             error="max_turns_exceeded",
             # Feature #29, Step 7: Include token counts in run response
             tokens_in=run.tokens_in,
@@ -821,12 +843,18 @@ class HarnessKernel:
         - Ensure partial work is committed before termination
         - Handle long-running tool calls that exceed timeout
 
+        Feature #49: Graceful Budget Exhaustion Handling:
+        - Run acceptance validators on partial state
+        - Store partial acceptance_results
+        - Determine verdict based on partial results
+        - Return AgentRun with timeout status and partial results
+
         Args:
             run: The AgentRun that exceeded timeout
             error: The TimeoutSecondsExceeded exception
 
         Returns:
-            ExecutionResult with timeout status
+            ExecutionResult with timeout status and partial results
         """
         if self._budget_tracker is None:
             raise RuntimeError("Budget tracker not initialized")
@@ -840,28 +868,33 @@ class HarnessKernel:
         run.tokens_in = self._budget_tracker.tokens_in
         run.tokens_out = self._budget_tracker.tokens_out
 
-        # Feature #28, Step 6: Record timeout event with elapsed_seconds in payload
+        # Feature #49, Step 3: Record timeout event with resource that was exhausted
         self._event_sequence += 1
         record_timeout_event(
             db=self.db,
             run_id=run.id,
             sequence=self._event_sequence,
             budget_tracker=self._budget_tracker,
-            reason="timeout_exceeded",  # Feature #28, Step 5: Set error message
+            reason="timeout_exceeded",
         )
 
-        # Feature #28, Step 4: Set status to timeout with error message
+        # Feature #49, Step 2: Set status to timeout (not failed)
         run.timeout(error_message="timeout_exceeded")
 
-        # Feature #28, Step 7: Ensure partial work is committed before termination
-        # Feature #29: Token counts are now included in the commit
+        # Feature #49, Step 4: Commit any uncommitted database changes
         self.db.commit()
 
+        # Feature #49, Steps 5-7: Run acceptance validators on partial state
+        partial_verdict, partial_results = self._run_partial_acceptance_validators(
+            run, "timeout_exceeded"
+        )
+
+        # Feature #49, Step 8: Return AgentRun with timeout status and partial results
         return ExecutionResult(
             run_id=run.id,
             status="timeout",
             turns_used=run.turns_used,
-            final_verdict=None,
+            final_verdict=partial_verdict,  # Feature #49: Include partial verdict
             error="timeout_exceeded",
             # Feature #29, Step 7: Include token counts in run response
             tokens_in=run.tokens_in,
@@ -1276,6 +1309,119 @@ class HarnessKernel:
 
         return final_verdict, results_dicts
 
+    def _run_partial_acceptance_validators(
+        self,
+        run: "AgentRun",
+        exhaustion_reason: str,
+    ) -> tuple[str | None, list[dict[str, Any]]]:
+        """
+        Run acceptance validators on partial state after budget exhaustion.
+
+        Feature #49: Graceful Budget Exhaustion Handling
+        - Step 5: Run acceptance validators on partial state
+        - Step 6: Store partial acceptance_results
+        - Step 7: Determine verdict based on partial results
+
+        This method is called when execution is terminated due to max_turns
+        or timeout_seconds budget exhaustion. It attempts to run validators
+        on whatever partial work has been completed.
+
+        Args:
+            run: The AgentRun that was terminated
+            exhaustion_reason: The reason for budget exhaustion ("max_turns_exceeded" or "timeout_exceeded")
+
+        Returns:
+            Tuple of (partial_verdict, partial_acceptance_results)
+            - partial_verdict: "partial" if any validators passed, "failed" if none passed, None if no validators
+            - partial_acceptance_results: List of validator result dicts
+        """
+        from api.validators import evaluate_acceptance_spec
+
+        # Check if we have a spec stored from execute()
+        spec = self._current_spec
+        if spec is None:
+            _logger.warning(
+                "No spec available for partial validation on run %s",
+                run.id
+            )
+            return None, []
+
+        # Get acceptance spec
+        acceptance_spec = spec.acceptance_spec
+        if acceptance_spec is None:
+            _logger.info(
+                "No AcceptanceSpec linked to spec %s, skipping partial validation",
+                spec.id
+            )
+            return None, []
+
+        # Get validator definitions and gate mode
+        validators = acceptance_spec.validators or []
+        gate_mode = acceptance_spec.gate_mode or "all_pass"
+
+        if not validators:
+            _logger.info("AcceptanceSpec has no validators, skipping partial validation")
+            return None, []
+
+        # Run validators on partial state
+        _logger.info(
+            "Running %d validators on partial state for run %s (reason: %s)",
+            len(validators), run.id, exhaustion_reason
+        )
+
+        try:
+            # Use the stored validator context
+            context = self._validator_context.copy()
+            context["partial_execution"] = True
+            context["exhaustion_reason"] = exhaustion_reason
+
+            passed, results = evaluate_acceptance_spec(
+                validators=validators,
+                context=context,
+                gate_mode=gate_mode,
+                run=run,
+            )
+
+            # Convert results to dicts for storage
+            results_dicts = [r.to_dict() for r in results]
+
+            # Feature #49, Step 7: Determine verdict based on partial results
+            # For timeout cases, we use "partial" if any validators passed
+            # This indicates the run made progress but didn't complete
+            any_passed = any(r.passed for r in results)
+            partial_verdict = "partial" if any_passed else "failed"
+
+            _logger.info(
+                "Partial validation complete for run %s: verdict=%s, passed=%d/%d",
+                run.id, partial_verdict, sum(1 for r in results if r.passed), len(results)
+            )
+
+            # Feature #49, Step 6: Store partial acceptance_results
+            run.final_verdict = partial_verdict
+            run.acceptance_results = results_dicts
+
+            # Record acceptance_check event for partial results
+            self._record_acceptance_check_event(
+                run.id,
+                results_dicts,
+                partial_verdict,
+                gate_mode,
+            )
+
+            # Commit the updated run with partial results
+            self.db.commit()
+
+            return partial_verdict, results_dicts
+
+        except Exception as e:
+            _logger.error(
+                "Error running partial validators for run %s: %s",
+                run.id, e
+            )
+            # Don't fail the whole operation if partial validation fails
+            # Just return empty results
+            return None, []
+
     def _create_run_for_spec(self, spec: "AgentSpec") -> "AgentRun":
         """
         Create a new AgentRun record for a spec.
@@ -1385,6 +1531,11 @@ class HarnessKernel:
             validator_context.update(spec.context)
         if spec.source_feature_id:
             validator_context["feature_id"] = spec.source_feature_id
+
+        # Feature #49: Store spec and context for graceful budget exhaustion handling
+        # These are used by _run_partial_acceptance_validators when budget is exceeded
+        self._current_spec = spec
+        self._validator_context = validator_context
 
         try:
             # Step 2: Initialize run (sets status=running, starts budget tracker)
@@ -1512,3 +1663,7 @@ class HarnessKernel:
             run.fail(error_message=str(e))
             self.db.commit()
             return run
+        finally:
+            # Feature #49: Clear stored spec and context to prevent memory leaks
+            self._current_spec = None
+            self._validator_context = {}
