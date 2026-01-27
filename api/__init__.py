@@ -175,6 +175,35 @@ from api.spec_name_generator import (
     normalize_slug,
     validate_spec_name,
 )
+from api.orphaned_run_cleanup import (
+    # Feature #79: Orphaned Run Cleanup on Startup
+    ORPHANED_ERROR_MESSAGE,
+    DEFAULT_ORPHAN_TIMEOUT_SECONDS,
+    OrphanedRunInfo,
+    CleanupResult,
+    get_orphaned_runs,
+    is_run_stale,
+    cleanup_single_run,
+    cleanup_orphaned_runs,
+    get_orphan_statistics,
+)
+from api.spec_validator import (
+    # Feature #78: Invalid AgentSpec Graceful Handling
+    REQUIRED_FIELDS as SPEC_REQUIRED_FIELDS,
+    VALID_TASK_TYPES as SPEC_VALID_TASK_TYPES,
+    MIN_MAX_TURNS,
+    MAX_MAX_TURNS,
+    MIN_TIMEOUT_SECONDS,
+    MAX_TIMEOUT_SECONDS,
+    NAME_PATTERN as SPEC_NAME_PATTERN_RE,
+    TOOL_POLICY_REQUIRED_FIELDS,
+    ValidationError as SpecValidationError,
+    SpecValidationResult,
+    SpecValidationError as SpecValidationException,
+    validate_spec,
+    validate_spec_or_raise,
+    validate_spec_dict,
+)
 
 __all__ = [
     "Feature",
@@ -336,4 +365,29 @@ __all__ = [
     "get_existing_names_with_prefix",
     "normalize_slug",
     "validate_spec_name",
+    # Feature #79: Orphaned Run Cleanup on Startup exports
+    "ORPHANED_ERROR_MESSAGE",
+    "DEFAULT_ORPHAN_TIMEOUT_SECONDS",
+    "OrphanedRunInfo",
+    "CleanupResult",
+    "get_orphaned_runs",
+    "is_run_stale",
+    "cleanup_single_run",
+    "cleanup_orphaned_runs",
+    "get_orphan_statistics",
+    # Feature #78: Invalid AgentSpec Graceful Handling exports
+    "SPEC_REQUIRED_FIELDS",
+    "SPEC_VALID_TASK_TYPES",
+    "MIN_MAX_TURNS",
+    "MAX_MAX_TURNS",
+    "MIN_TIMEOUT_SECONDS",
+    "MAX_TIMEOUT_SECONDS",
+    "SPEC_NAME_PATTERN_RE",
+    "TOOL_POLICY_REQUIRED_FIELDS",
+    "SpecValidationError",
+    "SpecValidationResult",
+    "SpecValidationException",
+    "validate_spec",
+    "validate_spec_or_raise",
+    "validate_spec_dict",
 ]

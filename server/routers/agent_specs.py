@@ -37,6 +37,8 @@ from server.schemas.agentspec import (
     AgentSpecSummary,
     AgentSpecUpdate,
     AgentSpecWithAcceptanceResponse,
+    SpecValidationErrorResponse,
+    ValidationErrorItem,
 )
 from ..utils.validation import validate_project_name
 
@@ -661,6 +663,27 @@ async def _execute_spec_background(
             "description": "Execution queued successfully",
             "model": AgentRunResponse,
         },
+        400: {
+            "description": "AgentSpec validation failed",
+            "model": SpecValidationErrorResponse,
+            "content": {
+                "application/json": {
+                    "example": {
+                        "is_valid": False,
+                        "errors": [
+                            {
+                                "field": "tool_policy.allowed_tools",
+                                "message": "allowed_tools must contain at least one tool",
+                                "code": "min_length"
+                            }
+                        ],
+                        "spec_id": "abc-123",
+                        "spec_name": "invalid-spec",
+                        "error_count": 1
+                    }
+                }
+            },
+        },
         404: {
             "description": "AgentSpec not found",
             "content": {
@@ -678,16 +701,22 @@ async def execute_agent_spec(
     """
     Trigger execution of an AgentSpec via the HarnessKernel.
 
+    Feature #78: Invalid AgentSpec Graceful Handling
+    - Validates the AgentSpec BEFORE creating any AgentRun
+    - Returns 400 with detailed validation errors if invalid
+    - Only creates AgentRun and queues execution if spec passes validation
+
     Creates a new AgentRun record with status=pending, then queues the
     execution as a background task. Returns immediately with 202 Accepted
     and the new AgentRun record.
 
     The execution will:
-    1. Transition the run to 'running' status
-    2. Execute the spec via HarnessKernel (when implemented)
-    3. Record events for each tool call and turn
-    4. Run acceptance validators
-    5. Update final status (completed/failed/timeout)
+    1. Validate AgentSpec (Feature #78, Steps 1-4)
+    2. Transition the run to 'running' status
+    3. Execute the spec via HarnessKernel (when implemented)
+    4. Record events for each tool call and turn
+    5. Run acceptance validators
+    6. Update final status (completed/failed/timeout)
 
     Args:
         project_name: Name of the project
@@ -697,8 +726,12 @@ async def execute_agent_spec(
         AgentRunResponse with the new run record (status will be 'pending')
 
     Raises:
+        400: If AgentSpec validation fails (Feature #78, Steps 5-6)
         404: If the AgentSpec is not found
     """
+    # Import spec validator (lazy import to avoid circular dependencies)
+    from api.spec_validator import validate_spec, SpecValidationResult
+
     # Validate project name and get path
     validate_project_name(project_name)
     try:
@@ -719,6 +752,48 @@ async def execute_agent_spec(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"AgentSpec '{spec_id}' not found"
             )
+
+        # Feature #78, Steps 1-4: Validate AgentSpec before kernel execution
+        # - Step 1: Validate AgentSpec before kernel execution
+        # - Step 2: Check required fields are present
+        # - Step 3: Validate tool_policy structure
+        # - Step 4: Validate budget values within constraints
+        validation_result: SpecValidationResult = validate_spec(spec)
+
+        # Feature #78, Step 5: If invalid, return error without creating run
+        if not validation_result.is_valid:
+            _logger.warning(
+                "AgentSpec validation failed for spec %s: %d errors",
+                spec_id,
+                len(validation_result.errors)
+            )
+
+            # Feature #78, Step 6: Include validation error details in response
+            error_items = [
+                ValidationErrorItem(
+                    field=error.field,
+                    message=error.message,
+                    code=error.code,
+                    value=str(error.value)[:100] if error.value is not None else None
+                )
+                for error in validation_result.errors
+            ]
+
+            validation_response = SpecValidationErrorResponse(
+                is_valid=False,
+                errors=error_items,
+                spec_id=validation_result.spec_id,
+                spec_name=validation_result.spec_name,
+                error_count=len(validation_result.errors)
+            )
+
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=validation_response.model_dump()
+            )
+
+        # Validation passed - proceed with execution
+        _logger.debug("AgentSpec %s validation passed", spec_id)
 
         # Step 4: Create new AgentRun with status=pending
         run_id = _generate_uuid()
@@ -959,3 +1034,111 @@ async def update_agent_spec(
         priority=spec_dict["priority"],
         tags=spec_dict["tags"],
     )
+
+
+@router.delete(
+    "/{spec_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={
+        204: {
+            "description": "AgentSpec deleted successfully (including cascaded AcceptanceSpec, AgentRuns, Artifacts, and Events)"
+        },
+        400: {
+            "description": "Invalid UUID format",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Invalid UUID format for spec_id: 'not-a-uuid'"}
+                }
+            },
+        },
+        404: {
+            "description": "AgentSpec not found",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "AgentSpec 'abc-123' not found"}
+                }
+            },
+        },
+    },
+)
+async def delete_agent_spec(
+    project_name: str,
+    spec_id: str,
+) -> Response:
+    """
+    Delete an AgentSpec and all related data with cascade behavior.
+
+    This endpoint performs a cascade delete that removes:
+    - The AgentSpec record itself
+    - The linked AcceptanceSpec (if exists)
+    - All AgentRuns for this spec
+    - All Artifacts for those runs
+    - All AgentEvents for those runs
+
+    The cascade behavior is configured via:
+    - ON DELETE CASCADE foreign key constraints in the database
+    - SQLAlchemy relationship cascade="all, delete-orphan" settings
+
+    ## Important Notes
+
+    - This operation is **permanent** and cannot be undone
+    - All execution history, artifacts, and events will be lost
+    - Parent-child spec relationships are preserved (children are NOT deleted)
+
+    Args:
+        project_name: Name of the project
+        spec_id: UUID of the AgentSpec to delete
+
+    Returns:
+        204 No Content on successful deletion
+
+    Raises:
+        400: If spec_id is not a valid UUID format
+        404: If the project or AgentSpec is not found
+    """
+    # Step 1: Validate project name and get path
+    validate_project_name(project_name)
+    try:
+        project_dir = _get_project_path(project_name)
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Project '{project_name}' not found"
+        )
+
+    # Step 2: Validate spec_id is valid UUID format
+    if not _is_valid_uuid(spec_id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid UUID format for spec_id: '{spec_id}'"
+        )
+
+    with get_db_session(project_dir) as db:
+        # Step 3: Query AgentSpec by id
+        spec = db.query(AgentSpecModel).filter(AgentSpecModel.id == spec_id).first()
+
+        # Step 4: Return 404 if not found
+        if not spec:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"AgentSpec '{spec_id}' not found"
+            )
+
+        # Step 5: Delete the AgentSpec record
+        # The ON DELETE CASCADE constraints and SQLAlchemy cascade="all, delete-orphan"
+        # will automatically delete:
+        # - AcceptanceSpec (via agent_specs.acceptance_spec relationship)
+        # - AgentRuns (via agent_specs.runs relationship)
+        # - Artifacts (via agent_runs.artifacts relationship / FK ondelete=CASCADE)
+        # - AgentEvents (via agent_runs.events relationship / FK ondelete=CASCADE)
+        db.delete(spec)
+
+        # Step 6: Commit transaction
+        db.commit()
+
+        _logger.info(
+            f"Deleted AgentSpec {spec_id} with cascade (project: {project_name})"
+        )
+
+    # Step 7: Return 204 No Content
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

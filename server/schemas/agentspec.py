@@ -286,6 +286,91 @@ class AgentSpecResponse(BaseModel):
         from_attributes = True
 
 
+class AgentSpecWithAcceptanceResponse(BaseModel):
+    """Response schema for an AgentSpec with nested AcceptanceSpec.
+
+    Used by GET /api/agent-specs/{spec_id} to return full spec details
+    including the linked acceptance criteria.
+
+    Example:
+        {
+            "id": "abc12345-...",
+            "name": "feature-auth-login",
+            "display_name": "Implement Login Feature",
+            ...
+            "acceptance_spec": {
+                "id": "def67890-...",
+                "validators": [...],
+                "gate_mode": "all_pass",
+                ...
+            }
+        }
+    """
+
+    id: str
+    name: str
+    display_name: str
+    icon: str | None
+    spec_version: str
+
+    objective: str
+    task_type: str
+    context: dict[str, Any] | None
+
+    tool_policy: dict[str, Any]
+    max_turns: int
+    timeout_seconds: int
+
+    parent_spec_id: str | None
+    source_feature_id: int | None
+    created_at: datetime
+    priority: int
+    tags: list[str]
+
+    # Nested AcceptanceSpec (optional - may not exist yet)
+    acceptance_spec: "AcceptanceSpecResponse | None" = None
+
+    class Config:
+        from_attributes = True
+        json_schema_extra = {
+            "example": {
+                "id": "abc12345-6789-def0-1234-567890abcdef",
+                "name": "feature-auth-login-impl",
+                "display_name": "Implement Login Feature",
+                "icon": "key",
+                "spec_version": "v1",
+                "objective": "Implement user login functionality with email/password authentication",
+                "task_type": "coding",
+                "context": {"feature_id": 5, "files": ["src/auth/login.ts"]},
+                "tool_policy": {
+                    "policy_version": "v1",
+                    "allowed_tools": ["feature_get_by_id"],
+                    "forbidden_patterns": [],
+                    "tool_hints": {}
+                },
+                "max_turns": 50,
+                "timeout_seconds": 1800,
+                "parent_spec_id": None,
+                "source_feature_id": 5,
+                "created_at": "2024-01-27T12:00:00Z",
+                "priority": 100,
+                "tags": ["auth", "critical"],
+                "acceptance_spec": {
+                    "id": "def67890-1234-abcd-5678-901234abcdef",
+                    "agent_spec_id": "abc12345-6789-def0-1234-567890abcdef",
+                    "validators": [
+                        {"type": "test_pass", "config": {"command": "pytest tests/"}, "weight": 1.0, "required": True}
+                    ],
+                    "gate_mode": "all_pass",
+                    "min_score": None,
+                    "retry_policy": "fixed",
+                    "max_retries": 3,
+                    "fallback_spec_id": None
+                }
+            }
+        }
+
+
 class AgentSpecSummary(BaseModel):
     """Lightweight summary for list views."""
 
@@ -1003,6 +1088,128 @@ class EventListResponse(BaseModel):
     events: list[AgentEventResponse]
     total: int
     has_more: bool = False
+
+
+# =============================================================================
+# Validation Error Schemas (Feature #78)
+# =============================================================================
+
+class ValidationErrorItem(BaseModel):
+    """Single validation error for a field.
+
+    Part of Feature #78: Invalid AgentSpec Graceful Handling.
+
+    Example:
+        {
+            "field": "max_turns",
+            "message": "max_turns must be at least 1, got 0",
+            "code": "min_value",
+            "value": "0"
+        }
+    """
+
+    field: str = Field(
+        ...,
+        description="Name of the field with the validation error"
+    )
+    message: str = Field(
+        ...,
+        description="Human-readable error message"
+    )
+    code: str = Field(
+        ...,
+        description="Machine-readable error code for programmatic handling"
+    )
+    value: str | None = Field(
+        default=None,
+        description="The invalid value (truncated if too long)"
+    )
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "field": "max_turns",
+                "message": "max_turns must be at least 1, got 0",
+                "code": "min_value",
+                "value": "0"
+            }
+        }
+
+
+class SpecValidationErrorResponse(BaseModel):
+    """Response schema for AgentSpec validation errors.
+
+    Returned when an AgentSpec fails validation before execution.
+    Feature #78: Invalid AgentSpec Graceful Handling - Step 6.
+
+    This response includes:
+    - is_valid: Always false for error responses
+    - errors: Array of specific validation errors with field, message, and code
+    - spec_id: The ID of the spec that failed validation
+    - spec_name: The name of the spec that failed validation
+    - error_count: Total number of validation errors
+
+    Example:
+        {
+            "is_valid": false,
+            "errors": [
+                {
+                    "field": "tool_policy.allowed_tools",
+                    "message": "allowed_tools must contain at least one tool",
+                    "code": "min_length"
+                }
+            ],
+            "spec_id": "abc123-...",
+            "spec_name": "my-spec",
+            "error_count": 1
+        }
+    """
+
+    is_valid: bool = Field(
+        default=False,
+        description="Always false for validation error responses"
+    )
+    errors: list[ValidationErrorItem] = Field(
+        ...,
+        description="List of validation errors"
+    )
+    spec_id: str | None = Field(
+        default=None,
+        description="ID of the spec that failed validation"
+    )
+    spec_name: str | None = Field(
+        default=None,
+        description="Name of the spec that failed validation"
+    )
+    error_count: int = Field(
+        ...,
+        ge=1,
+        description="Total number of validation errors"
+    )
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "is_valid": False,
+                "errors": [
+                    {
+                        "field": "tool_policy.allowed_tools",
+                        "message": "allowed_tools must contain at least one tool",
+                        "code": "min_length",
+                        "value": None
+                    },
+                    {
+                        "field": "max_turns",
+                        "message": "max_turns must be at least 1, got 0",
+                        "code": "min_value",
+                        "value": "0"
+                    }
+                ],
+                "spec_id": "abc12345-6789-def0-1234-567890abcdef",
+                "spec_name": "my-invalid-spec",
+                "error_count": 2
+            }
+        }
 
 
 class AgentEventListResponse(BaseModel):
