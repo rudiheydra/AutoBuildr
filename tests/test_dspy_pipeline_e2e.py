@@ -52,6 +52,7 @@ from api.spec_builder import SpecBuilder, BuildResult
 from api.harness_kernel import HarnessKernel, BudgetTracker
 from api.validators import (
     AcceptanceGate,
+    GateResult,
     ValidatorResult,
     FileExistsValidator,
 )
@@ -1007,3 +1008,226 @@ def test_dynamic_compilation_different_specs(coding_feature, audit_feature):
     # Additional: verify source_feature_id traceability is correct
     assert spec1.source_feature_id == 300
     assert spec2.source_feature_id == 200
+
+
+# =============================================================================
+# Feature #118: Proof: Persistence — DB contains AgentSpec/AgentRun/AgentEvent
+#               after kernel run
+# =============================================================================
+
+class TestPersistenceAfterKernelRun:
+    """
+    Prove that after one kernel run, the database contains AgentSpec, AgentRun,
+    and AgentEvent records with correct foreign keys and event ordering.
+
+    Boundary mocking only: mock executor, not DB persistence.
+    """
+
+    def test_persistence_after_kernel_run(self, db_session):
+        """
+        End-to-end persistence proof:
+        1. Create AgentSpec and persist to in-memory SQLite
+        2. Execute via HarnessKernel with mocked turn_executor (2 turns)
+        3. Query DB: AgentSpec exists with correct ID
+        4. Query DB: AgentRun exists with agent_spec_id FK pointing to spec
+        5. Query DB: AgentEvent records exist with run_id FK and ascending sequences
+        """
+        # Step 1: Create AgentSpec and persist to in-memory SQLite
+        spec = AgentSpec(
+            id="test-persistence-spec-001",
+            name="test-persistence-spec",
+            display_name="Persistence Proof Spec",
+            objective="Prove DB persistence after kernel run",
+            task_type="testing",
+            tool_policy={
+                "allowed_tools": ["Read", "Write"],
+                "forbidden_patterns": [],
+                "policy_version": "v1",
+            },
+            max_turns=10,
+            timeout_seconds=300,
+        )
+        db_session.add(spec)
+        db_session.commit()
+
+        # Verify spec persisted
+        persisted_spec = db_session.query(AgentSpec).filter(
+            AgentSpec.id == "test-persistence-spec-001"
+        ).first()
+        assert persisted_spec is not None, "AgentSpec should be persisted in DB"
+        assert persisted_spec.id == "test-persistence-spec-001"
+
+        # Step 2: Execute via HarnessKernel with mocked turn_executor that
+        # completes after 2 turns
+        turn_count = 0
+
+        def mock_turn_executor(run, spec):
+            """Mock turn executor that completes after 2 turns."""
+            nonlocal turn_count
+            turn_count += 1
+            completed = turn_count >= 2  # Signal done on turn 2
+            return (
+                completed,
+                {"mock_response": f"turn {turn_count} completed"},
+                [],      # tool_events (no tool calls)
+                100,     # input_tokens per turn
+                50,      # output_tokens per turn
+            )
+
+        kernel = HarnessKernel(db=db_session)
+        run = kernel.execute(spec, turn_executor=mock_turn_executor)
+
+        assert run is not None, "kernel.execute() should return an AgentRun"
+
+        # Step 3: Query DB — AgentSpec exists with correct ID
+        queried_spec = db_session.query(AgentSpec).filter(
+            AgentSpec.id == "test-persistence-spec-001"
+        ).first()
+        assert queried_spec is not None, "AgentSpec must exist in DB after kernel run"
+        assert queried_spec.id == "test-persistence-spec-001"
+        assert queried_spec.name == "test-persistence-spec"
+        assert queried_spec.task_type == "testing"
+
+        # Step 4: Query DB — AgentRun exists with agent_spec_id FK pointing to spec
+        queried_run = db_session.query(AgentRun).filter(
+            AgentRun.id == run.id
+        ).first()
+        assert queried_run is not None, "AgentRun must exist in DB after kernel run"
+        assert queried_run.agent_spec_id == "test-persistence-spec-001", (
+            f"AgentRun.agent_spec_id FK should point to spec, "
+            f"got '{queried_run.agent_spec_id}'"
+        )
+        assert queried_run.status in ("completed", "failed", "timeout"), (
+            f"AgentRun should be in terminal status, got '{queried_run.status}'"
+        )
+        assert queried_run.turns_used == 2, (
+            f"Expected 2 turns used, got {queried_run.turns_used}"
+        )
+
+        # Step 5: Query DB — AgentEvent records exist with run_id FK and
+        # ascending sequence numbers
+        events = db_session.query(AgentEvent).filter(
+            AgentEvent.run_id == run.id
+        ).order_by(AgentEvent.sequence).all()
+
+        assert len(events) > 0, "Expected AgentEvent records in DB after kernel run"
+
+        # Verify all events have correct run_id FK
+        for event in events:
+            assert event.run_id == run.id, (
+                f"AgentEvent.run_id FK should match run.id, "
+                f"got '{event.run_id}' expected '{run.id}'"
+            )
+
+        # Verify ascending sequence numbers (no duplicates, strictly increasing)
+        sequences = [e.sequence for e in events]
+        for i in range(1, len(sequences)):
+            assert sequences[i] > sequences[i - 1], (
+                f"Event sequences must be strictly ascending: "
+                f"seq[{i-1}]={sequences[i-1]}, seq[{i}]={sequences[i]}"
+            )
+
+        # Verify expected event types exist
+        event_types = [e.event_type for e in events]
+        assert "started" in event_types, "Expected 'started' event in DB"
+        assert "turn_complete" in event_types, "Expected 'turn_complete' event in DB"
+
+        # Verify we have at least 2 turn_complete events (one per turn)
+        turn_complete_events = [e for e in events if e.event_type == "turn_complete"]
+        assert len(turn_complete_events) == 2, (
+            f"Expected exactly 2 turn_complete events (one per turn), "
+            f"got {len(turn_complete_events)}"
+        )
+
+
+# =============================================================================
+# Feature #120: Proof — Acceptance gate FAIL case
+#               Missing file fails deterministically
+# =============================================================================
+
+class TestAcceptanceGateFailDeterministic:
+    """Prove AcceptanceGate returns verdict='failed' when a required file_exists
+    validator points to a missing path. Deterministic — no LLM involvement."""
+
+    def test_acceptance_gate_fail_deterministic(self, db_session, tmp_path):
+        """AcceptanceGate must return verdict='failed' when file_exists validator
+        points to a non-existent file.
+
+        Steps:
+        1. Do NOT create the expected file.
+        2. Create AcceptanceSpec with file_exists validator pointing to missing path.
+        3. Evaluate via AcceptanceGate.evaluate(run, acceptance_spec, context).
+        4. Assert result.passed is False.
+        5. Assert result.verdict == 'failed'.
+        """
+        # --- Setup: AgentSpec and AgentRun (minimal, just enough for gate) ---
+        spec = AgentSpec(
+            id="test-spec-gate-fail-001",
+            name="test-spec-gate-fail",
+            display_name="Gate Fail Test",
+            objective="Test acceptance gate failure path",
+            task_type="testing",
+            tool_policy={
+                "allowed_tools": ["Read"],
+                "forbidden_patterns": [],
+                "policy_version": "v1",
+            },
+            max_turns=5,
+            timeout_seconds=120,
+        )
+        db_session.add(spec)
+        db_session.commit()
+
+        run = AgentRun(
+            id=generate_uuid(),
+            agent_spec_id=spec.id,
+            status="completed",
+            turns_used=1,
+            tokens_in=100,
+            tokens_out=200,
+            retry_count=0,
+        )
+        db_session.add(run)
+        db_session.commit()
+
+        # Step 1: Do NOT create the expected file — path is intentionally missing
+        missing_file = tmp_path / "this_file_does_not_exist.txt"
+        assert not missing_file.exists(), "Precondition: file must NOT exist"
+
+        # Step 2: Create AcceptanceSpec with file_exists validator pointing to
+        #         the missing path
+        acceptance_spec = AcceptanceSpec(
+            id=generate_uuid(),
+            agent_spec_id=spec.id,
+            validators=[
+                {
+                    "type": "file_exists",
+                    "config": {
+                        "path": str(missing_file),
+                        "should_exist": True,
+                        "description": "Required output file must exist",
+                    },
+                    "required": True,
+                    "weight": 1.0,
+                },
+            ],
+            gate_mode="all_pass",
+            retry_policy="none",
+            max_retries=0,
+        )
+
+        # Step 3: Evaluate via AcceptanceGate
+        gate = AcceptanceGate()
+        result = gate.evaluate(run, acceptance_spec, context={})
+
+        # Step 4: Assert result.passed is False
+        assert result.passed is False, (
+            f"Expected result.passed to be False for missing file, "
+            f"but got {result.passed}. Verdict: {result.verdict}"
+        )
+
+        # Step 5: Assert result.verdict == 'failed'
+        assert result.verdict == "failed", (
+            f"Expected verdict='failed' for missing file validator, "
+            f"but got verdict='{result.verdict}'"
+        )
