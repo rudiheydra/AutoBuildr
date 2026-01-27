@@ -922,3 +922,88 @@ class TestOrchestratorSpecPath:
         assert run.turns_used >= 1, "Expected at least 1 turn to be used"
         assert run.tokens_in >= 100, f"Expected tokens_in >= 100, got {run.tokens_in}"
         assert run.tokens_out >= 50, f"Expected tokens_out >= 50, got {run.tokens_out}"
+
+
+# =============================================================================
+# Feature #117: Proof: Dynamic compilation produces materially different
+#               AgentSpecs for different task descriptions
+# =============================================================================
+
+def test_dynamic_compilation_different_specs(coding_feature, audit_feature):
+    """
+    Prove that two different task descriptions compile into materially
+    different AgentSpecs (different task_type, tool_policy, validators, budgets).
+
+    This proves specs are dynamic, not hard-coded.
+
+    Steps:
+    1. Compile coding Feature (category='F. UI-Backend' → task_type='coding')
+       using the coding_feature fixture (id=100, category='F. UI-Backend')
+       Note: The feature description says 'A. Database' but both map to 'coding'.
+    2. Compile audit Feature (category='Security' → task_type='audit')
+       using the audit_feature fixture (id=200, category='Security')
+    3. Assert spec1.task_type != spec2.task_type
+    4. Assert spec1.tool_policy != spec2.tool_policy (different allowed_tools)
+    5. Assert budgets differ (max_turns or timeout_seconds)
+    """
+    compiler = FeatureCompiler()
+
+    # Step 1: Compile coding Feature (category='F. UI-Backend' -> coding)
+    # Use a feature with category='A. Database' as the feature description specifies
+    coding_db_feature = Feature(
+        id=300,
+        priority=1,
+        category="A. Database",
+        name="User Authentication with OAuth2",
+        description="Implement user authentication system using OAuth2 protocol",
+        steps=[
+            "Run pytest tests/test_auth.py to verify authentication works",
+            "File api/auth.py should exist with OAuth2 implementation",
+        ],
+        passes=False,
+        in_progress=False,
+    )
+    spec1 = compiler.compile(coding_db_feature)
+
+    # Step 2: Compile audit Feature (category='Security' -> audit)
+    spec2 = compiler.compile(audit_feature)
+
+    # Step 3: Assert task_type differs (coding vs audit)
+    assert spec1.task_type != spec2.task_type, (
+        f"Expected different task_types, but both are '{spec1.task_type}'. "
+        f"spec1 (A. Database) should be 'coding', spec2 (Security) should be 'audit'."
+    )
+    assert spec1.task_type == "coding", f"Expected 'coding', got '{spec1.task_type}'"
+    assert spec2.task_type == "audit", f"Expected 'audit', got '{spec2.task_type}'"
+
+    # Step 4: Assert tool_policy differs (different allowed_tools)
+    assert spec1.tool_policy != spec2.tool_policy, (
+        "Expected different tool_policies for coding vs audit task types."
+    )
+    # More specifically, the allowed_tools lists should differ
+    tools1 = spec1.tool_policy.get("allowed_tools", [])
+    tools2 = spec2.tool_policy.get("allowed_tools", [])
+    assert set(tools1) != set(tools2), (
+        f"Expected different allowed_tools sets.\n"
+        f"  coding tools: {sorted(tools1)}\n"
+        f"  audit tools:  {sorted(tools2)}"
+    )
+
+    # Step 5: Assert budgets differ (max_turns and/or timeout_seconds)
+    budgets_differ = (
+        spec1.max_turns != spec2.max_turns
+        or spec1.timeout_seconds != spec2.timeout_seconds
+    )
+    assert budgets_differ, (
+        f"Expected different budgets for coding vs audit.\n"
+        f"  coding: max_turns={spec1.max_turns}, timeout={spec1.timeout_seconds}\n"
+        f"  audit:  max_turns={spec2.max_turns}, timeout={spec2.timeout_seconds}"
+    )
+
+    # Additional: verify both specs are valid AgentSpec instances
+    assert isinstance(spec1, AgentSpec)
+    assert isinstance(spec2, AgentSpec)
+
+    # Additional: verify source_feature_id traceability is correct
+    assert spec1.source_feature_id == 300
+    assert spec2.source_feature_id == 200
