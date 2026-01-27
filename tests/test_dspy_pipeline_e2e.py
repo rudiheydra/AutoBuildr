@@ -52,6 +52,7 @@ from api.spec_builder import SpecBuilder, BuildResult
 from api.harness_kernel import HarnessKernel, BudgetTracker
 from api.validators import (
     AcceptanceGate,
+    ForbiddenPatternsValidator,
     GateResult,
     ValidatorResult,
     FileExistsValidator,
