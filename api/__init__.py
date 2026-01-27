@@ -101,6 +101,20 @@ from api.tool_policy import (
     record_forbidden_patterns_violation,
     record_policy_violation_event,
     update_run_violation_metadata,
+    # Feature #46: Symlink Target Validation
+    BrokenSymlinkError,
+    DirectoryAccessBlocked,
+    is_broken_symlink,
+    get_symlink_target,
+    resolve_target_path,
+    validate_directory_access,
+    # Feature #48: Path Traversal Attack Detection
+    PathTraversalResult,
+    contains_null_byte,
+    contains_path_traversal,
+    detect_path_traversal_attack,
+    normalize_path_for_comparison,
+    path_differs_after_normalization,
 )
 from api.display_derivation import (
     derive_display_name,
@@ -203,6 +217,55 @@ from api.spec_validator import (
     validate_spec,
     validate_spec_or_raise,
     validate_spec_dict,
+)
+from api.migration_flag import (
+    # Feature #39: AUTOBUILDR_USE_KERNEL Migration Flag
+    ENV_VAR_NAME as MIGRATION_ENV_VAR_NAME,
+    DEFAULT_USE_KERNEL,
+    TRUTHY_VALUES as MIGRATION_TRUTHY_VALUES,
+    FALSY_VALUES as MIGRATION_FALSY_VALUES,
+    ExecutionPath,
+    FeatureExecutionResult,
+    get_use_kernel_env_value,
+    parse_use_kernel_value,
+    is_kernel_enabled,
+    set_kernel_enabled,
+    clear_kernel_flag,
+    execute_feature_legacy,
+    execute_feature_kernel,
+    execute_feature,
+    get_execution_path_string,
+    get_migration_status,
+)
+from api.tool_provider import (
+    # Feature #45: ToolProvider Interface Definition
+    # Exceptions
+    ToolProviderError,
+    ToolNotFoundError,
+    ProviderNotFoundError,
+    ProviderAlreadyRegisteredError,
+    AuthenticationError,
+    ToolExecutionError,
+    # Enums
+    ToolCategory,
+    AuthMethod,
+    ProviderStatus,
+    # Data classes
+    ToolDefinition as ProviderToolDefinition,  # Alias to avoid conflict with tool_policy.ToolDefinition
+    ToolResult,
+    ProviderCapabilities,
+    AuthCredentials,
+    AuthResult,
+    # Abstract base class
+    ToolProvider,
+    # Implementations
+    LocalToolProvider,
+    ToolProviderRegistry,
+    # Module-level functions
+    get_tool_registry,
+    reset_tool_registry,
+    register_provider,
+    execute_tool as execute_provider_tool,  # Alias to avoid conflict with execute_tool from migration_flag
 )
 
 __all__ = [
@@ -390,4 +453,50 @@ __all__ = [
     "validate_spec",
     "validate_spec_or_raise",
     "validate_spec_dict",
+    # Feature #39: AUTOBUILDR_USE_KERNEL Migration Flag exports
+    "MIGRATION_ENV_VAR_NAME",
+    "DEFAULT_USE_KERNEL",
+    "MIGRATION_TRUTHY_VALUES",
+    "MIGRATION_FALSY_VALUES",
+    "ExecutionPath",
+    "FeatureExecutionResult",
+    "get_use_kernel_env_value",
+    "parse_use_kernel_value",
+    "is_kernel_enabled",
+    "set_kernel_enabled",
+    "clear_kernel_flag",
+    "execute_feature_legacy",
+    "execute_feature_kernel",
+    "execute_feature",
+    "get_execution_path_string",
+    "get_migration_status",
+    # Feature #48: Path Traversal Attack Detection exports
+    "PathTraversalResult",
+    "contains_null_byte",
+    "contains_path_traversal",
+    "detect_path_traversal_attack",
+    "normalize_path_for_comparison",
+    "path_differs_after_normalization",
+    # Feature #45: ToolProvider Interface Definition exports
+    "ToolProviderError",
+    "ToolNotFoundError",
+    "ProviderNotFoundError",
+    "ProviderAlreadyRegisteredError",
+    "AuthenticationError",
+    "ToolExecutionError",
+    "ToolCategory",
+    "AuthMethod",
+    "ProviderStatus",
+    "ProviderToolDefinition",
+    "ToolResult",
+    "ProviderCapabilities",
+    "AuthCredentials",
+    "AuthResult",
+    "ToolProvider",
+    "LocalToolProvider",
+    "ToolProviderRegistry",
+    "get_tool_registry",
+    "reset_tool_registry",
+    "register_provider",
+    "execute_provider_tool",
 ]
