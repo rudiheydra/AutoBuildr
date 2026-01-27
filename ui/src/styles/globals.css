@@ -1435,24 +1435,556 @@
   /* Optional: Add a subtle indicator when any card is focused */
 }
 
-/* High contrast mode support */
+/* ============================================================================
+   High Contrast Mode Support (Feature #83)
+   WCAG 2.1 AA requires 4.5:1 contrast for normal text, 3:1 for large text
+   ============================================================================ */
+
 @media (prefers-contrast: high) {
+  /* ==========================================================================
+     Color Variables - High Contrast Overrides
+     Use system colors for maximum compatibility with forced-colors modes
+     ========================================================================== */
+
+  :root {
+    /* Status colors - high contrast versions with maximum contrast */
+    --color-status-pending-text: #595959;
+    --color-status-pending-bg: #f0f0f0;
+
+    --color-status-running-text: #0056b3;
+    --color-status-running-bg: #cce5ff;
+
+    --color-status-paused-text: #856404;
+    --color-status-paused-bg: #fff3cd;
+
+    --color-status-completed-text: #155724;
+    --color-status-completed-bg: #d4edda;
+
+    --color-status-failed-text: #721c24;
+    --color-status-failed-bg: #f8d7da;
+
+    --color-status-timeout-text: #7c2d12;
+    --color-status-timeout-bg: #fed7aa;
+  }
+
+  .dark {
+    /* Dark mode high contrast overrides */
+    --color-status-pending-text: #d0d0d0;
+    --color-status-pending-bg: #404040;
+
+    --color-status-running-text: #8ab4f8;
+    --color-status-running-bg: #1a3a5c;
+
+    --color-status-paused-text: #ffd966;
+    --color-status-paused-bg: #3d3113;
+
+    --color-status-completed-text: #81c995;
+    --color-status-completed-bg: #1a3d21;
+
+    --color-status-failed-text: #f28b82;
+    --color-status-failed-bg: #3d1a1e;
+
+    --color-status-timeout-text: #fcb98d;
+    --color-status-timeout-bg: #3d2510;
+  }
+
+  /* ==========================================================================
+     Focus Indicators - Enhanced for High Contrast
+     ========================================================================== */
+
   :focus-visible {
+    outline: 4px solid currentColor !important;
+    outline-offset: 4px !important;
+  }
+
+  .neo-agent-card-focusable:focus-visible {
+    outline: 5px solid currentColor !important;
+    outline-offset: 4px !important;
+    /* Remove animations for clarity */
+    animation: none !important;
+  }
+
+  /* ==========================================================================
+     Status Badges - Pattern/Icon Fallbacks
+     Don't rely solely on color - add distinct visual patterns
+     ========================================================================== */
+
+  /* All status badges get stronger borders */
+  .neo-status-badge {
+    border: 2px solid currentColor;
+    font-weight: 700;
+  }
+
+  /* Pending: dashed border pattern */
+  .neo-status-pending {
+    border-style: dashed;
+    border-color: var(--color-status-pending-text);
+  }
+
+  /* Running: solid border with double style */
+  .neo-status-running {
+    border-style: double;
+    border-width: 4px;
+    border-color: var(--color-status-running-text);
+  }
+
+  /* Paused: dotted border pattern */
+  .neo-status-paused {
+    border-style: dotted;
+    border-color: var(--color-status-paused-text);
+  }
+
+  /* Completed: solid thick border */
+  .neo-status-completed {
+    border-style: solid;
+    border-width: 3px;
+    border-color: var(--color-status-completed-text);
+  }
+
+  /* Failed: wavy-like effect using shadow */
+  .neo-status-failed {
+    border-style: solid;
+    border-width: 3px;
+    border-color: var(--color-status-failed-text);
+    box-shadow: inset 0 -2px 0 0 var(--color-status-failed-text);
+  }
+
+  /* Timeout: ridge border for distinctive appearance */
+  .neo-status-timeout {
+    border-style: ridge;
+    border-width: 3px;
+    border-color: var(--color-status-timeout-text);
+  }
+
+  /* ==========================================================================
+     Progress Bar - Pattern Fallbacks
+     ========================================================================== */
+
+  .neo-progress {
+    border-width: 3px;
+    border-color: currentColor;
+  }
+
+  /* Add stripes pattern for running progress */
+  .neo-progress-fill-running {
+    background-image: repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 4px,
+      rgba(0, 0, 0, 0.15) 4px,
+      rgba(0, 0, 0, 0.15) 8px
+    );
+  }
+
+  /* Completed: solid fill with checkered texture */
+  .neo-progress-fill-completed {
+    background-image: linear-gradient(
+      90deg,
+      var(--color-status-completed-text) 50%,
+      transparent 50%
+    );
+    background-size: 10px 100%;
+  }
+
+  /* Failed: X pattern overlay */
+  .neo-progress-fill-failed {
+    background-image: repeating-linear-gradient(
+      135deg,
+      transparent,
+      transparent 3px,
+      rgba(114, 28, 36, 0.3) 3px,
+      rgba(114, 28, 36, 0.3) 6px
+    );
+  }
+
+  /* ==========================================================================
+     Cards and Containers - Enhanced Borders
+     ========================================================================== */
+
+  .neo-card {
+    border-width: 4px;
+    border-color: currentColor;
+  }
+
+  .neo-card:hover {
+    border-width: 4px;
+    outline: 2px solid currentColor;
+    outline-offset: 2px;
+  }
+
+  /* ==========================================================================
+     Buttons - High Contrast
+     ========================================================================== */
+
+  .neo-btn {
+    border-width: 3px;
+    font-weight: 800;
+  }
+
+  .neo-btn:hover {
+    outline: 2px solid currentColor;
+    outline-offset: 2px;
+  }
+
+  .neo-btn:focus-visible {
     outline: 4px solid currentColor;
     outline-offset: 4px;
   }
 
-  .neo-agent-card-focusable:focus-visible {
-    outline: 5px solid currentColor;
+  /* ==========================================================================
+     Inputs - High Contrast
+     ========================================================================== */
+
+  .neo-input {
+    border-width: 3px;
+  }
+
+  .neo-input:focus {
+    border-width: 4px;
+    outline: 2px solid currentColor;
+    outline-offset: 1px;
+  }
+
+  /* ==========================================================================
+     Links and Interactive Elements
+     ========================================================================== */
+
+  a:focus-visible,
+  button:focus-visible {
+    outline: 4px solid currentColor;
     outline-offset: 4px;
+  }
+
+  /* Underline all links for visibility */
+  a {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  /* ==========================================================================
+     Validator Status Indicators - Pattern Fallbacks
+     ========================================================================== */
+
+  /* Pass indicator: checkmark pattern via border */
+  .neo-status-completed .lucide-check,
+  [data-testid="validator-pass"] {
+    border-bottom: 2px solid currentColor;
+  }
+
+  /* Fail indicator: X pattern via border */
+  .neo-status-failed .lucide-x,
+  [data-testid="validator-fail"] {
+    text-decoration: line-through;
+    text-decoration-thickness: 2px;
+  }
+
+  /* ==========================================================================
+     Error Display - Enhanced Visibility
+     ========================================================================== */
+
+  [data-testid="error-display"] {
+    border: 3px solid currentColor;
+    border-left-width: 6px;
+  }
+
+  /* ==========================================================================
+     Thinking State Indicator - High Contrast
+     ========================================================================== */
+
+  [data-testid="thinking-state-indicator"] {
+    border: 2px solid currentColor;
+    font-weight: 700;
+  }
+
+  /* ==========================================================================
+     Tooltip - High Contrast
+     ========================================================================== */
+
+  .neo-tooltip {
+    border-width: 3px;
+    font-weight: 700;
+  }
+
+  /* ==========================================================================
+     Modal - High Contrast
+     ========================================================================== */
+
+  .neo-modal {
+    border-width: 5px;
+  }
+
+  .neo-modal-backdrop {
+    background: rgba(0, 0, 0, 0.8);
   }
 }
 
-/* Reduced motion support */
-@media (prefers-reduced-motion: reduce) {
-  .neo-agent-card-focusable:focus-visible {
-    animation: none;
+/* ============================================================================
+   Windows High Contrast Mode (forced-colors)
+   Uses system colors for maximum accessibility
+   ============================================================================ */
+
+@media (forced-colors: active) {
+  /* Use system colors exclusively */
+  :root {
+    --color-neo-text: CanvasText;
+    --color-neo-bg: Canvas;
+    --color-neo-border: CanvasText;
+    --color-neo-accent: Highlight;
+    --color-neo-error: MarkText;
   }
+
+  /* Status badges use system highlight for active states */
+  .neo-status-running {
+    background-color: Highlight;
+    color: HighlightText;
+    forced-color-adjust: none;
+  }
+
+  .neo-status-completed {
+    background-color: Mark;
+    color: MarkText;
+    forced-color-adjust: none;
+  }
+
+  .neo-status-failed,
+  .neo-status-timeout {
+    background-color: MarkText;
+    color: Mark;
+    forced-color-adjust: none;
+    border: 2px solid CanvasText;
+  }
+
+  /* Focus indicators use system highlight color */
+  :focus-visible {
+    outline: 3px solid Highlight !important;
+    outline-offset: 2px;
+  }
+
+  /* Buttons respect system colors */
+  .neo-btn {
+    background-color: ButtonFace;
+    color: ButtonText;
+    border-color: ButtonBorder;
+    forced-color-adjust: none;
+  }
+
+  .neo-btn:hover {
+    background-color: Highlight;
+    color: HighlightText;
+  }
+
+  /* Links use system link color */
+  a {
+    color: LinkText;
+  }
+
+  a:visited {
+    color: VisitedText;
+  }
+
+  /* Progress bar uses highlight for fill */
+  .neo-progress-fill {
+    background-color: Highlight;
+    forced-color-adjust: none;
+  }
+
+  .neo-progress-fill-failed {
+    background-color: MarkText;
+  }
+
+  /* Cards use canvas colors */
+  .neo-card {
+    background-color: Canvas;
+    border-color: CanvasText;
+  }
+
+  /* Inputs */
+  .neo-input {
+    background-color: Field;
+    color: FieldText;
+    border-color: CanvasText;
+  }
+
+  /* Disabled states */
+  .neo-btn:disabled,
+  .neo-input:disabled {
+    color: GrayText;
+    border-color: GrayText;
+  }
+}
+
+/* ============================================================================
+   More Contrast Mode (prefers-contrast: more)
+   For users who want increased but not maximum contrast
+   ============================================================================ */
+
+@media (prefers-contrast: more) {
+  :root {
+    /* Increase contrast for status colors */
+    --color-status-pending-text: #4a4a4a;
+    --color-status-running-text: #0050a0;
+    --color-status-paused-text: #7a5c00;
+    --color-status-completed-text: #0a5020;
+    --color-status-failed-text: #8b0000;
+    --color-status-timeout-text: #a03000;
+  }
+
+  .dark {
+    --color-status-pending-text: #c0c0c0;
+    --color-status-running-text: #90c0ff;
+    --color-status-paused-text: #ffe066;
+    --color-status-completed-text: #90e0a0;
+    --color-status-failed-text: #ff9090;
+    --color-status-timeout-text: #ffb090;
+  }
+
+  /* Slightly enhanced borders */
+  .neo-status-badge {
+    border: 1px solid currentColor;
+  }
+
+  .neo-card {
+    border-width: 3px;
+  }
+
+  :focus-visible {
+    outline-width: 3px;
+    outline-offset: 3px;
+  }
+}
+
+/* ============================================================================
+   Less Contrast Mode (prefers-contrast: less)
+   For users who prefer reduced contrast
+   ============================================================================ */
+
+@media (prefers-contrast: less) {
+  :root {
+    /* Softer status colors */
+    --color-status-pending-text: #8b8b8b;
+    --color-status-running-text: #6ba3d6;
+    --color-status-paused-text: #d4a017;
+    --color-status-completed-text: #5cb85c;
+    --color-status-failed-text: #d9534f;
+    --color-status-timeout-text: #e89850;
+  }
+
+  /* Lighter borders */
+  .neo-card {
+    border-width: 2px;
+    border-color: #c0c0c0;
+  }
+
+  .neo-btn {
+    border-width: 2px;
+  }
+
+  .neo-input {
+    border-width: 2px;
+  }
+
+  /* Softer focus indicators */
+  :focus-visible {
+    outline-width: 2px;
+    outline-offset: 2px;
+    outline-color: rgba(0, 0, 0, 0.5);
+  }
+}
+
+/* ============================================================================
+   Reduced Motion Support
+   Disable animations for users who prefer reduced motion
+   ============================================================================ */
+
+@media (prefers-reduced-motion: reduce) {
+  /* Disable all animations on agent cards */
+  .neo-agent-card-focusable:focus-visible {
+    animation: none !important;
+  }
+
+  /* Disable status pulse animations */
+  .neo-status-running {
+    animation: none !important;
+  }
+
+  .neo-progress-fill-running {
+    animation: none !important;
+  }
+
+  /* Disable thinking state animations */
+  [data-testid="thinking-state-indicator"] * {
+    animation: none !important;
+  }
+
+  /* Use instant transitions instead of animated ones */
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ============================================================================
+   Additional Accessibility Patterns - Status Icon Indicators
+   These classes add distinctive patterns to icons that don't rely on color
+   ============================================================================ */
+
+/* Icon fallback patterns for color-blind accessibility */
+.neo-status-indicator-pattern {
+  position: relative;
+}
+
+/* Pending: clock with dashed outline */
+.neo-status-indicator-pattern[data-status="pending"]::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border: 1px dashed currentColor;
+  border-radius: 50%;
+}
+
+/* Running: animated ring */
+.neo-status-indicator-pattern[data-status="running"]::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+}
+
+/* Completed: checkmark underline */
+.neo-status-indicator-pattern[data-status="completed"]::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: currentColor;
+}
+
+/* Failed: X with strike-through */
+.neo-status-indicator-pattern[data-status="failed"]::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: -2px;
+  right: -2px;
+  height: 2px;
+  background: currentColor;
+  transform: rotate(-45deg);
+}
+
+/* Timeout: double border */
+.neo-status-indicator-pattern[data-status="timeout"]::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border: 1px double currentColor;
+  border-radius: 2px;
 }
 
 /* ============================================================================
