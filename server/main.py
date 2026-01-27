@@ -131,7 +131,7 @@ register_exception_handlers(app)
 
 # Check if remote access is enabled via environment variable
 # Set by start_ui.py when --host is not 127.0.0.1
-ALLOW_REMOTE = os.environ.get("AUTOCODER_ALLOW_REMOTE", "").lower() in ("1", "true", "yes")
+ALLOW_REMOTE = os.environ.get("AUTOBUILDR_ALLOW_REMOTE", "").lower() in ("1", "true", "yes")
 
 # CORS - allow all origins when remote access is enabled, otherwise localhost only
 if ALLOW_REMOTE:
@@ -164,7 +164,7 @@ else:
 if not ALLOW_REMOTE:
     @app.middleware("http")
     async def require_localhost(request: Request, call_next):
-        """Only allow requests from localhost (disabled when AUTOCODER_ALLOW_REMOTE=1)."""
+        """Only allow requests from localhost (disabled when AUTOBUILDR_ALLOW_REMOTE=1)."""
         client_host = request.client.host if request.client else None
 
         # Allow localhost connections

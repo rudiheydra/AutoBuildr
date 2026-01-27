@@ -2,8 +2,8 @@
   <project_name>AutoBuildr</project_name>
 
   <overview>
-    AutoBuildr is a declarative, spec-driven agentic build system that evolves AutoCoder
-    from a tool with hard-coded agents into a dynamic, agent-agnostic platform. Instead of
+    AutoBuildr is a declarative, spec-driven agentic build system that provides a dynamic,
+    agent-agnostic platform. Each task is compiled at runtime into a structured AgentSpec. Instead of
     predefining agents in code, each task is compiled at runtime into a structured AgentSpec
     that defines the agent's objective, constraints, tools, acceptance criteria, and execution
     budget. A lightweight, agent-agnostic harness executes these specs, manages state, enforces
@@ -35,7 +35,7 @@
       - Node.js 18+ for frontend
       - Anthropic API key (ANTHROPIC_API_KEY)
       - DSPy library for spec compilation
-      - Existing AutoCoder infrastructure preserved
+      - Existing AutoBuildr infrastructure preserved
     </environment_setup>
   </prerequisites>
 

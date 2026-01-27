@@ -1,6 +1,6 @@
-# Autocoder app_spec.txt XML Format
+# AutoBuildr app_spec.txt XML Format
 
-Complete reference for the XML structure expected by Autocoder's Initializer agent.
+Complete reference for the XML structure expected by AutoBuildr's Initializer agent.
 
 ## Root Structure
 
@@ -275,7 +275,7 @@ The Initializer agent expects features distributed across categories:
 | Medium web app | 200-250 | 10-15 |
 | Complex full-stack | 300-400 | 15-20 |
 
-## GSD to Autocoder Mapping
+## GSD to AutoBuildr Mapping
 
 When converting from GSD codebase mapping:
 

@@ -3,7 +3,7 @@ Project Registry Module
 =======================
 
 Cross-platform project registry for storing project name to path mappings.
-Uses SQLite database stored at ~/.autocoder/registry.db.
+Uses SQLite database stored at ~/.autobuildr/registry.db.
 """
 
 import logging
@@ -108,12 +108,12 @@ _engine_lock = threading.Lock()
 
 def get_config_dir() -> Path:
     """
-    Get the config directory: ~/.autocoder/
+    Get the config directory: ~/.autobuildr/
 
     Returns:
-        Path to ~/.autocoder/ (created if it doesn't exist)
+        Path to ~/.autobuildr/ (created if it doesn't exist)
     """
-    config_dir = Path.home() / ".autocoder"
+    config_dir = Path.home() / ".autobuildr"
     config_dir.mkdir(parents=True, exist_ok=True)
     return config_dir
 

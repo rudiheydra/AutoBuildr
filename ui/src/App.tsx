@@ -29,9 +29,9 @@ import { getDependencyGraph } from './lib/api'
 import { Loader2, Settings, Moon, Sun } from 'lucide-react'
 import type { Feature } from './lib/types'
 
-const STORAGE_KEY = 'autocoder-selected-project'
-const DARK_MODE_KEY = 'autocoder-dark-mode'
-const VIEW_MODE_KEY = 'autocoder-view-mode'
+const STORAGE_KEY = 'autobuildr-selected-project'
+const DARK_MODE_KEY = 'autobuildr-dark-mode'
+const VIEW_MODE_KEY = 'autobuildr-view-mode'
 
 function App() {
   // Initialize selected project from localStorage
@@ -264,7 +264,7 @@ function App() {
           <div className="flex items-center justify-between">
             {/* Logo and Title */}
             <h1 className="font-display text-2xl font-bold tracking-tight uppercase">
-              AutoCoder
+              AutoBuildr
             </h1>
 
             {/* Controls */}
@@ -344,7 +344,7 @@ function App() {
         {!selectedProject ? (
           <div className="neo-empty-state mt-12">
             <h2 className="font-display text-2xl font-bold mb-2">
-              Welcome to AutoCoder
+              Welcome to AutoBuildr
             </h2>
             <p className="text-neo-text-secondary mb-4">
               Select a project from the dropdown above or create a new one to get started.

@@ -5,7 +5,7 @@ import { ActivityFeed } from './ActivityFeed'
 import { OrchestratorStatusCard } from './OrchestratorStatusCard'
 import type { ActiveAgent, AgentLogEntry, OrchestratorStatus } from '../lib/types'
 
-const ACTIVITY_COLLAPSED_KEY = 'autocoder-activity-collapsed'
+const ACTIVITY_COLLAPSED_KEY = 'autobuildr-activity-collapsed'
 
 interface AgentMissionControlProps {
   agents: ActiveAgent[]

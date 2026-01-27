@@ -40,11 +40,11 @@ from api.dependency_resolver import (
 from progress import has_features
 from server.utils.process_utils import kill_process_tree
 
-# Root directory of autocoder (where this script and autonomous_agent_demo.py live)
-AUTOCODER_ROOT = Path(__file__).parent.resolve()
+# Root directory of AutoBuildr (where this script and autonomous_agent_demo.py live)
+AUTOBUILDR_ROOT = Path(__file__).parent.resolve()
 
 # Debug log file path
-DEBUG_LOG_FILE = AUTOCODER_ROOT / "orchestrator_debug.log"
+DEBUG_LOG_FILE = AUTOBUILDR_ROOT / "orchestrator_debug.log"
 
 
 class DebugLogger:
@@ -686,7 +686,7 @@ class ParallelOrchestrator:
         cmd = [
             sys.executable,
             "-u",  # Force unbuffered stdout/stderr
-            str(AUTOCODER_ROOT / "autonomous_agent_demo.py"),
+            str(AUTOBUILDR_ROOT / "autonomous_agent_demo.py"),
             "--project-dir", str(self.project_dir),
             "--max-iterations", "1",
             "--agent-type", "coding",
@@ -703,7 +703,7 @@ class ParallelOrchestrator:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
-                cwd=str(AUTOCODER_ROOT),
+                cwd=str(AUTOBUILDR_ROOT),
                 env={**os.environ, "PYTHONUNBUFFERED": "1"},
             )
         except Exception as e:
@@ -771,7 +771,7 @@ class ParallelOrchestrator:
             cmd = [
                 sys.executable,
                 "-u",
-                str(AUTOCODER_ROOT / "autonomous_agent_demo.py"),
+                str(AUTOBUILDR_ROOT / "autonomous_agent_demo.py"),
                 "--project-dir", str(self.project_dir),
                 "--max-iterations", "1",
                 "--agent-type", "testing",
@@ -786,7 +786,7 @@ class ParallelOrchestrator:
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                     text=True,
-                    cwd=str(AUTOCODER_ROOT),
+                    cwd=str(AUTOBUILDR_ROOT),
                     env={**os.environ, "PYTHONUNBUFFERED": "1"},
                 )
             except Exception as e:
@@ -822,7 +822,7 @@ class ParallelOrchestrator:
 
         cmd = [
             sys.executable, "-u",
-            str(AUTOCODER_ROOT / "autonomous_agent_demo.py"),
+            str(AUTOBUILDR_ROOT / "autonomous_agent_demo.py"),
             "--project-dir", str(self.project_dir),
             "--agent-type", "initializer",
             "--max-iterations", "1",
@@ -837,7 +837,7 @@ class ParallelOrchestrator:
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
-            cwd=str(AUTOCODER_ROOT),
+            cwd=str(AUTOBUILDR_ROOT),
             env={**os.environ, "PYTHONUNBUFFERED": "1"},
         )
 

@@ -24,7 +24,7 @@ from pathlib import Path
 # Add project root to path and allow remote access for test client
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
-os.environ["AUTOCODER_ALLOW_REMOTE"] = "1"
+os.environ["AUTOBUILDR_ALLOW_REMOTE"] = "1"
 
 import pytest
 from datetime import datetime, timezone

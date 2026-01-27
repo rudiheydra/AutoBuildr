@@ -29,8 +29,8 @@ Phase 3 adds **mid-session approval** for bash commands that aren't in the allow
 
 The agent can only run commands that are:
 1. In the hardcoded allowlist (npm, git, ls, etc.)
-2. In project config (`.autocoder/allowed_commands.yaml`)
-3. In org config (`~/.autocoder/config.yaml`)
+2. In project config (`.autobuildr/allowed_commands.yaml`)
+3. In org config (`~/.autobuildr/config.yaml`)
 
 If the agent tries an unknown command → **immediately blocked**.
 
@@ -261,7 +261,7 @@ def persist_command(project_dir: Path, command: str, description: str = None):
     Atomically append command to project YAML.
     Uses platform-specific file locking.
     """
-    config_path = project_dir / ".autocoder" / "allowed_commands.yaml"
+    config_path = project_dir / ".autobuildr" / "allowed_commands.yaml"
 
     # Ensure file exists
     if not config_path.exists():

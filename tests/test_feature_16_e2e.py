@@ -20,7 +20,7 @@ root = Path(__file__).parent.parent
 sys.path.insert(0, str(root))
 
 # Set environment for testing
-os.environ["AUTOCODER_ALLOW_REMOTE"] = "1"
+os.environ["AUTOBUILDR_ALLOW_REMOTE"] = "1"
 
 
 def test_execute_endpoint_e2e():

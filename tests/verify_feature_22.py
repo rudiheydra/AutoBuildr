@@ -27,7 +27,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 # Allow remote access for test client
-os.environ["AUTOCODER_ALLOW_REMOTE"] = "1"
+os.environ["AUTOBUILDR_ALLOW_REMOTE"] = "1"
 
 
 def verify_step_1_route_defined():

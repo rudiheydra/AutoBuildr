@@ -249,7 +249,7 @@ def create_client(
 
     # Build environment overrides for API endpoint configuration
     # These override system env vars for the Claude CLI subprocess,
-    # allowing AutoCoder to use alternative APIs (e.g., GLM) without
+    # allowing AutoBuildr to use alternative APIs (e.g., GLM) without
     # affecting the user's global Claude Code settings
     sdk_env = {}
     for var in API_ENV_VARS:

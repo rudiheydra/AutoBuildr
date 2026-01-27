@@ -1,21 +1,21 @@
 ---
-name: gsd-to-autocoder-spec
+name: gsd-to-autobuildr-spec
 description: |
-  Convert GSD codebase mapping to Autocoder app_spec.txt. This skill should be used when
-  the user has run /gsd:map-codebase and wants to use Autocoder on an existing project.
-  Triggers: "convert to autocoder", "gsd to spec", "create app_spec from codebase",
-  "use autocoder on existing project", after /gsd:map-codebase completion.
+  Convert GSD codebase mapping to AutoBuildr app_spec.txt. This skill should be used when
+  the user has run /gsd:map-codebase and wants to use AutoBuildr on an existing project.
+  Triggers: "convert to autobuildr", "gsd to spec", "create app_spec from codebase",
+  "use autobuildr on existing project", after /gsd:map-codebase completion.
 ---
 
-# GSD to Autocoder Spec Converter
+# GSD to AutoBuildr Spec Converter
 
-Converts `.planning/codebase/*.md` (GSD mapping output) to `prompts/app_spec.txt` (Autocoder format).
+Converts `.planning/codebase/*.md` (GSD mapping output) to `prompts/app_spec.txt` (AutoBuildr format).
 
 ## When to Use
 
 - After running `/gsd:map-codebase` on an existing project
-- When onboarding an existing codebase to Autocoder
-- User wants Autocoder to continue development on existing code
+- When onboarding an existing codebase to AutoBuildr
+- User wants AutoBuildr to continue development on existing code
 
 ## Prerequisites
 
@@ -87,9 +87,9 @@ Create `prompts/` directory:
 mkdir -p prompts
 ```
 
-**Mapping GSD Documents to Autocoder Spec:**
+**Mapping GSD Documents to AutoBuildr Spec:**
 
-| GSD Source | Autocoder Target |
+| GSD Source | AutoBuildr Target |
 |------------|------------------|
 | STACK.md Languages | `<technology_stack>` |
 | STACK.md Frameworks | `<frontend>`, `<backend>` |
@@ -196,13 +196,13 @@ app_spec.txt generated from GSD codebase mapping.
 Source: .planning/codebase/*.md
 Output: prompts/app_spec.txt
 
-Next: Start Autocoder
+Next: Start AutoBuildr
 
   cd {project_dir}
-  python ~/projects/autocoder/start.py
+  python ~/projects/autobuildr/start.py
 
 Or via UI:
-  ~/projects/autocoder/start_ui.sh
+  ~/projects/autobuildr/start_ui.sh
 
 The Initializer will create features.db from this spec.
 ```

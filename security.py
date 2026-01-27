@@ -422,14 +422,14 @@ def get_org_config_path() -> Path:
     Get the organization-level config file path.
 
     Returns:
-        Path to ~/.autocoder/config.yaml
+        Path to ~/.autobuildr/config.yaml
     """
-    return Path.home() / ".autocoder" / "config.yaml"
+    return Path.home() / ".autobuildr" / "config.yaml"
 
 
 def load_org_config() -> Optional[dict]:
     """
-    Load organization-level config from ~/.autocoder/config.yaml.
+    Load organization-level config from ~/.autobuildr/config.yaml.
 
     Returns:
         Dict with parsed org config, or None if file doesn't exist or is invalid
@@ -509,7 +509,7 @@ def load_project_commands(project_dir: Path) -> Optional[dict]:
     Returns:
         Dict with parsed YAML config, or None if file doesn't exist or is invalid
     """
-    config_path = project_dir / ".autocoder" / "allowed_commands.yaml"
+    config_path = project_dir / ".autobuildr" / "allowed_commands.yaml"
 
     if not config_path.exists():
         return None
@@ -803,7 +803,7 @@ async def bash_security_hook(input_data, tool_use_id=None, context=None):
             # Provide helpful error message with config hint
             error_msg = f"Command '{cmd}' is not allowed.\n"
             error_msg += "To allow this command:\n"
-            error_msg += "  1. Add to .autocoder/allowed_commands.yaml for this project, OR\n"
+            error_msg += "  1. Add to .autobuildr/allowed_commands.yaml for this project, OR\n"
             error_msg += "  2. Request mid-session approval (the agent can ask)\n"
             error_msg += "Note: Some commands are blocked at org-level and cannot be overridden."
             return {

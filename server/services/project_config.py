@@ -6,7 +6,7 @@ Handles project type detection and dev command configuration.
 Detects project types by scanning for configuration files and provides
 default or custom dev commands for each project.
 
-Configuration is stored in {project_dir}/.autocoder/config.json.
+Configuration is stored in {project_dir}/.autobuildr/config.json.
 """
 
 import json
@@ -92,9 +92,9 @@ def _get_config_path(project_dir: Path) -> Path:
         project_dir: Path to the project directory.
 
     Returns:
-        Path to the .autocoder/config.json file.
+        Path to the .autobuildr/config.json file.
     """
-    return project_dir / ".autocoder" / "config.json"
+    return project_dir / ".autobuildr" / "config.json"
 
 
 def _load_config(project_dir: Path) -> dict:
@@ -137,7 +137,7 @@ def _save_config(project_dir: Path, config: dict) -> None:
     """
     Save the project configuration to disk.
 
-    Creates the .autocoder directory if it doesn't exist.
+    Creates the .autobuildr directory if it doesn't exist.
 
     Args:
         project_dir: Path to the project directory.
@@ -148,7 +148,7 @@ def _save_config(project_dir: Path, config: dict) -> None:
     """
     config_path = _get_config_path(project_dir)
 
-    # Ensure the .autocoder directory exists
+    # Ensure the .autobuildr directory exists
     config_path.parent.mkdir(parents=True, exist_ok=True)
 
     try:
@@ -408,11 +408,11 @@ def clear_dev_command(project_dir: Path) -> None:
             config_path.unlink(missing_ok=True)
             logger.info("Removed empty config file for %s", project_dir.name)
 
-            # Also remove .autocoder directory if empty
-            autocoder_dir = config_path.parent
-            if autocoder_dir.exists() and not any(autocoder_dir.iterdir()):
-                autocoder_dir.rmdir()
-                logger.debug("Removed empty .autocoder directory for %s", project_dir.name)
+            # Also remove .autobuildr directory if empty
+            autobuildr_dir = config_path.parent
+            if autobuildr_dir.exists() and not any(autobuildr_dir.iterdir()):
+                autobuildr_dir.rmdir()
+                logger.debug("Removed empty .autobuildr directory for %s", project_dir.name)
         except OSError as e:
             logger.warning("Failed to clean up config for %s: %s", project_dir.name, e)
     else:
