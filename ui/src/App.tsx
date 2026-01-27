@@ -23,6 +23,7 @@ import { SettingsModal } from './components/SettingsModal'
 import { DevServerControl } from './components/DevServerControl'
 import { ViewToggle, type ViewMode } from './components/ViewToggle'
 import { DependencyGraph } from './components/DependencyGraph'
+import { DependencyHealthBanner } from './components/DependencyHealthBanner'
 import { KeyboardShortcutsHelp } from './components/KeyboardShortcutsHelp'
 import { getDependencyGraph } from './lib/api'
 import { Loader2, Settings, Moon, Sun } from 'lucide-react'
@@ -358,6 +359,9 @@ function App() {
               percentage={progress.percentage}
               isConnected={wsState.isConnected}
             />
+
+            {/* Dependency Health Banner - shows warning if dependency issues detected */}
+            <DependencyHealthBanner projectName={selectedProject} />
 
             {/* Agent Mission Control - shows orchestrator status and active agents in parallel mode */}
             <AgentMissionControl

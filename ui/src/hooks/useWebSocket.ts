@@ -327,6 +327,16 @@ export function useProjectWebSocket(projectName: string | null) {
             case 'pong':
               // Heartbeat response
               break
+
+            // Phase 3 AgentRun WebSocket events - handled by useAgentRunUpdates hook
+            // These are forwarded to components that subscribe via the specialized hook
+            case 'agent_run_started':
+            case 'agent_event_logged':
+            case 'agent_acceptance_update':
+              // These messages are processed by the useAgentRunUpdates hook
+              // which creates its own WebSocket connection for run-specific updates.
+              // We log them here for debugging purposes.
+              break
           }
         } catch {
           console.error('Failed to parse WebSocket message')

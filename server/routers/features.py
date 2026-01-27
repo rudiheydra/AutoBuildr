@@ -373,6 +373,75 @@ async def get_dependency_graph(project_name: str):
         raise HTTPException(status_code=500, detail="Failed to get dependency graph")
 
 
+def _get_validate_dependency_graph():
+    """Lazy import of validate_dependency_graph."""
+    import sys
+    root = Path(__file__).parent.parent.parent
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+    from api.dependency_resolver import validate_dependency_graph
+    return validate_dependency_graph
+
+
+@router.get("/dependency-health")
+async def get_dependency_health(project_name: str):
+    """Get dependency health status for the project.
+
+    Returns a summary of dependency issues detected in the project.
+    This can be used by the UI to show a warning banner if issues exist.
+
+    Returns:
+        {
+            has_issues: bool,  # True if any issues exist
+            count: int,        # Total number of issues
+            is_valid: bool,    # True if graph is completely healthy
+            self_references: int,    # Count of self-reference issues
+            cycles: int,             # Count of cycle issues
+            missing_targets: int,    # Count of missing target issues
+            summary: str       # Human-readable summary
+        }
+    """
+    project_name = validate_project_name(project_name)
+    project_dir = _get_project_path(project_name)
+
+    if not project_dir:
+        raise HTTPException(status_code=404, detail=f"Project '{project_name}' not found in registry")
+
+    if not project_dir.exists():
+        raise HTTPException(status_code=404, detail="Project directory not found")
+
+    _, Feature = _get_db_classes()
+    validate_dependency_graph = _get_validate_dependency_graph()
+
+    try:
+        with get_db_session(project_dir) as session:
+            features = session.query(Feature).all()
+            feature_dicts = [f.to_dict() for f in features]
+
+            result = validate_dependency_graph(feature_dicts)
+
+            # Count total issues
+            total_issues = len(result["issues"])
+            self_ref_count = len(result["self_references"])
+            cycle_count = len(result["cycles"])
+            missing_count = sum(len(v) for v in result["missing_targets"].values())
+
+            return {
+                "has_issues": total_issues > 0,
+                "count": total_issues,
+                "is_valid": result["is_valid"],
+                "self_references": self_ref_count,
+                "cycles": cycle_count,
+                "missing_targets": missing_count,
+                "summary": result["summary"],
+            }
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Failed to get dependency health")
+        raise HTTPException(status_code=500, detail="Failed to get dependency health")
+
+
 # ============================================================================
 # Parameterized path endpoints - /{feature_id} routes
 # ============================================================================
