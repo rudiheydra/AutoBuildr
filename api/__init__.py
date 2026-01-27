@@ -101,6 +101,11 @@ from api.tool_policy import (
     record_forbidden_patterns_violation,
     record_policy_violation_event,
     update_run_violation_metadata,
+    # Feature #47: Forbidden Tools Explicit Blocking
+    ForbiddenToolBlocked,
+    extract_forbidden_tools,
+    create_forbidden_tools_violation,
+    record_forbidden_tools_violation,
     # Feature #46: Symlink Target Validation
     BrokenSymlinkError,
     DirectoryAccessBlocked,
@@ -154,9 +159,12 @@ from api.feature_compiler import (
 )
 from api.websocket_events import (
     AcceptanceUpdatePayload,
+    RunStartedPayload,
     ValidatorResultPayload,
     broadcast_acceptance_update,
     broadcast_acceptance_update_sync,
+    broadcast_run_started,
+    broadcast_run_started_sync,
     build_acceptance_update_from_results,
     create_validator_result_payload,
 )
@@ -267,6 +275,64 @@ from api.tool_provider import (
     register_provider,
     execute_tool as execute_provider_tool,  # Alias to avoid conflict with execute_tool from migration_flag
 )
+from api.spec_builder import (
+    # Feature #54: DSPy Module Execution for Spec Generation
+    # Exceptions
+    SpecBuilderError,
+    DSPyInitializationError,
+    DSPyExecutionError,
+    OutputValidationError,
+    ToolPolicyValidationError,
+    ValidatorsValidationError,
+    # Data classes
+    BuildResult,
+    ParsedOutput,
+    # Validation functions
+    validate_tool_policy,
+    validate_validators,
+    parse_json_field,
+    coerce_integer,
+    # Main class
+    SpecBuilder,
+    # Module-level functions
+    get_spec_builder,
+    reset_spec_builder,
+    # Constants
+    DEFAULT_MODEL,
+    AVAILABLE_MODELS,
+    MIN_MAX_TURNS,
+    MAX_MAX_TURNS,
+    MIN_TIMEOUT_SECONDS,
+    MAX_TIMEOUT_SECONDS,
+    TOOL_POLICY_REQUIRED_FIELDS as SPEC_BUILDER_TOOL_POLICY_REQUIRED_FIELDS,
+)
+from api.task_type_detector import (
+    # Feature #56: Task Type Detection from Description
+    # Constants
+    CODING_KEYWORDS,
+    TESTING_KEYWORDS,
+    REFACTORING_KEYWORDS,
+    DOCUMENTATION_KEYWORDS,
+    AUDIT_KEYWORDS,
+    TASK_TYPE_KEYWORDS,
+    VALID_TASK_TYPES as DETECTOR_VALID_TASK_TYPES,
+    MIN_SCORE_THRESHOLD,
+    TIE_BREAKER_PRIORITY,
+    # Data classes
+    TaskTypeDetectionResult,
+    # Core functions
+    detect_task_type,
+    detect_task_type_detailed,
+    normalize_description,
+    score_task_type,
+    calculate_confidence,
+    # Utility functions
+    get_keywords_for_type,
+    get_all_keyword_sets,
+    get_valid_task_types as detector_get_valid_task_types,
+    is_valid_task_type,
+    explain_detection,
+)
 
 __all__ = [
     "Feature",
@@ -363,6 +429,11 @@ __all__ = [
     "record_forbidden_patterns_violation",
     "record_policy_violation_event",
     "update_run_violation_metadata",
+    # Feature #47: Forbidden Tools Explicit Blocking exports
+    "ForbiddenToolBlocked",
+    "extract_forbidden_tools",
+    "create_forbidden_tools_violation",
+    "record_forbidden_tools_violation",
     # Display derivation exports
     "derive_display_name",
     "derive_display_properties",
@@ -396,11 +467,14 @@ __all__ = [
     "get_tools_for_task_type",
     "reset_feature_compiler",
     "slugify",
-    # WebSocket event broadcasting exports (Feature #63)
+    # WebSocket event broadcasting exports (Feature #61, #63)
     "AcceptanceUpdatePayload",
+    "RunStartedPayload",
     "ValidatorResultPayload",
     "broadcast_acceptance_update",
     "broadcast_acceptance_update_sync",
+    "broadcast_run_started",
+    "broadcast_run_started_sync",
     "build_acceptance_update_from_results",
     "create_validator_result_payload",
     # Event recorder exports (Feature #30)
@@ -499,4 +573,44 @@ __all__ = [
     "reset_tool_registry",
     "register_provider",
     "execute_provider_tool",
+    # Feature #54: DSPy Module Execution for Spec Generation exports
+    "SpecBuilderError",
+    "DSPyInitializationError",
+    "DSPyExecutionError",
+    "OutputValidationError",
+    "ToolPolicyValidationError",
+    "ValidatorsValidationError",
+    "BuildResult",
+    "ParsedOutput",
+    "validate_tool_policy",
+    "validate_validators",
+    "parse_json_field",
+    "coerce_integer",
+    "SpecBuilder",
+    "get_spec_builder",
+    "reset_spec_builder",
+    "DEFAULT_MODEL",
+    "AVAILABLE_MODELS",
+    "SPEC_BUILDER_TOOL_POLICY_REQUIRED_FIELDS",
+    # Feature #56: Task Type Detection from Description exports
+    "CODING_KEYWORDS",
+    "TESTING_KEYWORDS",
+    "REFACTORING_KEYWORDS",
+    "DOCUMENTATION_KEYWORDS",
+    "AUDIT_KEYWORDS",
+    "TASK_TYPE_KEYWORDS",
+    "DETECTOR_VALID_TASK_TYPES",
+    "MIN_SCORE_THRESHOLD",
+    "TIE_BREAKER_PRIORITY",
+    "TaskTypeDetectionResult",
+    "detect_task_type",
+    "detect_task_type_detailed",
+    "normalize_description",
+    "score_task_type",
+    "calculate_confidence",
+    "get_keywords_for_type",
+    "get_all_keyword_sets",
+    "detector_get_valid_task_types",
+    "is_valid_task_type",
+    "explain_detection",
 ]
