@@ -118,9 +118,10 @@ class TestPolicyViolationEventType:
     def test_violation_types_defined(self):
         """Verify VIOLATION_TYPES are defined."""
         assert "allowed_tools" in VIOLATION_TYPES
+        assert "forbidden_tools" in VIOLATION_TYPES  # Feature #47
         assert "forbidden_patterns" in VIOLATION_TYPES
         assert "directory_sandbox" in VIOLATION_TYPES
-        assert len(VIOLATION_TYPES) == 3
+        assert len(VIOLATION_TYPES) == 4  # Updated for Feature #47
 
 
 # =============================================================================

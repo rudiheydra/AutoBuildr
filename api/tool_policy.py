@@ -1417,16 +1417,20 @@ class ToolPolicyEnforcer:
             )
             allowed = None
 
+        # Feature #47: Extract forbidden_tools blacklist
+        forbidden = extract_forbidden_tools(tool_policy)
+
         # Feature #42, Steps 1-2: Extract and resolve allowed_directories
         allowed_dirs_raw = extract_allowed_directories(tool_policy)
         allowed_dirs_resolved = resolve_to_absolute_paths(allowed_dirs_raw, base_dir)
 
         _logger.info(
             "Created ToolPolicyEnforcer for spec %s: %d forbidden patterns, "
-            "%s allowed tools, %d allowed directories",
+            "%s allowed tools, %d forbidden tools, %d allowed directories",
             spec.id,
             len(compiled),
             "all" if allowed is None else len(allowed),
+            len(forbidden),
             len(allowed_dirs_resolved),
         )
 
@@ -1434,6 +1438,7 @@ class ToolPolicyEnforcer:
             spec_id=spec.id,
             forbidden_patterns=compiled,
             allowed_tools=allowed,
+            forbidden_tools=forbidden,
             allowed_directories=allowed_dirs_resolved,
             base_dir=base_dir,
             strict_mode=strict,
@@ -1472,6 +1477,9 @@ class ToolPolicyEnforcer:
         if allowed is not None and not isinstance(allowed, list):
             allowed = None
 
+        # Feature #47: Extract forbidden_tools blacklist
+        forbidden = extract_forbidden_tools(tool_policy)
+
         # Feature #42: Extract and resolve allowed_directories
         allowed_dirs_raw = extract_allowed_directories(tool_policy)
         allowed_dirs_resolved = resolve_to_absolute_paths(allowed_dirs_raw, base_dir)
@@ -1480,6 +1488,7 @@ class ToolPolicyEnforcer:
             spec_id=spec_id,
             forbidden_patterns=compiled,
             allowed_tools=allowed,
+            forbidden_tools=forbidden,
             allowed_directories=allowed_dirs_resolved,
             base_dir=base_dir,
             strict_mode=strict,
@@ -1495,15 +1504,17 @@ class ToolPolicyEnforcer:
 
         This method checks:
         1. Tool is in allowed_tools list (if specified)
-        2. Arguments don't match any forbidden_patterns
-        3. Feature #42: File paths are within allowed_directories (if specified)
+        2. Feature #47: Tool is NOT in forbidden_tools list
+        3. Arguments don't match any forbidden_patterns
+        4. Feature #42: File paths are within allowed_directories (if specified)
 
         Args:
             tool_name: Name of the tool being called
             arguments: Tool arguments dict
 
         Raises:
-            ToolCallBlocked: If the tool call violates forbidden patterns
+            ToolCallBlocked: If the tool call violates forbidden patterns or allowed_tools
+            ForbiddenToolBlocked: If the tool is explicitly blocked via forbidden_tools
             DirectoryAccessBlocked: If the tool accesses paths outside sandbox
         """
         # Check allowed tools (if specified)
@@ -1514,6 +1525,20 @@ class ToolPolicyEnforcer:
                     pattern_matched="[not_in_allowed_tools]",
                     arguments=arguments or {},
                     message=f"Tool '{tool_name}' is not in allowed_tools list",
+                )
+
+        # Feature #47, Steps 2-3: Check forbidden_tools blacklist
+        # This check happens AFTER allowed_tools, so forbidden_tools takes precedence
+        # A tool can be in allowed_tools but still blocked if it's in forbidden_tools
+        if self.forbidden_tools:
+            if tool_name in self.forbidden_tools:
+                _logger.warning(
+                    "Feature #47: Tool '%s' blocked by forbidden_tools blacklist for spec %s",
+                    tool_name, self.spec_id
+                )
+                raise ForbiddenToolBlocked(
+                    tool_name=tool_name,
+                    forbidden_tools=self.forbidden_tools,
                 )
 
         # Step 3: Before each tool call, serialize arguments to string
@@ -1618,6 +1643,9 @@ class ToolPolicyEnforcer:
             return (True, None, None)
         except ToolCallBlocked as e:
             return (False, e.pattern_matched, str(e))
+        except ForbiddenToolBlocked as e:
+            # Feature #47: Handle forbidden_tools violations
+            return (False, "[forbidden_tool]", str(e))
         except DirectoryAccessBlocked as e:
             return (False, f"[directory_access:{e.reason}]", str(e))
 
@@ -1656,6 +1684,16 @@ class ToolPolicyEnforcer:
     def pattern_count(self) -> int:
         """Number of compiled forbidden patterns."""
         return len(self.forbidden_patterns)
+
+    @property
+    def has_forbidden_tools(self) -> bool:
+        """True if any forbidden tools are configured (Feature #47)."""
+        return len(self.forbidden_tools) > 0
+
+    @property
+    def forbidden_tools_count(self) -> int:
+        """Number of forbidden tools (Feature #47)."""
+        return len(self.forbidden_tools)
 
     @property
     def has_directory_sandbox(self) -> bool:
@@ -1698,6 +1736,27 @@ class ToolPolicyEnforcer:
             f"Please use paths within the allowed directories."
         )
 
+    def get_forbidden_tool_error_message(
+        self,
+        tool_name: str,
+    ) -> str:
+        """
+        Generate an error message for forbidden tool violations.
+
+        Feature #47, Step 5: Return clear error message to agent.
+
+        Args:
+            tool_name: Name of the blocked tool
+
+        Returns:
+            Human-readable error message for the agent
+        """
+        return (
+            f"Tool '{tool_name}' is explicitly blocked by security policy. "
+            f"This tool is in the forbidden_tools blacklist and cannot be used. "
+            f"Please use an alternative tool to accomplish your task."
+        )
+
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization/logging."""
         return {
@@ -1705,6 +1764,7 @@ class ToolPolicyEnforcer:
             "pattern_count": len(self.forbidden_patterns),
             "patterns": [p.original for p in self.forbidden_patterns],
             "allowed_tools": self.allowed_tools,
+            "forbidden_tools": self.forbidden_tools,  # Feature #47
             "allowed_directories": [str(d) for d in self.allowed_directories],
             "base_dir": self.base_dir,
             "strict_mode": self.strict_mode,
@@ -3185,6 +3245,7 @@ def get_filtered_tool_names(
 # Violation types - categorizes the type of policy violation
 VIOLATION_TYPES = [
     "allowed_tools",        # Tool not in allowed_tools list
+    "forbidden_tools",      # Tool explicitly blocked via forbidden_tools (Feature #47)
     "forbidden_patterns",   # Arguments matched a forbidden pattern
     "directory_sandbox",    # File path outside allowed directories
 ]
@@ -3343,6 +3404,60 @@ def create_allowed_tools_violation(
         turn_number=turn_number,
         details=details,
         message=f"Tool '{tool_name}' is not in the allowed_tools whitelist",
+        blocked_operation=f"Call to tool '{tool_name}'",
+    )
+
+
+def create_forbidden_tools_violation(
+    tool_name: str,
+    turn_number: int,
+    forbidden_tools: list[str],
+    arguments: dict[str, Any] | None = None,
+) -> PolicyViolation:
+    """
+    Create a PolicyViolation for a forbidden_tools violation.
+
+    Feature #47, Step 4: Record policy violation event for forbidden tool.
+
+    Args:
+        tool_name: Name of the tool that was blocked
+        turn_number: Agent turn number when violation occurred
+        forbidden_tools: List of forbidden tools (for context in details)
+        arguments: Tool arguments that were blocked
+
+    Returns:
+        PolicyViolation instance ready for logging
+
+    Example:
+        >>> violation = create_forbidden_tools_violation(
+        ...     "Bash", turn_number=5, forbidden_tools=["Bash", "shell", "exec"]
+        ... )
+        >>> violation.violation_type
+        'forbidden_tools'
+    """
+    # Limit forbidden_tools list in details to avoid huge payloads
+    forbidden_preview = (forbidden_tools[:10] + ["..."]) if len(forbidden_tools) > 10 else forbidden_tools
+
+    details = {
+        "blocked_tool": tool_name,
+        "forbidden_tools": forbidden_preview,
+        "forbidden_tools_count": len(forbidden_tools),
+    }
+
+    # Include truncated arguments if provided
+    if arguments:
+        args_str = json.dumps(arguments, default=str)
+        if len(args_str) > 500:
+            details["arguments_preview"] = args_str[:500] + "..."
+        else:
+            details["arguments"] = arguments
+
+    return PolicyViolation(
+        violation_type="forbidden_tools",
+        tool_name=tool_name,
+        turn_number=turn_number,
+        details=details,
+        message=f"Tool '{tool_name}' is explicitly blocked via forbidden_tools blacklist",
         blocked_operation=f"Call to tool '{tool_name}'",
     )
 
@@ -3588,6 +3703,41 @@ def record_forbidden_patterns_violation(
         tool_name=tool_name,
         turn_number=turn_number,
         pattern_matched=pattern_matched,
+        arguments=arguments,
+    )
+    return record_policy_violation_event(db, run_id, sequence, violation)
+
+
+def record_forbidden_tools_violation(
+    db: "Session",
+    run_id: str,
+    sequence: int,
+    tool_name: str,
+    turn_number: int,
+    forbidden_tools: list[str],
+    arguments: dict[str, Any] | None = None,
+) -> "AgentEvent":
+    """
+    Convenience function to record a forbidden_tools violation event.
+
+    Feature #47, Step 4: Record policy violation event for forbidden tool.
+
+    Args:
+        db: Database session
+        run_id: Run ID
+        sequence: Event sequence number
+        tool_name: Name of blocked tool
+        turn_number: Agent turn number
+        forbidden_tools: List of forbidden tools
+        arguments: Tool arguments that were blocked
+
+    Returns:
+        The created AgentEvent
+    """
+    violation = create_forbidden_tools_violation(
+        tool_name=tool_name,
+        turn_number=turn_number,
+        forbidden_tools=forbidden_tools,
         arguments=arguments,
     )
     return record_policy_violation_event(db, run_id, sequence, violation)
