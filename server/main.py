@@ -63,6 +63,9 @@ UI_DIST_DIR = ROOT_DIR / "ui" / "dist"
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown."""
+    import logging
+    _logger = logging.getLogger(__name__)
+
     # Startup - clean up orphaned lock files from previous runs
     cleanup_orphaned_locks()
     cleanup_orphaned_devserver_locks()
@@ -71,6 +74,26 @@ async def lifespan(app: FastAPI):
     from api.database import create_database, set_session_maker
     _, session_maker = create_database(ROOT_DIR)
     set_session_maker(session_maker)
+
+    # Feature #79: Clean up orphaned AgentRuns from previous server instance
+    # This must happen after database initialization
+    from api.orphaned_run_cleanup import cleanup_orphaned_runs
+    try:
+        with session_maker() as session:
+            result = cleanup_orphaned_runs(session, project_dir=ROOT_DIR)
+            if result.cleaned_count > 0:
+                _logger.info(
+                    "Cleaned %d orphaned AgentRuns on startup",
+                    result.cleaned_count
+                )
+            if result.errors:
+                _logger.warning(
+                    "Errors during orphaned run cleanup: %s",
+                    result.errors
+                )
+    except Exception as e:
+        _logger.error("Failed to clean up orphaned runs: %s", e)
+        # Don't fail startup on cleanup errors
 
     # Start the scheduler service
     scheduler = get_scheduler()
