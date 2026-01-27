@@ -54,6 +54,7 @@ from api.validators import (
     AcceptanceGate,
     FileExistsValidator,
     ForbiddenPatternsValidator,
+    GateResult,
 )
 
 # =============================================================================
@@ -1455,3 +1456,211 @@ def test_forbidden_patterns_catches_violations(db_session):
     assert "forbidden pattern" in result.message.lower(), (
         f"Expected message to mention 'forbidden pattern', got: {result.message}"
     )
+
+
+# =============================================================================
+# Feature #121: Smoke test - full Feature->Spec->Kernel->DB->Gate without API key
+# =============================================================================
+
+class TestSmokeFullWiring:
+    """
+    Single runnable smoke test proving complete end-to-end wiring with
+    NO real API key.
+
+    Flow:
+    1. Create Feature in in-memory SQLite (no API key needed)
+    2. Compile Feature -> AgentSpec via FeatureCompiler (no mock)
+    3. Persist AgentSpec to DB
+    4. Execute via HarnessKernel.execute(spec, turn_executor=mock) -- mock only
+       at boundary (the executor/session), NOT the compile/execute/persist glue
+    5. Assert DB contains AgentSpec, AgentRun, AgentEvent records with correct FKs
+    6. Evaluate AcceptanceGate and assert GateResult returned
+    """
+
+    def test_smoke_full_wiring_no_api_key(self, db_session):
+        """
+        Full end-to-end wiring proof without any API key.
+
+        This smoke test threads together the entire pipeline:
+          Feature -> FeatureCompiler.compile() -> AgentSpec (persisted)
+          -> HarnessKernel.execute(spec, turn_executor=mock) -> AgentRun (persisted)
+          -> DB contains AgentSpec + AgentRun + AgentEvent records
+          -> AcceptanceGate.evaluate() -> GateResult
+
+        Boundary mocking ONLY: the turn_executor is mocked (it would normally
+        call the Claude API), but all compile/execute/persist glue code runs
+        for real against an in-memory SQLite database.
+        """
+        # =====================================================================
+        # Step 1: Create Feature in in-memory SQLite (no API key needed)
+        # =====================================================================
+        feature = Feature(
+            id=500,
+            priority=1,
+            category="A. Database",
+            name="Smoke Test Feature - Full Wiring",
+            description=(
+                "End-to-end smoke test proving Feature to Spec to Kernel to DB "
+                "to Gate wiring works without a real API key."
+            ),
+            steps=[
+                "Create Feature in in-memory SQLite",
+                "Compile Feature to AgentSpec via FeatureCompiler",
+                "Persist AgentSpec to DB",
+                "Execute via HarnessKernel.execute(spec, turn_executor=mock)",
+                "Assert DB has AgentSpec, AgentRun, AgentEvent with correct FKs",
+                "Evaluate AcceptanceGate and assert GateResult returned",
+            ],
+            passes=False,
+            in_progress=False,
+        )
+        db_session.add(feature)
+        db_session.commit()
+
+        # Verify feature persisted
+        persisted_feature = db_session.query(Feature).filter(
+            Feature.id == 500
+        ).first()
+        assert persisted_feature is not None, "Feature must be persisted in DB"
+
+        # =====================================================================
+        # Step 2: Compile Feature -> AgentSpec via FeatureCompiler (NO mock)
+        # =====================================================================
+        compiler = FeatureCompiler()
+        spec = compiler.compile(persisted_feature)
+
+        assert spec is not None, "FeatureCompiler.compile() must return an AgentSpec"
+        assert isinstance(spec, AgentSpec)
+        assert spec.source_feature_id == 500
+        assert spec.task_type == "coding"
+        assert spec.objective is not None and len(spec.objective) > 0
+        assert spec.tool_policy is not None
+        assert "allowed_tools" in spec.tool_policy
+        assert spec.acceptance_spec is not None
+        assert isinstance(spec.acceptance_spec, AcceptanceSpec)
+        assert len(spec.acceptance_spec.validators) > 0
+
+        # =====================================================================
+        # Step 3: Persist AgentSpec to DB
+        # =====================================================================
+        db_session.add(spec)
+        db_session.commit()
+        db_session.refresh(spec)
+
+        # Verify AgentSpec persisted
+        persisted_spec = db_session.query(AgentSpec).filter(
+            AgentSpec.id == spec.id
+        ).first()
+        assert persisted_spec is not None, "AgentSpec must be persisted in DB"
+        assert persisted_spec.id == spec.id
+        assert persisted_spec.source_feature_id == 500
+        assert persisted_spec.task_type == "coding"
+
+        # Record spec ID for FK assertions later
+        spec_id = spec.id
+
+        # =====================================================================
+        # Step 4: Execute via HarnessKernel.execute(spec, turn_executor=mock)
+        #         Mock ONLY at boundary: the turn executor (would be Claude API)
+        # =====================================================================
+        def mock_turn_executor(run, spec):
+            """
+            Boundary mock: simulates a single turn of agent execution.
+            Returns the 5-tuple expected by HarnessKernel.execute():
+              (completed, turn_data, tool_events, input_tokens, output_tokens)
+            """
+            return (
+                True,   # completed - agent signals done after 1 turn
+                {"mock_response": "smoke test turn completed successfully"},
+                [],     # tool_events - no tool calls in smoke test
+                150,    # input_tokens
+                75,     # output_tokens
+            )
+
+        kernel = HarnessKernel(db=db_session)
+        run = kernel.execute(spec, turn_executor=mock_turn_executor)
+
+        assert run is not None, "kernel.execute() must return an AgentRun"
+        assert isinstance(run, AgentRun)
+
+        # =====================================================================
+        # Step 5: Assert DB contains AgentSpec, AgentRun, AgentEvent
+        #         with correct foreign keys
+        # =====================================================================
+
+        # --- 5a: AgentSpec still in DB ---
+        db_spec = db_session.query(AgentSpec).filter(
+            AgentSpec.id == spec_id
+        ).first()
+        assert db_spec is not None, "AgentSpec must exist in DB after kernel run"
+        assert db_spec.id == spec_id
+
+        # --- 5b: AgentRun exists with correct agent_spec_id FK ---
+        db_run = db_session.query(AgentRun).filter(
+            AgentRun.id == run.id
+        ).first()
+        assert db_run is not None, "AgentRun must be persisted in DB"
+        assert db_run.agent_spec_id == spec_id, (
+            f"AgentRun.agent_spec_id FK should be '{spec_id}', "
+            f"got '{db_run.agent_spec_id}'"
+        )
+        assert db_run.status in ("completed", "failed", "timeout"), (
+            f"AgentRun should be in terminal status, got '{db_run.status}'"
+        )
+        assert db_run.turns_used >= 1, (
+            f"Expected at least 1 turn, got {db_run.turns_used}"
+        )
+        assert db_run.tokens_in >= 150, (
+            f"Expected tokens_in >= 150, got {db_run.tokens_in}"
+        )
+        assert db_run.tokens_out >= 75, (
+            f"Expected tokens_out >= 75, got {db_run.tokens_out}"
+        )
+
+        # --- 5c: AgentEvent records exist with correct run_id FK ---
+        events = db_session.query(AgentEvent).filter(
+            AgentEvent.run_id == run.id
+        ).order_by(AgentEvent.sequence).all()
+
+        assert len(events) > 0, "Expected AgentEvent records in DB"
+
+        # All events must have correct run_id FK
+        for event in events:
+            assert event.run_id == run.id, (
+                f"AgentEvent.run_id FK mismatch: '{event.run_id}' != '{run.id}'"
+            )
+
+        # Verify ascending sequence numbers (no duplicates)
+        sequences = [e.sequence for e in events]
+        for i in range(1, len(sequences)):
+            assert sequences[i] > sequences[i - 1], (
+                f"Sequences not ascending: [{sequences[i-1]}, {sequences[i]}]"
+            )
+
+        # Verify expected event types
+        event_types = [e.event_type for e in events]
+        assert "started" in event_types, "Expected 'started' event in DB"
+        assert "turn_complete" in event_types, "Expected 'turn_complete' event"
+
+        # =====================================================================
+        # Step 6: Evaluate AcceptanceGate and assert GateResult returned
+        # =====================================================================
+        gate = AcceptanceGate()
+        gate_result = gate.evaluate(
+            run,
+            spec.acceptance_spec,
+            context={},
+        )
+
+        assert gate_result is not None, "AcceptanceGate.evaluate() must return a result"
+        assert isinstance(gate_result, GateResult), (
+            f"Expected GateResult, got {type(gate_result)}"
+        )
+        assert gate_result.verdict in ("passed", "failed", "partial"), (
+            f"Invalid verdict: '{gate_result.verdict}'"
+        )
+        assert gate_result.gate_mode == "all_pass", (
+            f"gate_mode should be 'all_pass', got '{gate_result.gate_mode}'"
+        )
+        assert isinstance(gate_result.acceptance_results, list)
+        assert isinstance(gate_result.validator_results, list)

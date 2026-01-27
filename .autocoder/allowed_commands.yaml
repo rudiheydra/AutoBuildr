@@ -1,0 +1,17 @@
+version: 1
+
+commands:
+  - name: python
+    description: Python interpreter for running scripts
+  - name: python3
+    description: Python 3 interpreter
+  - name: pip
+    description: Python package installer
+  - name: pip3
+    description: Python 3 package installer
+  - name: uv
+    description: Fast Python package installer
+  - name: pytest
+    description: Python testing framework
+  - name: ruff
+    description: Python linter and formatter
