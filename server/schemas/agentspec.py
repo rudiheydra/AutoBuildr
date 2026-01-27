@@ -646,7 +646,7 @@ class AgentRunResponse(BaseModel):
         default=None,
         description="Final acceptance verdict"
     )
-    acceptance_results: list[dict[str, Any]] | None
+    acceptance_results: dict[str, Any] | None
     error: str | None
     retry_count: int
     created_at: datetime
