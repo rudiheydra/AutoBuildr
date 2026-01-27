@@ -1,6 +1,92 @@
 # AutoBuildr Progress Log
 # ======================
 
+## Session: 2026-01-27 (Coding Agent - Feature #119)
+
+### Feature #119: Proof: Acceptance gate PASS case — deterministic validators only - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Description:** Prove acceptance gate returns verdict='passed' when all deterministic validators pass. No llm_judge.
+
+**Verification Summary (All 7 Feature Steps Passed):**
+
+1. **Create test_acceptance_gate_pass_deterministic() in tests/test_dspy_pipeline_e2e.py** - PASS
+   - Function exists at line 1152 as a standalone test function
+   - Uses db_session and tmp_path fixtures
+
+2. **Create a real file at tmp_path/test_output.txt** - PASS
+   - Creates file with test content using tmp_path / "test_output.txt"
+   - Asserts file exists before evaluation
+
+3. **Create AcceptanceSpec with file_exists validator for that path** - PASS
+   - AcceptanceSpec created with file_exists validator config
+   - gate_mode="all_pass", retry_policy="none"
+
+4. **Evaluate via AcceptanceGate.evaluate(run, acceptance_spec, context)** - PASS
+   - gate = AcceptanceGate(); result = gate.evaluate(run, acceptance_spec, context={})
+
+5. **Assert result.passed is True and result.verdict == 'passed'** - PASS
+
+6. **Assert only deterministic validators used (no llm_judge)** - PASS
+   - DETERMINISTIC_VALIDATOR_TYPES = {"test_pass", "file_exists", "forbidden_patterns"}
+   - Verifies all validator_results and acceptance_results use only deterministic types
+
+7. **Test passes: pytest -k acceptance_gate_pass -v** - PASS
+   - 1 passed, 0 failed in 5.36s
+   - Full suite: 44/44 tests pass (no regressions)
+
+**Commit:** 00bee3e
+
+---
+
+## Session: 2026-01-27 (Coding Agent - Feature #120)
+
+### Feature #120: Proof: Acceptance gate FAIL case — missing file fails deterministically - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Description:** Prove acceptance gate returns verdict='failed' when a required file_exists validator fails. Deterministic — no LLM involvement.
+
+**Verification Summary (All 6 Feature Steps Passed):**
+
+1. **Create test_acceptance_gate_fail_deterministic() in tests/test_dspy_pipeline_e2e.py** - PASS
+   - TestAcceptanceGateFailDeterministic class added at end of file
+
+2. **Create AcceptanceSpec with file_exists validator pointing to non-existent file** - PASS
+   - Uses tmp_path fixture; file intentionally NOT created
+   - Validator config: type="file_exists", should_exist=True, required=True
+
+3. **Evaluate via AcceptanceGate.evaluate(run, acceptance_spec, context)** - PASS
+   - AcceptanceGate().evaluate(run, acceptance_spec, context={}) called successfully
+
+4. **Assert result.passed is False** - PASS
+   - result.passed == False confirmed
+
+5. **Assert result.verdict == 'failed'** - PASS
+   - result.verdict == "failed" confirmed
+
+6. **Test passes: python -m pytest tests/test_dspy_pipeline_e2e.py -k acceptance_gate_fail -v** - PASS
+   - 1 passed, 0 failed in 6.26s
+
+**Test Results:**
+- Full suite: 43/43 tests pass in test_dspy_pipeline_e2e.py (no regressions)
+- Specific test: TestAcceptanceGateFailDeterministic::test_acceptance_gate_fail_deterministic PASS
+
+**Commit:** f937b30
+
+**Updated Progress:**
+- Total: 117/124 features passing (approximately 94.4%)
+- Feature #120: Acceptance gate FAIL case proof — PASSING
+
+**Session completed successfully.**
+
+---
+
 ## Session: 2026-01-27 (Coding Agent - Feature #104)
 
 ### Feature #104: Create spec-builder agent definition (.claude/agents/spec-builder.md) - COMPLETED
@@ -8630,3 +8716,133 @@ Created comprehensive test suite:
 - Feature #114: E2E test: HarnessKernel Execution (TestStep8 — 3 tests) - PASSING
 
 **Session completed successfully.**
+
+---
+
+## Session: 2026-01-27 (Coding Agent - Feature #116)
+
+### Feature #116: Proof: Orchestrator spec-path compiles Feature→AgentSpec via HarnessKernel.execute() - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Description:** Prove the orchestrator path calls the spec-driven kernel (HarnessKernel.execute(spec)) when enabled, not legacy hard-coded agents.
+
+**Dependencies:** None
+
+**Verification Summary (All 7 Feature Steps Passed):**
+
+1. **Create test_orchestrator_spec_path() in tests/test_dspy_pipeline_e2e.py** - PASS
+2. **Create a Feature in in-memory DB with category, name, description, steps** - PASS
+3. **Compile Feature → AgentSpec using FeatureCompiler.compile()** - PASS
+4. **Execute via HarnessKernel.execute(spec, turn_executor=mock_executor)** - PASS
+5. **Assert AgentRun was created with status in terminal states** - PASS
+6. **Assert AgentRun.agent_spec_id matches compiled spec ID** - PASS
+7. **Test passes: python -m pytest tests/test_dspy_pipeline_e2e.py -k orchestrator_spec_path -v** - PASS (1 passed in 4.89s)
+
+**Implementation:**
+- Added TestOrchestratorSpecPath class to tests/test_dspy_pipeline_e2e.py (+130 lines)
+- Boundary mocking only: mock turn_executor, real compile/execute/persist glue
+- All 40 tests in test_dspy_pipeline_e2e.py pass (no regressions)
+
+**Commit:** df7e3d6
+
+**Updated Progress:**
+- Feature #116: Proof: Orchestrator spec-path - PASSING
+
+---
+
+## Session: 2026-01-27 (Coding Agent - Feature #117)
+
+### Feature #117: Proof: Dynamic compilation produces materially different AgentSpecs - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Description:** Prove two different task descriptions compile into materially different AgentSpecs (different task_type, tool_policy, validators, budgets).
+
+**Dependencies:** None
+
+**Verification Summary (All 7 Feature Steps Passed):**
+
+1. **Create test_dynamic_compilation_different_specs() in tests/test_dspy_pipeline_e2e.py** - PASS
+   - Function added as module-level test at end of file
+   - Uses existing audit_feature fixture + inline coding Feature(category='A. Database')
+
+2. **Compile coding Feature (category='A. Database') into AgentSpec** - PASS
+   - FeatureCompiler.compile() produces AgentSpec with task_type='coding'
+
+3. **Compile audit Feature (category='Security') into AgentSpec** - PASS
+   - FeatureCompiler.compile() produces AgentSpec with task_type='audit'
+
+4. **Assert spec1.task_type != spec2.task_type (coding vs audit)** - PASS
+   - coding != audit confirmed
+   - Also verified exact values: spec1.task_type=='coding', spec2.task_type=='audit'
+
+5. **Assert spec1.tool_policy != spec2.tool_policy (different allowed_tools)** - PASS
+   - Full policy dicts differ
+   - Allowed_tools sets differ (coding gets full CODING_TOOLS, audit gets read-only subset)
+
+6. **Assert spec1.max_turns != spec2.max_turns or spec1.timeout_seconds != spec2.timeout_seconds** - PASS
+   - Coding: max_turns=150, timeout=1800
+   - Audit: max_turns=30, timeout=600
+
+7. **Test passes: python -m pytest tests/test_dspy_pipeline_e2e.py -k dynamic_compilation -v** - PASS
+   - 1 passed in 5.36s
+   - Full suite: 41/41 tests pass in 6.64s
+
+**Implementation Details:**
+- Added test_dynamic_compilation_different_specs() to tests/test_dspy_pipeline_e2e.py
+- No code changes to production modules needed
+- Test proves dynamic compilation by showing materially different outputs for different inputs
+
+**Commit:** 0b843d7
+
+**Updated Progress:**
+- Feature #117: Proof: Dynamic compilation produces materially different AgentSpecs - PASSING
+
+**Session completed successfully.**
+[Testing] 2026-01-27 19:52:26 - Feature #36 regression test PASSED
+  - Feature: StaticSpecAdapter for Legacy Initializer
+  - Category: K. Default & Reset
+  - All 10 verification steps passed:
+    Step 1: Create StaticSpecAdapter class - PASS
+    Step 2: Define create_initializer_spec() method - PASS
+    Step 3: Load initializer prompt from prompts/ directory - PASS
+    Step 4: Set objective from prompt template - PASS
+    Step 5: Set task_type to custom - PASS
+    Step 6: Configure tool_policy with feature creation tools only - PASS
+    Step 7: Set max_turns appropriate for initialization - PASS
+    Step 8: Set timeout_seconds for long spec parsing - PASS
+    Step 9: Create AcceptanceSpec with feature_count validator - PASS
+    Step 10: Return static AgentSpec - PASS
+  - Unit tests: 45/45 passed (test_static_spec_adapter.py)
+  - E2E verification: All steps passed (verify_feature_36_e2e.py)
+  - Python verification script: 10/10 passed (verify_feature_36.py)
+  - Source code intact: api/static_spec_adapter.py (831 lines)
+  - Browser automation unavailable (Chrome launch failure in container)
+  - No regression found - feature still working correctly
+
+---
+
+## Session: 2026-01-27 (Coding Agent - Feature #118)
+
+### Feature #118: Proof: Persistence after kernel run - COMPLETED
+
+**Status:** PASSING
+**Category:** data
+
+**Verification (7/7 steps passed):**
+1. Create test_persistence_after_kernel_run() - PASS
+2. Create AgentSpec and persist to SQLite - PASS
+3. Execute via HarnessKernel with 2-turn mock executor - PASS
+4. Query DB: AgentSpec exists with correct ID - PASS
+5. Query DB: AgentRun has agent_spec_id FK to spec - PASS
+6. Query DB: AgentEvents have run_id FK and ascending sequences - PASS
+7. pytest -k persistence_after_kernel -v passes - PASS
+
+**Files:** tests/test_dspy_pipeline_e2e.py (added TestPersistenceAfterKernelRun)
+**Commit:** b08d115
+**Suite:** 43/43 tests pass
