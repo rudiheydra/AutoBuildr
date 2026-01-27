@@ -209,14 +209,14 @@ class TestResolveTargetPath:
 
     def test_resolve_absolute_path(self):
         """Absolute path should remain absolute."""
-        path, was_symlink = resolve_target_path("/home/user/file.txt")
+        path, was_symlink, is_broken = resolve_target_path("/home/user/file.txt")
         assert path.is_absolute()
         assert str(path) == "/home/user/file.txt"
 
     def test_resolve_relative_path(self):
         """Relative path should be made absolute."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            path, was_symlink = resolve_target_path("file.txt", base_dir=tmpdir)
+            path, was_symlink, is_broken = resolve_target_path("file.txt", base_dir=tmpdir)
             assert path.is_absolute()
             assert str(path).startswith(tmpdir)
 
@@ -232,7 +232,7 @@ class TestResolveTargetPath:
 
             os.symlink(real_file, symlink)
 
-            path, was_symlink = resolve_target_path(symlink)
+            path, was_symlink, is_broken = resolve_target_path(symlink)
             assert was_symlink is True
 
 
@@ -343,7 +343,7 @@ class TestSymlinkValidation:
             os.symlink(real_file, symlink)
 
             # Resolving should follow symlink
-            path, was_symlink = resolve_target_path(symlink, follow_symlinks=True)
+            path, was_symlink, is_broken = resolve_target_path(symlink, follow_symlinks=True)
             assert was_symlink is True
             assert str(path) == real_file
 
@@ -706,7 +706,7 @@ class TestFeature42VerificationSteps:
 
     def test_step4_resolve_target_to_absolute(self):
         """Step 4: Resolve target path to absolute."""
-        path, _ = resolve_target_path("./file.txt", base_dir="/home/user")
+        path, _, _ = resolve_target_path("./file.txt", base_dir="/home/user")
         assert path.is_absolute()
 
     def test_step5_check_under_allowed(self):
@@ -728,7 +728,7 @@ class TestFeature42VerificationSteps:
                 f.write("test")
             os.symlink(real, link)
 
-            path, was_symlink = resolve_target_path(link, follow_symlinks=True)
+            path, was_symlink, is_broken = resolve_target_path(link, follow_symlinks=True)
             assert was_symlink is True
             assert str(path) == real
 

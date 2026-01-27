@@ -443,17 +443,324 @@ def extract_path_from_arguments(
     return None
 
 
-def contains_path_traversal(path_str: str) -> bool:
+@dataclass
+class PathTraversalResult:
     """
-    Check if a path string contains path traversal attempts.
+    Result of path traversal attack detection.
 
-    Feature #42, Step 6: Block path traversal attempts (..)
+    Feature #48: Path Traversal Attack Detection
+
+    Provides detailed information about the detection for security audit logging.
+    """
+
+    detected: bool  # True if attack detected
+    attack_type: str | None = None  # Type of attack (e.g., "dotdot", "url_encoded", "null_byte")
+    matched_pattern: str | None = None  # The specific pattern that matched
+    original_path: str = ""  # Original path string
+    normalized_path: str | None = None  # Normalized path (if computed)
+    details: dict[str, Any] = field(default_factory=dict)  # Additional audit info
+
+    def __bool__(self) -> bool:
+        """Allow using result in boolean context."""
+        return self.detected
+
+
+def contains_null_byte(path_str: str) -> tuple[bool, int | None]:
+    """
+    Check if a path contains null bytes that could truncate paths.
+
+    Feature #48, Step 3: Check for null bytes that could truncate paths
+
+    Null bytes (\\x00) can be used to truncate file paths in some systems,
+    potentially bypassing security checks.
 
     Args:
         path_str: Path string to check
 
     Returns:
-        True if path contains '..' traversal, False otherwise
+        Tuple of (contains_null: bool, position: int | None)
+
+    Example:
+        >>> contains_null_byte("/etc/passwd\\x00.txt")
+        (True, 11)
+        >>> contains_null_byte("/etc/passwd")
+        (False, None)
+    """
+    try:
+        position = path_str.index('\x00')
+        return True, position
+    except ValueError:
+        pass
+
+    # Also check for URL-encoded null bytes
+    path_lower = path_str.lower()
+    null_byte_patterns = [
+        "%00",  # URL-encoded null
+        "%2500",  # Double URL-encoded null
+        "\\0",  # Backslash-escaped null
+        "\\x00",  # Hex-escaped null (literal string, not actual byte)
+    ]
+
+    for pattern in null_byte_patterns:
+        if pattern in path_lower:
+            return True, path_lower.index(pattern)
+
+    return False, None
+
+
+def normalize_path_for_comparison(path_str: str) -> str:
+    """
+    Normalize a path for comparison to detect traversal attempts.
+
+    Feature #48, Step 4: Normalize path and compare to original
+
+    This function normalizes the path without resolving symlinks,
+    so we can compare it to the original to detect traversal attempts.
+
+    Args:
+        path_str: Path string to normalize
+
+    Returns:
+        Normalized path string
+
+    Example:
+        >>> normalize_path_for_comparison("/home/user/../root/secret")
+        '/root/secret'
+        >>> normalize_path_for_comparison("/home/user/./file.txt")
+        '/home/user/file.txt'
+    """
+    # Use os.path.normpath for consistent normalization
+    # This removes redundant separators and collapses .. sequences
+    return os.path.normpath(path_str)
+
+
+def path_differs_after_normalization(path_str: str) -> tuple[bool, str]:
+    """
+    Check if path normalization changes the path structure.
+
+    Feature #48, Step 5: Block if normalized differs (indicates traversal attempt)
+
+    A difference after normalization can indicate:
+    - Path traversal via ..
+    - Current directory references via .
+    - Redundant separators that might bypass filters
+
+    Args:
+        path_str: Path string to check
+
+    Returns:
+        Tuple of (differs: bool, normalized: str)
+
+    Example:
+        >>> path_differs_after_normalization("/home/user/../root")
+        (True, '/home/root')
+        >>> path_differs_after_normalization("/home/user/file.txt")
+        (False, '/home/user/file.txt')
+    """
+    normalized = normalize_path_for_comparison(path_str)
+
+    # Compare ignoring trailing slashes
+    original_clean = path_str.rstrip("/\\")
+    normalized_clean = normalized.rstrip("/\\")
+
+    differs = original_clean != normalized_clean
+    return differs, normalized
+
+
+def detect_path_traversal_attack(path_str: str) -> PathTraversalResult:
+    """
+    Comprehensive path traversal attack detection.
+
+    Feature #48: Path Traversal Attack Detection
+
+    This function implements all 6 verification steps:
+    1. Check for .. sequences in raw path string
+    2. Check for URL-encoded traversal %2e%2e
+    3. Check for null bytes that could truncate paths
+    4. Normalize path and compare to original
+    5. Block if normalized differs (indicates traversal attempt)
+    6. Log detailed violation info for security audit
+
+    Args:
+        path_str: Path string to check for attack patterns
+
+    Returns:
+        PathTraversalResult with detection details for security audit
+
+    Example:
+        >>> result = detect_path_traversal_attack("/home/user/../root/secret")
+        >>> result.detected
+        True
+        >>> result.attack_type
+        'dotdot_traversal'
+
+        >>> result = detect_path_traversal_attack("/etc/passwd%00.txt")
+        >>> result.detected
+        True
+        >>> result.attack_type
+        'null_byte'
+    """
+    result = PathTraversalResult(
+        detected=False,
+        original_path=path_str,
+        details={
+            "checks_performed": [],
+            "timestamp": _utc_now().isoformat(),
+        },
+    )
+
+    # Step 1: Check for .. sequences in raw path string
+    result.details["checks_performed"].append("dotdot_sequence")
+    path = Path(path_str)
+    for part in path.parts:
+        if part == "..":
+            result.detected = True
+            result.attack_type = "dotdot_traversal"
+            result.matched_pattern = ".."
+            result.details["component"] = part
+            _logger.warning(
+                "Feature #48: Path traversal detected (dotdot): %s",
+                path_str
+            )
+            return result
+
+    # Step 2: Check for URL-encoded traversal patterns (%2e%2e)
+    result.details["checks_performed"].append("url_encoded_traversal")
+    path_lower = path_str.lower()
+
+    # Comprehensive list of URL-encoded traversal patterns
+    encoded_traversal_patterns = {
+        # Standard URL encoding
+        "%2e%2e/": "url_encoded_dotdot_slash",
+        "/%2e%2e": "url_encoded_slash_dotdot",
+        "%2e%2e%2f": "url_encoded_dotdot_and_slash",
+        "%2e%2e%5c": "url_encoded_dotdot_and_backslash",
+        # Double URL encoding
+        "%252e%252e/": "double_encoded_dotdot_slash",
+        "/%252e%252e": "double_encoded_slash_dotdot",
+        "%252e%252e%252f": "double_encoded_dotdot_and_slash",
+        # Unicode overlong encoding (IIS vulnerabilities)
+        "..%c0%af": "unicode_overlong_slash",
+        "..%c1%9c": "unicode_overlong_backslash_variant",
+        "..%c0%2f": "unicode_overlong_slash_variant",
+        "..%c1%1c": "unicode_overlong_another_variant",
+        # Mixed encoding
+        "..%2f": "dotdot_encoded_slash",
+        "..%5c": "dotdot_encoded_backslash",
+        "%2e./": "partial_encoded_traversal",
+        ".%2e/": "partial_encoded_traversal_2",
+        # Triple encoding (rare but possible)
+        "%25252e%25252e": "triple_encoded_dotdot",
+    }
+
+    for pattern, attack_name in encoded_traversal_patterns.items():
+        if pattern in path_lower:
+            result.detected = True
+            result.attack_type = "url_encoded_traversal"
+            result.matched_pattern = pattern
+            result.details["encoding_type"] = attack_name
+            _logger.warning(
+                "Feature #48: URL-encoded path traversal detected: %s (pattern: %s)",
+                path_str, pattern
+            )
+            return result
+
+    # Step 3: Check for null bytes that could truncate paths
+    result.details["checks_performed"].append("null_byte")
+    has_null, null_position = contains_null_byte(path_str)
+    if has_null:
+        result.detected = True
+        result.attack_type = "null_byte"
+        result.matched_pattern = "\\x00"
+        result.details["null_position"] = null_position
+        # Extract what would be the "effective" path after truncation
+        if null_position is not None:
+            result.details["effective_path"] = path_str[:null_position]
+        _logger.warning(
+            "Feature #48: Null byte path truncation detected at position %s: %s",
+            null_position, repr(path_str)
+        )
+        return result
+
+    # Step 4 & 5: Normalize path and compare to original
+    result.details["checks_performed"].append("normalization_comparison")
+    differs, normalized = path_differs_after_normalization(path_str)
+    result.normalized_path = normalized
+
+    if differs:
+        # Check if the difference is due to traversal (not just ./current dir)
+        # Only flag as attack if the normalized path is "higher" in the tree
+        # or if the original contained .. sequences that got collapsed
+        original_parts = Path(path_str).parts
+        normalized_parts = Path(normalized).parts
+
+        # Detect if normalization collapsed a .. (attack) vs just removed ./
+        contains_dotdot_like = (
+            ".." in path_str or
+            "%2e%2e" in path_lower or
+            # Check if it looks like a traversal attempt that got normalized away
+            len(normalized_parts) < len(original_parts)
+        )
+
+        if contains_dotdot_like:
+            result.detected = True
+            result.attack_type = "normalized_traversal"
+            result.matched_pattern = f"normalization_diff"
+            result.details["original"] = path_str
+            result.details["normalized"] = normalized
+            result.details["original_parts"] = list(original_parts)
+            result.details["normalized_parts"] = list(normalized_parts)
+            _logger.warning(
+                "Feature #48: Path traversal detected via normalization: '%s' -> '%s'",
+                path_str, normalized
+            )
+            return result
+
+    # Check for boundary cases
+    result.details["checks_performed"].append("boundary_cases")
+    if path_str.startswith("..") and len(path_str) > 2 and path_str[2] in "/\\":
+        result.detected = True
+        result.attack_type = "dotdot_traversal"
+        result.matched_pattern = "../ (start)"
+        _logger.warning(
+            "Feature #48: Path traversal detected (start with ../): %s",
+            path_str
+        )
+        return result
+
+    if path_str.endswith("/..") or path_str.endswith("\\.."):
+        result.detected = True
+        result.attack_type = "dotdot_traversal"
+        result.matched_pattern = ".. (end)"
+        _logger.warning(
+            "Feature #48: Path traversal detected (ends with /..): %s",
+            path_str
+        )
+        return result
+
+    # No attack detected
+    result.details["result"] = "clean"
+    return result
+
+
+def contains_path_traversal(path_str: str) -> bool:
+    """
+    Check if a path string contains path traversal attempts.
+
+    Feature #42, Step 6: Block path traversal attempts (..)
+    Feature #48: Path Traversal Attack Detection (enhanced)
+
+    This is a convenience wrapper around detect_path_traversal_attack()
+    that returns a simple boolean for backward compatibility.
+
+    For detailed security audit information, use detect_path_traversal_attack()
+    directly.
+
+    Args:
+        path_str: Path string to check
+
+    Returns:
+        True if path contains traversal attack patterns, False otherwise
 
     Example:
         >>> contains_path_traversal("/home/user/../root/secret")
@@ -462,41 +769,104 @@ def contains_path_traversal(path_str: str) -> bool:
         False
         >>> contains_path_traversal("/home/user/file..txt")  # Not a traversal
         False
+        >>> contains_path_traversal("/etc/passwd%00.txt")  # Null byte attack
+        True
     """
-    # Check each part of the path for actual ".." traversal component
-    path = Path(path_str)
-    for part in path.parts:
-        if part == "..":
-            return True
+    result = detect_path_traversal_attack(path_str)
+    return result.detected
 
-    # Check for URL-encoded traversal patterns
-    # These need to be checked in context (as path separators)
-    path_lower = path_str.lower()
 
-    # URL-encoded patterns that indicate traversal
-    encoded_traversal_patterns = [
-        "%2e%2e/",      # URL-encoded ../
-        "/%2e%2e",      # /.. URL-encoded
-        "%252e%252e/",  # Double URL-encoded ../
-        "/%252e%252e",  # Double URL-encoded /..
-        "..%c0%af",     # Unicode overlong encoding of /
-        "..%c1%9c",     # Unicode overlong encoding variant
-        "..%2f",        # ../ with URL-encoded /
-        "..%5c",        # ..\ with URL-encoded \
-    ]
+class BrokenSymlinkError(ToolPolicyError):
+    """
+    Raised when a symlink target cannot be resolved.
 
-    for pattern in encoded_traversal_patterns:
-        if pattern in path_lower:
-            return True
+    Feature #46: Symlink Target Validation
+    Handles broken symlinks gracefully.
+    """
 
-    # Check for standalone ".." at start or end (boundary cases)
-    # This catches "../" at start or "/.." at end
-    if path_str.startswith("..") and len(path_str) > 2 and path_str[2] in "/\\":
-        return True
-    if path_str.endswith("/..") or path_str.endswith("\\.."):
-        return True
+    def __init__(
+        self,
+        symlink_path: str,
+        target_path: str | None = None,
+        message: str | None = None,
+    ):
+        self.symlink_path = symlink_path
+        self.target_path = target_path
 
-    return False
+        if message is None:
+            if target_path:
+                message = (
+                    f"Broken symlink: '{symlink_path}' -> '{target_path}' "
+                    f"(target does not exist)"
+                )
+            else:
+                message = f"Broken symlink: '{symlink_path}' (cannot read target)"
+
+        super().__init__(message)
+
+
+def is_broken_symlink(path: Path) -> bool:
+    """
+    Check if a path is a broken symlink.
+
+    Feature #46, Step 4: Handle broken symlinks gracefully
+
+    A broken symlink is a symlink whose target does not exist.
+
+    Args:
+        path: Path to check
+
+    Returns:
+        True if path is a symlink that points to a non-existent target
+
+    Example:
+        >>> is_broken_symlink(Path("/path/to/broken_link"))
+        True
+        >>> is_broken_symlink(Path("/path/to/working_link"))
+        False
+    """
+    try:
+        # is_symlink() returns True if path is a symlink (regardless of target)
+        if not path.is_symlink():
+            return False
+
+        # exists() follows symlinks, so it returns False for broken symlinks
+        # For a symlink, exists() checks if the TARGET exists
+        return not path.exists()
+
+    except OSError as e:
+        _logger.debug(
+            "OSError checking symlink status for %s: %s",
+            path, e
+        )
+        return False
+
+
+def get_symlink_target(path: Path) -> str | None:
+    """
+    Get the target of a symlink without resolving the full chain.
+
+    Feature #46, Step 5: Log symlink resolution in debug output
+
+    Args:
+        path: Symlink path
+
+    Returns:
+        The immediate target path as string, or None if not a symlink or error
+
+    Example:
+        >>> get_symlink_target(Path("/path/to/link"))
+        '../target/file.txt'
+    """
+    try:
+        if path.is_symlink():
+            return str(path.readlink())
+    except OSError as e:
+        _logger.debug(
+            "Failed to read symlink target for %s: %s",
+            path, e
+        )
+    return None
 
 
 def resolve_target_path(
@@ -504,7 +874,7 @@ def resolve_target_path(
     base_dir: str | None = None,
     *,
     follow_symlinks: bool = True,
-) -> tuple[Path, bool]:
+) -> tuple[Path, bool, bool]:
     """
     Resolve a target path to absolute form, optionally following symlinks.
 
@@ -512,17 +882,29 @@ def resolve_target_path(
     - Step 4: Resolve target path to absolute
     - Step 7: If target is symlink, resolve and validate final target
 
+    Feature #46: Symlink Target Validation
+    - Step 1: Check if path is symlink using Path.is_symlink()
+    - Step 2: Resolve symlink to final target using Path.resolve()
+    - Step 4: Handle broken symlinks gracefully
+    - Step 5: Log symlink resolution in debug output
+
     Args:
         path_str: Target path string
         base_dir: Base directory for relative paths
         follow_symlinks: Whether to resolve symlinks to their targets
 
     Returns:
-        Tuple of (resolved_path, was_symlink)
+        Tuple of (resolved_path, was_symlink, is_broken)
+        - resolved_path: The resolved absolute path
+        - was_symlink: True if original path was a symlink
+        - is_broken: True if symlink is broken (target doesn't exist)
+
+    Raises:
+        BrokenSymlinkError: When follow_symlinks=True and symlink is broken
 
     Example:
         >>> resolve_target_path("./file.txt", "/home/user")
-        (PosixPath('/home/user/file.txt'), False)
+        (PosixPath('/home/user/file.txt'), False, False)
     """
     base = Path(base_dir) if base_dir else Path.cwd()
     target = Path(path_str)
@@ -532,22 +914,65 @@ def resolve_target_path(
         target = base / target
 
     was_symlink = False
+    is_broken = False
 
     if follow_symlinks:
-        # Check if it's a symlink before resolving
+        # Feature #46, Step 1: Check if path is symlink using Path.is_symlink()
         try:
             was_symlink = target.is_symlink()
-        except OSError:
-            pass  # Path doesn't exist or other error
+        except OSError as e:
+            _logger.debug(
+                "OSError checking is_symlink for %s: %s",
+                target, e
+            )
 
+        if was_symlink:
+            # Feature #46, Step 5: Log symlink resolution in debug output
+            symlink_target = get_symlink_target(target)
+            _logger.debug(
+                "Feature #46: Path is symlink: %s -> %s",
+                target, symlink_target or "(unknown)"
+            )
+
+            # Feature #46, Step 4: Handle broken symlinks gracefully
+            is_broken = is_broken_symlink(target)
+            if is_broken:
+                _logger.debug(
+                    "Feature #46: Broken symlink detected: %s -> %s (target does not exist)",
+                    target, symlink_target or "(unknown)"
+                )
+                # We don't raise here - let caller decide how to handle
+                # resolve() on a broken symlink will still return a path
+
+        # Feature #46, Step 2: Resolve symlink to final target using Path.resolve()
         # resolve() normalizes the path AND follows symlinks
-        resolved = target.resolve()
+        try:
+            resolved = target.resolve()
+        except RuntimeError as e:
+            # Handle symlink loops (circular references like link -> link)
+            # Python raises RuntimeError("Symlink loop from ...") for these
+            if "symlink loop" in str(e).lower():
+                _logger.debug(
+                    "Feature #46: Symlink loop detected: %s -> %s (treating as broken)",
+                    target, str(e)
+                )
+                is_broken = True
+                # Return the original target path (normalized but not resolved)
+                resolved = Path(os.path.normpath(target.absolute()))
+            else:
+                raise
+
+        if was_symlink:
+            _logger.debug(
+                "Feature #46: Symlink resolved: %s -> %s (was_symlink=%s, is_broken=%s)",
+                path_str, resolved, was_symlink, is_broken
+            )
     else:
         # Just normalize without following symlinks
         # Use absolute() + normpath pattern
         resolved = Path(os.path.normpath(target.absolute()))
 
-    return resolved, was_symlink
+    return resolved, was_symlink, is_broken
 
 
 def is_path_under_directories(
@@ -595,23 +1020,29 @@ def validate_directory_access(
     target_path_str: str,
     allowed_directories: list[Path],
     base_dir: str | None = None,
+    *,
+    allow_broken_symlinks: bool = False,
 ) -> tuple[bool, str | None, dict[str, Any]]:
     """
     Validate that a file operation target is within allowed directories.
 
     Feature #42: Combined validation including all security checks.
+    Feature #46: Symlink Target Validation
 
     This function performs:
     1. Path traversal detection
     2. Path resolution to absolute
-    3. Symlink resolution and validation
-    4. Directory containment check
+    3. Symlink resolution and validation (Feature #46)
+    4. Broken symlink detection (Feature #46)
+    5. Directory containment check
 
     Args:
         tool_name: Name of the tool making the access
         target_path_str: Target path string from tool arguments
         allowed_directories: List of resolved allowed directory paths
         base_dir: Base directory for resolving relative paths
+        allow_broken_symlinks: If False (default), broken symlinks are blocked.
+            If True, broken symlinks are allowed but logged.
 
     Returns:
         Tuple of (allowed: bool, reason: str | None, details: dict)
@@ -631,30 +1062,79 @@ def validate_directory_access(
         "tool": tool_name,
     }
 
-    # Step 6: Block path traversal attempts
-    if contains_path_traversal(target_path_str):
+    # Feature #48: Enhanced path traversal attack detection with security audit logging
+    # Step 6: Log detailed violation info for security audit
+    traversal_result = detect_path_traversal_attack(target_path_str)
+    if traversal_result.detected:
+        # Feature #48, Step 6: Include detailed security audit information
         details["traversal_detected"] = True
+        details["attack_type"] = traversal_result.attack_type
+        details["matched_pattern"] = traversal_result.matched_pattern
+        details["normalized_path"] = traversal_result.normalized_path
+        details["security_audit"] = traversal_result.details
+
+        # Construct detailed reason message for logging
+        reason_parts = ["Path contains security risk"]
+        if traversal_result.attack_type == "dotdot_traversal":
+            reason_parts.append("directory traversal (..) detected")
+        elif traversal_result.attack_type == "url_encoded_traversal":
+            reason_parts.append(f"URL-encoded traversal ({traversal_result.matched_pattern}) detected")
+        elif traversal_result.attack_type == "null_byte":
+            reason_parts.append("null byte path truncation detected")
+        elif traversal_result.attack_type == "normalized_traversal":
+            reason_parts.append("path normalization reveals traversal attempt")
+
+        _logger.warning(
+            "Feature #48: Security audit - Path traversal attack blocked. "
+            "Tool: %s, Path: %s, Attack Type: %s, Pattern: %s, Details: %s",
+            tool_name,
+            target_path_str,
+            traversal_result.attack_type,
+            traversal_result.matched_pattern,
+            traversal_result.details,
+        )
+
         return (
             False,
-            "Path contains directory traversal (..) which is not allowed",
+            ": ".join(reason_parts),
             details,
         )
 
     # Steps 4 & 7: Resolve to absolute and handle symlinks
+    # Feature #46: Symlink Target Validation - all 5 steps
     try:
-        resolved_path, was_symlink = resolve_target_path(
+        # Feature #46, Steps 1-2: Check symlink and resolve to final target
+        resolved_path, was_symlink, is_broken = resolve_target_path(
             target_path_str,
             base_dir=base_dir,
             follow_symlinks=True,  # Step 7: resolve symlinks
         )
         details["resolved_path"] = str(resolved_path)
         details["was_symlink"] = was_symlink
+        details["is_broken_symlink"] = is_broken
 
+        # Feature #46, Step 5: Log symlink resolution in debug output
         if was_symlink:
             _logger.debug(
-                "Symlink detected: %s -> %s",
+                "Feature #46: Symlink detected and resolved: %s -> %s "
+                "(is_broken=%s)",
+                target_path_str, resolved_path, is_broken
+            )
+
+        # Feature #46, Step 4: Handle broken symlinks gracefully
+        if is_broken:
+            _logger.warning(
+                "Feature #46: Broken symlink detected: %s "
+                "(resolved to non-existent target: %s)",
                 target_path_str, resolved_path
             )
+            if not allow_broken_symlinks:
+                details["broken_symlink_blocked"] = True
+                return (
+                    False,
+                    f"Broken symlink: '{target_path_str}' points to non-existent target",
+                    details,
+                )
 
     except (ValueError, OSError) as e:
         details["resolution_error"] = str(e)
