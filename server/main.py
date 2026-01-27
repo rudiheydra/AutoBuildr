@@ -54,6 +54,7 @@ from .services.process_manager import cleanup_all_managers, cleanup_orphaned_loc
 from .services.scheduler_service import cleanup_scheduler, get_scheduler
 from .services.terminal_manager import cleanup_all_terminals
 from .websocket import project_websocket
+from .exceptions import register_exception_handlers
 
 # Paths
 ROOT_DIR = Path(__file__).parent.parent
@@ -118,6 +119,15 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+# ============================================================================
+# Exception Handlers (Feature #75: Standardized API Error Responses)
+# ============================================================================
+
+# Register global exception handlers for consistent error responses
+# This ensures all API errors follow the same format:
+# {"error_code": "ERROR_TYPE", "message": "Human-readable message", "details": {...}}
+register_exception_handlers(app)
 
 # Check if remote access is enabled via environment variable
 # Set by start_ui.py when --host is not 127.0.0.1
