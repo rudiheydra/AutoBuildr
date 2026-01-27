@@ -145,6 +145,19 @@ export interface AgentSpecSummary {
   source_feature_id: number | null
 }
 
+/**
+ * Acceptance validator result from the API
+ * Includes validator type for icon display (Feature #74)
+ */
+export interface AcceptanceValidatorResult {
+  passed: boolean
+  message: string
+  type?: string           // Validator type (test_pass, file_exists, etc.) - Feature #74
+  score?: number          // Optional score for weighted validators
+  required?: boolean      // Whether this is a required validator
+  details?: Record<string, unknown>  // Optional debug details
+}
+
 // AgentRun for UI display
 export interface AgentRun {
   id: string
@@ -156,7 +169,7 @@ export interface AgentRun {
   tokens_in: number
   tokens_out: number
   final_verdict: AgentRunVerdict | null
-  acceptance_results: Record<string, { passed: boolean; message: string }> | null
+  acceptance_results: Record<string, AcceptanceValidatorResult> | null
   error: string | null
   retry_count: number
 }
@@ -229,6 +242,9 @@ export type AgentMascot = typeof AGENT_MASCOTS[number]
 // Agent state for Mission Control
 export type AgentState = 'idle' | 'thinking' | 'working' | 'testing' | 'success' | 'error' | 'struggling'
 
+// Thinking state for DynamicAgentCard - represents current activity state
+export type ThinkingState = 'idle' | 'thinking' | 'coding' | 'testing' | 'validating'
+
 // Agent type (coding vs testing)
 export type AgentType = 'coding' | 'testing'
 
@@ -284,7 +300,7 @@ export interface OrchestratorStatus {
 }
 
 // WebSocket message types
-export type WSMessageType = 'progress' | 'feature_update' | 'log' | 'agent_status' | 'pong' | 'dev_log' | 'dev_server_status' | 'agent_update' | 'orchestrator_update'
+export type WSMessageType = 'progress' | 'feature_update' | 'log' | 'agent_status' | 'pong' | 'dev_log' | 'dev_server_status' | 'agent_update' | 'orchestrator_update' | 'agent_run_started' | 'agent_event_logged' | 'agent_acceptance_update'
 
 export interface WSProgressMessage {
   type: 'progress'
@@ -358,6 +374,62 @@ export interface WSOrchestratorUpdateMessage {
   featureName?: string
 }
 
+// ============================================================================
+// AgentRun WebSocket Message Types (Phase 3 Real-time Updates)
+// ============================================================================
+
+/**
+ * WebSocket message for agent_run_started event.
+ * Broadcast when an AgentRun begins execution.
+ */
+export interface WSAgentRunStartedMessage {
+  type: 'agent_run_started'
+  run_id: string
+  spec_id: string
+  display_name: string
+  icon: string | null
+  started_at: string
+  timestamp: string
+}
+
+/**
+ * WebSocket message for agent_event_logged event.
+ * Broadcast for significant events during execution (tool_call, turn_complete, acceptance_check).
+ */
+export interface WSAgentEventLoggedMessage {
+  type: 'agent_event_logged'
+  run_id: string
+  event_type: AgentEventType
+  sequence: number
+  tool_name?: string
+  timestamp: string
+}
+
+/**
+ * Validator result in acceptance update message.
+ */
+export interface WSValidatorResult {
+  index: number
+  type: string
+  passed: boolean
+  message: string
+  score?: number
+  details?: Record<string, unknown>
+}
+
+/**
+ * WebSocket message for agent_acceptance_update event.
+ * Broadcast when acceptance validators are evaluated.
+ */
+export interface WSAgentAcceptanceUpdateMessage {
+  type: 'agent_acceptance_update'
+  run_id: string
+  final_verdict: AgentRunVerdict | null
+  validator_results: WSValidatorResult[]
+  gate_mode: 'all_pass' | 'any_pass' | 'weighted'
+  timestamp: string
+}
+
 export type WSMessage =
   | WSProgressMessage
   | WSFeatureUpdateMessage
@@ -368,6 +440,9 @@ export type WSMessage =
   | WSDevLogMessage
   | WSDevServerStatusMessage
   | WSOrchestratorUpdateMessage
+  | WSAgentRunStartedMessage
+  | WSAgentEventLoggedMessage
+  | WSAgentAcceptanceUpdateMessage
 
 // ============================================================================
 // Spec Chat Types

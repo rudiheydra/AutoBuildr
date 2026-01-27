@@ -15,7 +15,8 @@
 
 import { Clock, AlertCircle, CheckCircle, PauseCircle, XCircle, Timer, Play, ExternalLink, Check, X, Brain, Code, TestTube, Shield } from 'lucide-react'
 import { TurnsProgressBar } from './TurnsProgressBar'
-import type { AgentRunStatus, DynamicAgentData, AgentRun, ThinkingState, AgentEventType } from '../lib/types'
+import { ValidatorTypeIcon } from './ValidatorTypeIcon'
+import type { AgentRunStatus, DynamicAgentData, AgentRun, ThinkingState, AgentEventType, AcceptanceValidatorResult } from '../lib/types'
 
 interface DynamicAgentCardProps {
   data: DynamicAgentData
@@ -368,9 +369,10 @@ function ErrorDisplay({ status, error, onClick }: ErrorDisplayProps) {
 /**
  * ValidatorStatusIndicators Component
  * Displays a compact summary of acceptance/validator results
+ * Feature #74: Now includes validator type icons (Step 8)
  */
 function ValidatorStatusIndicators({ run }: { run: AgentRun }) {
-  const results = run.acceptance_results as Record<string, { passed: boolean; message: string }> | null
+  const results = run.acceptance_results as Record<string, AcceptanceValidatorResult> | null
 
   if (!results || Object.keys(results).length === 0) {
     return null
@@ -391,7 +393,7 @@ function ValidatorStatusIndicators({ run }: { run: AgentRun }) {
         </span>
       </div>
 
-      {/* Individual validator indicators */}
+      {/* Individual validator indicators - Feature #74: Step 8 */}
       <div className="flex flex-wrap gap-1 mt-1.5">
         {entries.map(([name, result]) => (
           <span
@@ -404,7 +406,15 @@ function ValidatorStatusIndicators({ run }: { run: AgentRun }) {
               }
             `}
             title={result.message}
+            data-testid={`validator-indicator-${result.type || name}`}
           >
+            {/* Feature #74: Validator type icon */}
+            <ValidatorTypeIcon
+              validatorType={result.type || name}
+              size={10}
+              showTooltip={false}
+              className="flex-shrink-0"
+            />
             {result.passed ? <Check size={10} /> : <X size={10} />}
             <span className="max-w-16 truncate">{name}</span>
           </span>
