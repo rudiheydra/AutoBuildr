@@ -28,11 +28,10 @@ import {
   Square,
   Clock,
   AlertCircle,
-  CheckCircle,
-  XCircle,
 } from 'lucide-react'
 import { EventTimeline } from './EventTimeline'
 import { ArtifactList } from './ArtifactList'
+import { AcceptanceResults, VerdictBadge } from './AcceptanceResults'
 import { StatusBadge } from './DynamicAgentCard'
 import { TurnsProgressBar } from './TurnsProgressBar'
 import { RunInspectorSkeleton } from './Skeleton'
@@ -98,81 +97,20 @@ const TABS: TabConfig[] = [
 ]
 
 // =============================================================================
-// Verdict Badge Component
+// Acceptance Results Wrapper
 // =============================================================================
 
-function VerdictBadge({ verdict }: { verdict: AgentRunVerdict | null }) {
-  if (!verdict) return null
-
-  const config: Record<AgentRunVerdict, { icon: typeof CheckCircle; color: string; label: string }> = {
-    passed: {
-      icon: CheckCircle,
-      color: 'text-green-600 dark:text-green-400 bg-green-100 dark:bg-green-900/30',
-      label: 'Passed',
-    },
-    failed: {
-      icon: XCircle,
-      color: 'text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/30',
-      label: 'Failed',
-    },
-    partial: {
-      icon: AlertCircle,
-      color: 'text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30',
-      label: 'Partial',
-    },
-  }
-
-  const { icon: Icon, color, label } = config[verdict]
-
+/**
+ * AcceptanceResultsPanel - Wrapper for AcceptanceResults component
+ * that extracts data from AgentRun and passes to the new component.
+ */
+function AcceptanceResultsPanel({ run }: { run: AgentRun }) {
   return (
-    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium ${color}`}>
-      <Icon size={14} />
-      {label}
-    </span>
-  )
-}
-
-// =============================================================================
-// Acceptance Results Component
-// =============================================================================
-
-function AcceptanceResults({ run }: { run: AgentRun }) {
-  const results = run.acceptance_results as Record<string, { passed: boolean; message: string }> | null
-
-  if (!results || Object.keys(results).length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center h-64 text-neo-text-secondary">
-        <Clock size={32} className="mb-2 opacity-50" />
-        <p>No acceptance results yet</p>
-        <p className="text-xs mt-1">Results will appear after validation runs</p>
-      </div>
-    )
-  }
-
-  return (
-    <div className="space-y-3">
-      {Object.entries(results).map(([name, result]) => (
-        <div
-          key={name}
-          className={`
-            neo-card-flat p-3
-            ${result.passed ? 'border-l-4 border-l-green-500' : 'border-l-4 border-l-red-500'}
-          `}
-        >
-          <div className="flex items-start gap-2">
-            {result.passed ? (
-              <CheckCircle size={16} className="text-green-600 dark:text-green-400 mt-0.5" />
-            ) : (
-              <XCircle size={16} className="text-red-600 dark:text-red-400 mt-0.5" />
-            )}
-            <div className="flex-1 min-w-0">
-              <p className="font-medium text-sm">{name}</p>
-              <p className="text-xs text-neo-text-secondary mt-1">{result.message}</p>
-            </div>
-          </div>
-        </div>
-      ))}
-    </div>
+    <AcceptanceResults
+      acceptanceResults={run.acceptance_results}
+      verdict={run.final_verdict}
+      retryCount={run.retry_count}
+    />
   )
 }
 
@@ -562,7 +500,7 @@ export function RunInspector(props: RunInspectorProps) {
                   id="panel-acceptance"
                   aria-labelledby="tab-acceptance"
                 >
-                  <AcceptanceResults run={data.run} />
+                  <AcceptanceResultsPanel run={data.run} />
                 </div>
               )}
               {activeTab === 'acceptance' && !data.run && (
