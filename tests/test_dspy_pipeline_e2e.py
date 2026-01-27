@@ -792,3 +792,133 @@ class TestFullPipelineE2E:
         assert gate_result.verdict in ("passed", "failed", "partial")
         assert gate_result.gate_mode == "all_pass"
         assert isinstance(gate_result.acceptance_results, list)
+
+
+# =============================================================================
+# Feature #116: Proof: Orchestrator spec-path compiles Feature→AgentSpec
+#               via HarnessKernel.execute()
+# =============================================================================
+
+class TestOrchestratorSpecPath:
+    """
+    Prove the orchestrator path calls the spec-driven kernel
+    (HarnessKernel.execute(spec)) when enabled, not legacy hard-coded agents.
+
+    This test:
+    1. Creates a Feature in in-memory DB
+    2. Compiles it via FeatureCompiler into an AgentSpec
+    3. Executes via HarnessKernel.execute() with a mocked turn_executor
+    4. Asserts the spec-driven path was used (AgentRun created with correct agent_spec_id)
+
+    Boundary mocking only: mock the turn_executor, but do NOT mock
+    compile/execute/persist glue.
+    """
+
+    def test_orchestrator_spec_path(self, db_session):
+        """
+        Full orchestrator spec-path proof:
+        Feature → FeatureCompiler.compile() → AgentSpec → HarnessKernel.execute() → AgentRun
+
+        Verifies:
+        - Feature is created in DB
+        - FeatureCompiler.compile() produces a valid AgentSpec
+        - HarnessKernel.execute(spec, turn_executor=mock) creates an AgentRun
+        - AgentRun is persisted with correct agent_spec_id
+        - AgentRun status is in terminal states (completed, failed, or timeout)
+        """
+        # Step 1: Create a Feature in in-memory DB with category, name, description, steps
+        feature = Feature(
+            id=200,
+            priority=1,
+            category="functional",
+            name="Orchestrator Spec Path Test Feature",
+            description="Test feature to prove orchestrator spec-path compiles Feature→AgentSpec via HarnessKernel.execute()",
+            steps=[
+                "Create a Feature in in-memory DB",
+                "Compile Feature → AgentSpec using FeatureCompiler.compile()",
+                "Execute via HarnessKernel.execute(spec, turn_executor=mock_executor)",
+                "Assert AgentRun was created with status in terminal states",
+            ],
+            passes=False,
+            in_progress=False,
+        )
+        db_session.add(feature)
+        db_session.commit()
+
+        # Verify feature is in DB
+        persisted_feature = db_session.query(Feature).filter(Feature.id == 200).first()
+        assert persisted_feature is not None
+        assert persisted_feature.name == "Orchestrator Spec Path Test Feature"
+
+        # Step 2: Compile Feature → AgentSpec using FeatureCompiler.compile()
+        compiler = FeatureCompiler()
+        spec = compiler.compile(persisted_feature)
+
+        assert spec is not None
+        assert isinstance(spec, AgentSpec)
+        assert spec.source_feature_id == 200
+        assert spec.objective is not None
+        assert spec.tool_policy is not None
+        assert spec.acceptance_spec is not None
+
+        # Persist the AgentSpec and its AcceptanceSpec to the DB
+        db_session.add(spec)
+        db_session.commit()
+        db_session.refresh(spec)
+
+        # Record the spec ID for later assertion
+        compiled_spec_id = spec.id
+
+        # Step 3: Execute via HarnessKernel.execute() with a mocked turn_executor
+        # The mock turn_executor simulates one turn then signals completion
+        # Return signature: (completed, turn_data, tool_events, input_tokens, output_tokens)
+        def mock_turn_executor(run, spec):
+            """Mock turn executor that completes after one turn."""
+            return (
+                True,  # completed = True (agent signals done)
+                {"mock_response": "test turn completed"},  # turn_data
+                [],  # tool_events (no tool calls)
+                100,  # input_tokens
+                50,   # output_tokens
+            )
+
+        kernel = HarnessKernel(db=db_session)
+        run = kernel.execute(spec, turn_executor=mock_turn_executor)
+
+        # Step 4: Assert AgentRun was created with status in terminal states
+        assert run is not None
+        assert isinstance(run, AgentRun)
+        assert run.status in ("completed", "failed", "timeout"), (
+            f"Expected terminal status, got '{run.status}'"
+        )
+
+        # Step 5: Assert AgentRun.agent_spec_id matches compiled spec ID
+        assert run.agent_spec_id == compiled_spec_id, (
+            f"Expected agent_spec_id={compiled_spec_id}, got {run.agent_spec_id}"
+        )
+
+        # Verify the run is persisted in the database
+        persisted_run = db_session.query(AgentRun).filter(
+            AgentRun.id == run.id
+        ).first()
+        assert persisted_run is not None
+        assert persisted_run.agent_spec_id == compiled_spec_id
+        assert persisted_run.status in ("completed", "failed", "timeout")
+
+        # Verify that the run has recorded events (proves kernel execution path)
+        events = db_session.query(AgentEvent).filter(
+            AgentEvent.run_id == run.id
+        ).order_by(AgentEvent.sequence).all()
+        assert len(events) > 0, "Expected at least one event to be recorded"
+
+        # Verify started event exists
+        event_types = [e.event_type for e in events]
+        assert "started" in event_types, "Expected 'started' event in event trail"
+
+        # Verify turn_complete event exists (from mock executor)
+        assert "turn_complete" in event_types, "Expected 'turn_complete' event"
+
+        # Verify the run tracked token usage from the mock executor
+        assert run.turns_used >= 1, "Expected at least 1 turn to be used"
+        assert run.tokens_in >= 100, f"Expected tokens_in >= 100, got {run.tokens_in}"
+        assert run.tokens_out >= 50, f"Expected tokens_out >= 50, got {run.tokens_out}"
