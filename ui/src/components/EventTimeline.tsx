@@ -269,6 +269,7 @@ function EventCard({ event, isExpanded, onToggle, onClick }: EventCardProps) {
           }
         }}
         aria-expanded={isExpanded}
+        aria-label={`${config.label} event${event.tool_name ? `: ${event.tool_name}` : ''} at ${formatTimestamp(event.timestamp)}, sequence ${event.sequence}. ${isExpanded ? 'Collapse' : 'Expand'} for details.`}
       >
         {/* Header row */}
         <div className="flex items-center justify-between gap-2">
@@ -368,14 +369,19 @@ function FilterDropdown({ selectedType, onChange }: FilterDropdownProps) {
         onClick={() => setIsOpen(!isOpen)}
         aria-haspopup="listbox"
         aria-expanded={isOpen}
+        aria-label={`Filter events. Currently showing: ${selectedConfig ? selectedConfig.label : 'All Events'}`}
       >
-        <Filter size={14} />
+        <Filter size={14} aria-hidden="true" />
         {selectedConfig ? selectedConfig.label : 'All Events'}
-        <ChevronDown size={14} className={`transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        <ChevronDown size={14} className={`transition-transform ${isOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
       </button>
 
       {isOpen && (
-        <div className="absolute top-full left-0 mt-1 z-50 neo-dropdown min-w-[160px]">
+        <div
+          className="absolute top-full left-0 mt-1 z-50 neo-dropdown min-w-[160px]"
+          role="listbox"
+          aria-label="Filter events by type"
+        >
           {/* All events option */}
           <button
             className={`
@@ -386,12 +392,14 @@ function FilterDropdown({ selectedType, onChange }: FilterDropdownProps) {
               onChange(null)
               setIsOpen(false)
             }}
+            role="option"
+            aria-selected={selectedType === null}
           >
             All Events
           </button>
 
           {/* Divider */}
-          <div className="border-t border-neo-border my-1" />
+          <div className="border-t border-neo-border my-1" aria-hidden="true" />
 
           {/* Event type options */}
           {ALL_EVENT_TYPES.map((type) => {
@@ -408,8 +416,10 @@ function FilterDropdown({ selectedType, onChange }: FilterDropdownProps) {
                   onChange(type)
                   setIsOpen(false)
                 }}
+                role="option"
+                aria-selected={selectedType === type}
               >
-                <Icon size={14} className={config.color} />
+                <Icon size={14} className={config.color} aria-hidden="true" />
                 {config.label}
               </button>
             )
@@ -568,8 +578,13 @@ export function EventTimeline({
           </div>
           <div className="flex items-center gap-2">
             <FilterDropdown selectedType={filterType} onChange={handleFilterChange} />
-            <button className="neo-btn neo-btn-sm neo-btn-icon" onClick={handleRefresh} title="Refresh">
-              <RefreshCw size={14} />
+            <button
+              className="neo-btn neo-btn-sm neo-btn-icon"
+              onClick={handleRefresh}
+              title="Refresh"
+              aria-label="Refresh event timeline"
+            >
+              <RefreshCw size={14} aria-hidden="true" />
             </button>
           </div>
         </div>
@@ -601,9 +616,10 @@ export function EventTimeline({
             className="neo-btn neo-btn-sm neo-btn-icon"
             onClick={handleRefresh}
             title="Refresh"
+            aria-label="Refresh event timeline"
             disabled={isLoading}
           >
-            <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} />
+            <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} aria-hidden="true" />
           </button>
         </div>
       </div>

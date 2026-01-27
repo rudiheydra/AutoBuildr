@@ -254,6 +254,7 @@ export function ThinkingStateIndicator({
  * AgentRun Status Badge component
  * Displays status with appropriate color coding
  * Includes ARIA attributes for screen reader accessibility
+ * Features pattern/icon fallbacks for high contrast mode (Feature #83)
  */
 function StatusBadge({ status }: { status: AgentRunStatus }) {
   const Icon = getStatusIcon(status)
@@ -265,8 +266,12 @@ function StatusBadge({ status }: { status: AgentRunStatus }) {
       role="status"
       aria-live="polite"
       aria-label={`Agent status: ${label}`}
+      data-status={status}
     >
-      <Icon size={14} aria-hidden="true" />
+      {/* Icon wrapper with pattern fallback indicator class */}
+      <span className="neo-status-indicator-pattern" data-status={status}>
+        <Icon size={14} aria-hidden="true" />
+      </span>
       {label}
     </span>
   )

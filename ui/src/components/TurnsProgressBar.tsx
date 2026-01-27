@@ -17,7 +17,7 @@
  * ```
  */
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useId } from 'react'
 import type { AgentRunStatus } from '../lib/types'
 
 // ============================================================================
@@ -112,6 +112,10 @@ export function TurnsProgressBar({
   label = 'Turns',
   size = 'md',
 }: TurnsProgressBarProps) {
+  // Generate unique IDs for ARIA describedby
+  const uniqueId = useId()
+  const descriptionId = `progress-description-${uniqueId}`
+
   // Tooltip state
   const [showTooltip, setShowTooltip] = useState(false)
   const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 })
@@ -160,9 +164,12 @@ export function TurnsProgressBar({
 
   return (
     <div className={`${className}`}>
-      {/* Label row */}
+      {/* Label row with ID for aria-describedby */}
       {showLabel && (
-        <div className={`flex justify-between ${fontSize} text-neo-text-secondary mb-1`}>
+        <div
+          id={descriptionId}
+          className={`flex justify-between ${fontSize} text-neo-text-secondary mb-1`}
+        >
           <span>{label}</span>
           <span>
             {used} / {max}
@@ -182,6 +189,7 @@ export function TurnsProgressBar({
         aria-valuemin={0}
         aria-valuemax={max}
         aria-label={`${used} of ${max} turns used`}
+        aria-describedby={showLabel ? descriptionId : undefined}
       >
         {/* Animated fill */}
         <div

@@ -164,6 +164,9 @@ function PreviewModal({ artifact, content, isLoading, error, onClose }: PreviewM
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
       onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="preview-modal-title"
     >
       <div
         className="neo-card max-w-3xl w-full mx-4 max-h-[80vh] flex flex-col"
@@ -175,10 +178,10 @@ function PreviewModal({ artifact, content, isLoading, error, onClose }: PreviewM
             <div
               className={`w-8 h-8 rounded-full flex items-center justify-center ${config.bgColor}`}
             >
-              <Icon size={16} className={config.color} />
+              <Icon size={16} className={config.color} aria-hidden="true" />
             </div>
             <div>
-              <h3 className="font-display font-bold">{config.label} Preview</h3>
+              <h3 id="preview-modal-title" className="font-display font-bold">{config.label} Preview</h3>
               <p className="text-xs text-neo-text-muted truncate max-w-md">
                 {artifact.path || 'No path'}
               </p>
@@ -188,8 +191,9 @@ function PreviewModal({ artifact, content, isLoading, error, onClose }: PreviewM
             className="neo-btn neo-btn-sm neo-btn-icon"
             onClick={onClose}
             title="Close"
+            aria-label="Close preview modal"
           >
-            <X size={16} />
+            <X size={16} aria-hidden="true" />
           </button>
         </div>
 
@@ -232,11 +236,12 @@ function PreviewModal({ artifact, content, isLoading, error, onClose }: PreviewM
             href={getArtifactContentUrl(artifact.id)}
             download
             className="neo-btn neo-btn-sm neo-btn-primary"
+            aria-label={`Download ${config.label}`}
           >
-            <Download size={14} />
+            <Download size={14} aria-hidden="true" />
             Download
           </a>
-          <button className="neo-btn neo-btn-sm" onClick={onClose}>
+          <button className="neo-btn neo-btn-sm" onClick={onClose} aria-label="Close preview modal">
             Close
           </button>
         </div>
@@ -275,6 +280,7 @@ function ArtifactCard({ artifact, onPreview, onClick }: ArtifactCardProps) {
             }
           : undefined
       }
+      aria-label={onClick ? `${config.label}: ${formatPath(artifact.path)}, ${formatSize(artifact.size_bytes)}` : undefined}
     >
       <div className="flex items-start gap-3">
         {/* Icon */}
@@ -284,7 +290,7 @@ function ArtifactCard({ artifact, onPreview, onClick }: ArtifactCardProps) {
             ${config.bgColor}
           `}
         >
-          <Icon size={20} className={config.color} />
+          <Icon size={20} className={config.color} aria-hidden="true" />
         </div>
 
         {/* Content */}
@@ -312,7 +318,7 @@ function ArtifactCard({ artifact, onPreview, onClick }: ArtifactCardProps) {
           {/* Metadata row */}
           <div className="flex items-center gap-3 mt-1 text-xs text-neo-text-muted">
             <span className="flex items-center gap-1">
-              <HardDrive size={12} />
+              <HardDrive size={12} aria-hidden="true" />
               {formatSize(artifact.size_bytes)}
             </span>
             {artifact.has_inline_content && (
@@ -336,8 +342,9 @@ function ArtifactCard({ artifact, onPreview, onClick }: ArtifactCardProps) {
                 onPreview()
               }}
               title="Preview"
+              aria-label={`Preview ${config.label}: ${formatPath(artifact.path)}`}
             >
-              <Eye size={14} />
+              <Eye size={14} aria-hidden="true" />
             </button>
           )}
           <a
@@ -346,8 +353,9 @@ function ArtifactCard({ artifact, onPreview, onClick }: ArtifactCardProps) {
             className="neo-btn neo-btn-sm neo-btn-icon"
             onClick={(e) => e.stopPropagation()}
             title="Download"
+            aria-label={`Download ${config.label}: ${formatPath(artifact.path)}`}
           >
-            <Download size={14} />
+            <Download size={14} aria-hidden="true" />
           </a>
         </div>
       </div>
@@ -391,14 +399,19 @@ function FilterDropdown({ selectedType, onChange }: FilterDropdownProps) {
         onClick={() => setIsOpen(!isOpen)}
         aria-haspopup="listbox"
         aria-expanded={isOpen}
+        aria-label={`Filter artifacts. Currently showing: ${selectedConfig ? selectedConfig.label : 'All Types'}`}
       >
-        <Filter size={14} />
+        <Filter size={14} aria-hidden="true" />
         {selectedConfig ? selectedConfig.label : 'All Types'}
-        <ChevronDown size={14} className={`transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        <ChevronDown size={14} className={`transition-transform ${isOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
       </button>
 
       {isOpen && (
-        <div className="absolute top-full left-0 mt-1 z-50 neo-dropdown min-w-[160px]">
+        <div
+          className="absolute top-full left-0 mt-1 z-50 neo-dropdown min-w-[160px]"
+          role="listbox"
+          aria-label="Filter artifacts by type"
+        >
           {/* All types option */}
           <button
             className={`
@@ -409,12 +422,14 @@ function FilterDropdown({ selectedType, onChange }: FilterDropdownProps) {
               onChange(null)
               setIsOpen(false)
             }}
+            role="option"
+            aria-selected={selectedType === null}
           >
             All Types
           </button>
 
           {/* Divider */}
-          <div className="border-t border-neo-border my-1" />
+          <div className="border-t border-neo-border my-1" aria-hidden="true" />
 
           {/* Artifact type options */}
           {ALL_ARTIFACT_TYPES.map((type) => {
@@ -431,8 +446,10 @@ function FilterDropdown({ selectedType, onChange }: FilterDropdownProps) {
                   onChange(type)
                   setIsOpen(false)
                 }}
+                role="option"
+                aria-selected={selectedType === type}
               >
-                <Icon size={14} className={config.color} />
+                <Icon size={14} className={config.color} aria-hidden="true" />
                 {config.label}
               </button>
             )
@@ -541,8 +558,8 @@ export function ArtifactList({
       <div className={`flex flex-col items-center justify-center p-8 ${className}`}>
         <AlertCircle className="w-8 h-8 text-neo-danger mb-2" />
         <p className="text-sm text-neo-text-secondary mb-3">{error}</p>
-        <button className="neo-btn neo-btn-sm" onClick={handleRefresh}>
-          <RefreshCw size={14} />
+        <button className="neo-btn neo-btn-sm" onClick={handleRefresh} aria-label="Retry loading artifacts">
+          <RefreshCw size={14} aria-hidden="true" />
           Retry
         </button>
       </div>
@@ -565,8 +582,9 @@ export function ArtifactList({
               className="neo-btn neo-btn-sm neo-btn-icon"
               onClick={handleRefresh}
               title="Refresh"
+              aria-label="Refresh artifacts list"
             >
-              <RefreshCw size={14} />
+              <RefreshCw size={14} aria-hidden="true" />
             </button>
           </div>
         </div>
@@ -599,9 +617,10 @@ export function ArtifactList({
             className="neo-btn neo-btn-sm neo-btn-icon"
             onClick={handleRefresh}
             title="Refresh"
+            aria-label="Refresh artifacts list"
             disabled={isLoading}
           >
-            <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} />
+            <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} aria-hidden="true" />
           </button>
         </div>
       </div>
