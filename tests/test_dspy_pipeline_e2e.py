@@ -34,30 +34,27 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from api.database import Base, Feature
 from api.agentspec_models import (
-    AgentSpec,
-    AgentRun,
+    TASK_TYPES,
     AcceptanceSpec,
     AgentEvent,
+    AgentRun,
+    AgentSpec,
     generate_uuid,
-    TASK_TYPES,
 )
-from api.task_type_detector import detect_task_type, detect_task_type_detailed
-from api.tool_policy import derive_tool_policy, derive_budget
-from api.spec_name_generator import generate_spec_name
-from api.validator_generator import generate_validators_from_steps
+from api.database import Base, Feature
 from api.feature_compiler import FeatureCompiler
-from api.spec_builder import SpecBuilder, BuildResult
-from api.harness_kernel import HarnessKernel, BudgetTracker
+from api.harness_kernel import BudgetTracker, HarnessKernel
+from api.spec_builder import BuildResult, SpecBuilder
+from api.spec_name_generator import generate_spec_name
+from api.task_type_detector import detect_task_type, detect_task_type_detailed
+from api.tool_policy import derive_budget, derive_tool_policy
+from api.validator_generator import generate_validators_from_steps
 from api.validators import (
     AcceptanceGate,
-    ForbiddenPatternsValidator,
-    GateResult,
-    ValidatorResult,
     FileExistsValidator,
+    ForbiddenPatternsValidator,
 )
-
 
 # =============================================================================
 # Test Fixtures
@@ -1340,3 +1337,121 @@ class TestAcceptanceGateFailDeterministic:
             f"Expected verdict='failed' for missing file validator, "
             f"but got verdict='{result.verdict}'"
         )
+
+
+# =============================================================================
+# Feature #122: Proof: ForbiddenPatternsValidator catches forbidden output
+# =============================================================================
+
+def test_forbidden_patterns_catches_violations(db_session):
+    """
+    Prove ForbiddenPatternsValidator works deterministically against agent run
+    events containing forbidden patterns.
+
+    Steps:
+    1. Create AgentRun with AgentEvent(event_type='tool_result') containing 'rm -rf /'
+    2. Configure ForbiddenPatternsValidator with patterns ['rm -rf']
+    3. Evaluate validator
+    4. Assert result.passed is False (forbidden pattern detected)
+    5. Assert result.details contains match information
+
+    No LLM involvement — purely deterministic validation.
+    """
+    # Step 1: Create AgentSpec (required FK parent for AgentRun)
+    spec = AgentSpec(
+        id=generate_uuid(),
+        name="test-forbidden-patterns-spec",
+        display_name="Forbidden Patterns Test Spec",
+        objective="Test forbidden patterns detection",
+        task_type="coding",
+        tool_policy={"allowed_tools": ["Bash"], "forbidden_patterns": [], "policy_version": "v1"},
+        max_turns=10,
+        timeout_seconds=300,
+    )
+    db_session.add(spec)
+    db_session.flush()
+
+    # Step 2: Create AgentRun linked to the spec
+    run = AgentRun(
+        id=generate_uuid(),
+        agent_spec_id=spec.id,
+        status="completed",
+        turns_used=1,
+    )
+    db_session.add(run)
+    db_session.flush()
+
+    # Step 3: Create AgentEvent with event_type='tool_result' containing forbidden text
+    forbidden_event = AgentEvent(
+        run_id=run.id,
+        event_type="tool_result",
+        sequence=1,
+        payload="Executing command: rm -rf / --no-preserve-root",
+        tool_name="Bash",
+    )
+    db_session.add(forbidden_event)
+    db_session.commit()
+
+    # Refresh run to load events relationship
+    db_session.refresh(run)
+
+    # Verify precondition: run has the tool_result event
+    assert len(run.events) == 1, f"Expected 1 event, got {len(run.events)}"
+    assert run.events[0].event_type == "tool_result"
+    assert "rm -rf /" in run.events[0].payload
+
+    # Step 4: Configure ForbiddenPatternsValidator with patterns ['rm -rf']
+    validator = ForbiddenPatternsValidator()
+    config = {
+        "patterns": ["rm -rf"],
+        "case_sensitive": True,
+        "description": "Check for dangerous commands",
+    }
+
+    # Step 5: Evaluate validator with run context
+    result = validator.evaluate(config=config, context={}, run=run)
+
+    # Step 6: Assert result.passed is False (forbidden pattern detected)
+    assert result.passed is False, (
+        f"Expected result.passed to be False when forbidden pattern 'rm -rf' "
+        f"is present in tool_result event, but got {result.passed}. "
+        f"Message: {result.message}"
+    )
+
+    # Step 7: Assert result.details contains match information
+    assert "matches" in result.details, (
+        f"Expected 'matches' key in result.details, "
+        f"got keys: {list(result.details.keys())}"
+    )
+    matches = result.details["matches"]
+    assert len(matches) >= 1, (
+        f"Expected at least 1 match in details, got {len(matches)}"
+    )
+
+    # Verify the match contains the expected pattern info
+    first_match = matches[0]
+    assert first_match["pattern"] == "rm -rf", (
+        f"Expected matched pattern to be 'rm -rf', got '{first_match['pattern']}'"
+    )
+    assert "matched_text" in first_match, "Match should include 'matched_text'"
+    assert first_match["matched_text"] == "rm -rf", (
+        f"Expected matched_text='rm -rf', got '{first_match['matched_text']}'"
+    )
+
+    # Verify other details
+    assert result.details["patterns_checked"] == ["rm -rf"], (
+        f"Expected patterns_checked=['rm -rf'], got {result.details['patterns_checked']}"
+    )
+    assert result.details["events_checked"] == 1, (
+        f"Expected events_checked=1, got {result.details['events_checked']}"
+    )
+
+    # Verify validator_type
+    assert result.validator_type == "forbidden_patterns", (
+        f"Expected validator_type='forbidden_patterns', got '{result.validator_type}'"
+    )
+
+    # Verify message mentions forbidden patterns found
+    assert "forbidden pattern" in result.message.lower(), (
+        f"Expected message to mention 'forbidden pattern', got: {result.message}"
+    )
