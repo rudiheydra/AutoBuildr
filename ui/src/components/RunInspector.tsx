@@ -6,14 +6,21 @@
  * Shows event timeline, artifacts, and acceptance results.
  *
  * Features:
- * - Tabbed interface (Events, Artifacts, Acceptance)
+ * - Tabbed interface (Timeline, Artifacts, Acceptance)
  * - Loading states with skeletons
  * - Action buttons (pause, cancel) with loading spinners
  * - Optimistic updates with error revert
  * - Accessible with keyboard navigation
+ * - Slide in from right with animation
+ * - Close on Escape key or overlay click
+ * - Responsive width for mobile
+ *
+ * Can be used in two modes:
+ * 1. Provide `data` prop directly (DynamicAgentData)
+ * 2. Provide `runId` prop to fetch data automatically
  */
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import {
   X,
   Pause,
@@ -30,23 +37,17 @@ import { StatusBadge } from './DynamicAgentCard'
 import { TurnsProgressBar } from './TurnsProgressBar'
 import { RunInspectorSkeleton } from './Skeleton'
 import { LoadingButton } from './LoadingButton'
-import type { DynamicAgentData, AgentRunStatus, AgentRunVerdict } from '../lib/types'
+import type { DynamicAgentData, AgentRunStatus, AgentRunVerdict, AgentRun, AgentSpecSummary } from '../lib/types'
 
 // =============================================================================
 // Props Interface
 // =============================================================================
 
-interface RunInspectorProps {
-  /** The spec and run data to display */
-  data: DynamicAgentData | null
+interface BaseRunInspectorProps {
   /** Whether the panel is open */
   isOpen: boolean
   /** Callback to close the panel */
   onClose: () => void
-  /** Whether data is loading */
-  isLoading?: boolean
-  /** Error message if loading failed */
-  error?: string | null
   /** Callback for pause action */
   onPause?: (runId: string) => Promise<void>
   /** Callback for resume action */
@@ -55,11 +56,35 @@ interface RunInspectorProps {
   onCancel?: (runId: string) => Promise<void>
 }
 
+interface DataModeProps extends BaseRunInspectorProps {
+  /** The spec and run data to display (data mode) */
+  data: DynamicAgentData | null
+  /** Whether data is loading */
+  isLoading?: boolean
+  /** Error message if loading failed */
+  error?: string | null
+  /** Not used in data mode */
+  runId?: never
+}
+
+interface RunIdModeProps extends BaseRunInspectorProps {
+  /** The run ID to fetch details for (fetch mode) */
+  runId: string
+  /** Not used in runId mode */
+  data?: never
+  /** Not used in runId mode */
+  isLoading?: never
+  /** Not used in runId mode */
+  error?: never
+}
+
+type RunInspectorProps = DataModeProps | RunIdModeProps
+
 // =============================================================================
 // Tab Types
 // =============================================================================
 
-type TabId = 'events' | 'artifacts' | 'acceptance'
+type TabId = 'timeline' | 'artifacts' | 'acceptance'
 
 interface TabConfig {
   id: TabId
@@ -67,7 +92,7 @@ interface TabConfig {
 }
 
 const TABS: TabConfig[] = [
-  { id: 'events', label: 'Events' },
+  { id: 'timeline', label: 'Timeline' },
   { id: 'artifacts', label: 'Artifacts' },
   { id: 'acceptance', label: 'Acceptance' },
 ]
@@ -111,7 +136,7 @@ function VerdictBadge({ verdict }: { verdict: AgentRunVerdict | null }) {
 // Acceptance Results Component
 // =============================================================================
 
-function AcceptanceResults({ run }: { run: NonNullable<DynamicAgentData['run']> }) {
+function AcceptanceResults({ run }: { run: AgentRun }) {
   const results = run.acceptance_results as Record<string, { passed: boolean; message: string }> | null
 
   if (!results || Object.keys(results).length === 0) {
@@ -152,24 +177,162 @@ function AcceptanceResults({ run }: { run: NonNullable<DynamicAgentData['run']> 
 }
 
 // =============================================================================
+// API Response Types (for runId mode)
+// =============================================================================
+
+interface AgentRunDetailResponse {
+  id: string
+  agent_spec_id: string
+  status: AgentRunStatus
+  started_at: string | null
+  completed_at: string | null
+  turns_used: number
+  tokens_in: number
+  tokens_out: number
+  final_verdict: AgentRunVerdict | null
+  acceptance_results: Record<string, { passed: boolean; message: string }> | null
+  error: string | null
+  retry_count: number
+  spec?: {
+    id: string
+    name: string
+    display_name: string
+    icon: string | null
+    task_type: string
+    max_turns: number
+    source_feature_id: number | null
+  }
+}
+
+// =============================================================================
+// Data Fetching Hook (for runId mode)
+// =============================================================================
+
+function useRunDetails(runId: string | undefined, isOpen: boolean) {
+  const [data, setData] = useState<DynamicAgentData | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!runId || !isOpen) {
+      return
+    }
+
+    let cancelled = false
+
+    async function fetchRunDetails() {
+      setIsLoading(true)
+      setError(null)
+
+      try {
+        const response = await fetch(`/api/agent-runs/${runId}`)
+        if (!response.ok) {
+          if (response.status === 404) {
+            throw new Error('Run not found')
+          }
+          const errorData = await response.json().catch(() => ({}))
+          throw new Error(errorData.detail || `HTTP ${response.status}`)
+        }
+
+        const runData: AgentRunDetailResponse = await response.json()
+
+        if (cancelled) return
+
+        // Convert API response to DynamicAgentData format
+        const agentRun: AgentRun = {
+          id: runData.id,
+          agent_spec_id: runData.agent_spec_id,
+          status: runData.status,
+          started_at: runData.started_at,
+          completed_at: runData.completed_at,
+          turns_used: runData.turns_used,
+          tokens_in: runData.tokens_in,
+          tokens_out: runData.tokens_out,
+          final_verdict: runData.final_verdict,
+          acceptance_results: runData.acceptance_results,
+          error: runData.error,
+          retry_count: runData.retry_count,
+        }
+
+        // Use spec from response or create a minimal spec
+        const spec: AgentSpecSummary = runData.spec
+          ? {
+              id: runData.spec.id,
+              name: runData.spec.name,
+              display_name: runData.spec.display_name,
+              icon: runData.spec.icon,
+              task_type: runData.spec.task_type as AgentSpecSummary['task_type'],
+              max_turns: runData.spec.max_turns,
+              source_feature_id: runData.spec.source_feature_id,
+            }
+          : {
+              id: runData.agent_spec_id,
+              name: 'Agent Run',
+              display_name: 'Agent Run',
+              icon: '🤖',
+              task_type: 'custom',
+              max_turns: 100,
+              source_feature_id: null,
+            }
+
+        setData({ spec, run: agentRun })
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Failed to fetch run details')
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false)
+        }
+      }
+    }
+
+    fetchRunDetails()
+
+    return () => {
+      cancelled = true
+    }
+  }, [runId, isOpen])
+
+  return { data, isLoading, error }
+}
+
+// =============================================================================
 // Main Component
 // =============================================================================
 
-export function RunInspector({
-  data,
-  isOpen,
-  onClose,
-  isLoading = false,
-  error = null,
-  onPause,
-  onResume,
-  onCancel,
-}: RunInspectorProps) {
-  const [activeTab, setActiveTab] = useState<TabId>('events')
+export function RunInspector(props: RunInspectorProps) {
+  const { isOpen, onClose, onPause, onResume, onCancel } = props
+
+  // Determine mode and get data accordingly
+  const isRunIdMode = 'runId' in props && props.runId !== undefined
+  const fetchedData = useRunDetails(isRunIdMode ? props.runId : undefined, isOpen)
+
+  // In data mode, use provided data; in runId mode, use fetched data
+  const data = isRunIdMode ? fetchedData.data : props.data ?? null
+  const isLoading = isRunIdMode ? fetchedData.isLoading : props.isLoading ?? false
+  const error = isRunIdMode ? fetchedData.error : props.error ?? null
+
+  const [activeTab, setActiveTab] = useState<TabId>('timeline')
   const [isPausing, setIsPausing] = useState(false)
   const [isResuming, setIsResuming] = useState(false)
   const [isCancelling, setIsCancelling] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
+
+  // Handle Escape key to close the panel
+  useEffect(() => {
+    if (!isOpen) return
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        onClose()
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [isOpen, onClose])
 
   // Handle pause action with loading state
   const handlePause = useCallback(async () => {
@@ -227,23 +390,26 @@ export function RunInspector({
       aria-modal="true"
       aria-labelledby="run-inspector-title"
     >
-      {/* Backdrop */}
+      {/* Backdrop - click to close */}
       <div
         className="absolute inset-0 bg-black/50 backdrop-blur-sm"
         onClick={onClose}
         aria-hidden="true"
       />
 
-      {/* Panel */}
+      {/* Panel - slides in from the right */}
       <div
         className="
-          relative w-full max-w-lg bg-neo-card border-l-4 border-neo-border
+          relative w-full sm:w-[90%] md:w-[70%] lg:max-w-lg
+          bg-neo-card border-l-4 border-neo-border
           shadow-neo-left-lg flex flex-col h-full
-          animate-slide-in-left
+          animate-slide-in-right
         "
       >
         {/* Loading state */}
-        {isLoading && <RunInspectorSkeleton className="p-4" />}
+        {isLoading && (
+          <RunInspectorSkeleton className="p-4" />
+        )}
 
         {/* Error state */}
         {!isLoading && error && (
@@ -267,22 +433,23 @@ export function RunInspector({
                   <span className="text-2xl" role="img" aria-hidden="true">
                     {data.spec.icon || '🤖'}
                   </span>
-                  <div>
+                  <div className="min-w-0">
                     <h2
                       id="run-inspector-title"
-                      className="font-display font-bold text-lg"
+                      className="font-display font-bold text-lg truncate"
                     >
                       {data.spec.display_name}
                     </h2>
-                    <p className="text-xs text-neo-text-secondary font-mono">
+                    <p className="text-xs text-neo-text-secondary font-mono truncate">
                       {data.spec.name}
                     </p>
                   </div>
                 </div>
                 <button
-                  className="neo-btn neo-btn-sm neo-btn-icon"
+                  className="neo-btn neo-btn-sm neo-btn-icon flex-shrink-0"
                   onClick={onClose}
-                  aria-label="Close inspector"
+                  aria-label="Close inspector (Escape)"
+                  title="Close (Esc)"
                 >
                   <X size={16} />
                 </button>
@@ -290,7 +457,7 @@ export function RunInspector({
 
               {/* Status and verdict */}
               {data.run && (
-                <div className="flex items-center gap-3 mt-3">
+                <div className="flex items-center gap-3 mt-3 flex-wrap">
                   <StatusBadge status={status} />
                   <VerdictBadge verdict={data.run.final_verdict} />
                   {data.run.started_at && (
@@ -321,7 +488,7 @@ export function RunInspector({
             </div>
 
             {/* Tabs */}
-            <div className="flex border-b border-neo-border">
+            <div className="flex border-b border-neo-border" role="tablist">
               {TABS.map((tab) => (
                 <button
                   key={tab.id}
@@ -335,6 +502,8 @@ export function RunInspector({
                   onClick={() => setActiveTab(tab.id)}
                   aria-selected={activeTab === tab.id}
                   role="tab"
+                  id={`tab-${tab.id}`}
+                  aria-controls={`panel-${tab.id}`}
                 >
                   {tab.label}
                 </button>
@@ -343,33 +512,66 @@ export function RunInspector({
 
             {/* Tab content */}
             <div className="flex-1 overflow-y-auto p-4">
-              {activeTab === 'events' && data.run && (
-                <EventTimeline
-                  runId={data.run.id}
-                  pageSize={25}
-                  autoScroll={status === 'running'}
-                />
+              {activeTab === 'timeline' && data.run && (
+                <div
+                  role="tabpanel"
+                  id="panel-timeline"
+                  aria-labelledby="tab-timeline"
+                >
+                  <EventTimeline
+                    runId={data.run.id}
+                    pageSize={25}
+                    autoScroll={status === 'running'}
+                  />
+                </div>
               )}
-              {activeTab === 'events' && !data.run && (
-                <div className="flex flex-col items-center justify-center h-64 text-neo-text-secondary">
+              {activeTab === 'timeline' && !data.run && (
+                <div
+                  role="tabpanel"
+                  id="panel-timeline"
+                  aria-labelledby="tab-timeline"
+                  className="flex flex-col items-center justify-center h-64 text-neo-text-secondary"
+                >
                   <Clock size={32} className="mb-2 opacity-50" />
                   <p>No run started yet</p>
                 </div>
               )}
               {activeTab === 'artifacts' && data.run && (
-                <ArtifactList runId={data.run.id} />
+                <div
+                  role="tabpanel"
+                  id="panel-artifacts"
+                  aria-labelledby="tab-artifacts"
+                >
+                  <ArtifactList runId={data.run.id} />
+                </div>
               )}
               {activeTab === 'artifacts' && !data.run && (
-                <div className="flex flex-col items-center justify-center h-64 text-neo-text-secondary">
+                <div
+                  role="tabpanel"
+                  id="panel-artifacts"
+                  aria-labelledby="tab-artifacts"
+                  className="flex flex-col items-center justify-center h-64 text-neo-text-secondary"
+                >
                   <Clock size={32} className="mb-2 opacity-50" />
                   <p>No artifacts yet</p>
                 </div>
               )}
               {activeTab === 'acceptance' && data.run && (
-                <AcceptanceResults run={data.run} />
+                <div
+                  role="tabpanel"
+                  id="panel-acceptance"
+                  aria-labelledby="tab-acceptance"
+                >
+                  <AcceptanceResults run={data.run} />
+                </div>
               )}
               {activeTab === 'acceptance' && !data.run && (
-                <div className="flex flex-col items-center justify-center h-64 text-neo-text-secondary">
+                <div
+                  role="tabpanel"
+                  id="panel-acceptance"
+                  aria-labelledby="tab-acceptance"
+                  className="flex flex-col items-center justify-center h-64 text-neo-text-secondary"
+                >
                   <Clock size={32} className="mb-2 opacity-50" />
                   <p>No acceptance results yet</p>
                 </div>
@@ -386,7 +588,7 @@ export function RunInspector({
                   </div>
                 )}
 
-                <div className="flex justify-end gap-2">
+                <div className="flex justify-end gap-2 flex-wrap">
                   {canPause && (
                     <LoadingButton
                       isLoading={isPausing}
