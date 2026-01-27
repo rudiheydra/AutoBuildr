@@ -243,6 +243,26 @@ async def create_agent_spec(
         # Convert to response model
         spec_dict = db_spec.to_dict()
 
+    # Feature #60: Broadcast agent_spec_created WebSocket message after successful creation
+    # Step 1: After AgentSpec creation, publish WebSocket message
+    # Step 2: Message type is agent_spec_created
+    # Step 3: Payload includes spec_id, name, display_name, icon, task_type
+    # Step 4: Broadcast to all connected clients
+    # Step 5: Handle WebSocket errors gracefully (done inside broadcast function)
+    try:
+        from api.websocket_events import broadcast_agent_spec_created
+        await broadcast_agent_spec_created(
+            project_name=project_name,
+            spec_id=spec_dict["id"],
+            name=spec_dict["name"],
+            display_name=spec_dict["display_name"],
+            icon=spec_dict["icon"],
+            task_type=spec_dict["task_type"],
+        )
+    except Exception as e:
+        # Log but don't fail the API request if WebSocket broadcast fails
+        _logger.warning(f"Failed to broadcast agent_spec_created event: {e}")
+
     return AgentSpecResponse(
         id=spec_dict["id"],
         name=spec_dict["name"],
@@ -592,6 +612,7 @@ async def _execute_spec_background(
     project_dir: Path,
     spec_id: str,
     run_id: str,
+    project_name: str,
 ) -> None:
     """
     Background task to execute an AgentSpec.
@@ -603,7 +624,11 @@ async def _execute_spec_background(
         project_dir: Path to the project directory
         spec_id: UUID of the AgentSpec to execute
         run_id: UUID of the AgentRun record to update
+        project_name: Name of the project (for WebSocket broadcasting)
     """
+    # Import WebSocket broadcast function for Feature #61
+    from api.websocket_events import broadcast_run_started
+
     _logger.info(f"Starting background execution for run {run_id} (spec {spec_id})")
 
     try:
@@ -614,11 +639,30 @@ async def _execute_spec_background(
                 _logger.error(f"AgentRun {run_id} not found")
                 return
 
+            # Get the spec for display_name and icon
+            spec = db.query(AgentSpecModel).filter(AgentSpecModel.id == spec_id).first()
+            display_name = spec.display_name if spec else f"Run {run_id[:8]}"
+            icon = spec.icon if spec else None
+
             # Transition from pending to running
             run.status = "running"
             run.started_at = _utc_now()
             db.commit()
             _logger.info(f"Run {run_id} transitioned to 'running'")
+
+            # Feature #61: Broadcast agent_run_started WebSocket message
+            # Step 1: When AgentRun status changes to running, publish message
+            # Step 2: Message type: agent_run_started
+            # Step 3: Payload: run_id, spec_id, display_name, icon, started_at
+            # Step 4: Broadcast to all connected clients
+            await broadcast_run_started(
+                project_name=project_name,
+                run_id=run_id,
+                spec_id=spec_id,
+                display_name=display_name,
+                icon=icon,
+                started_at=run.started_at,
+            )
 
         # TODO: This is where HarnessKernel.execute(spec) will be called
         # For now, we just log that execution would happen here
@@ -821,7 +865,7 @@ async def execute_agent_spec(
 
     # Step 7: Queue execution task (async background)
     task = asyncio.create_task(
-        _execute_spec_background(project_dir, spec_id, run_id)
+        _execute_spec_background(project_dir, spec_id, run_id, project_name)
     )
     _execution_tasks[run_id] = task
 

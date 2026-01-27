@@ -6,6 +6,7 @@ Utilities for broadcasting WebSocket events from the API layer.
 
 This module provides functions for publishing real-time events to connected
 WebSocket clients, including:
+- agent_run_started: When a run begins (Feature #61)
 - agent_acceptance_update: Validator results after acceptance gate evaluation
 
 These events complement the existing WebSocket infrastructure in server/websocket.py
@@ -19,7 +20,17 @@ The events follow the naming conventions from the app spec:
 
 Usage:
     ```python
-    from api.websocket_events import broadcast_acceptance_update
+    from api.websocket_events import broadcast_run_started, broadcast_acceptance_update
+
+    # When AgentRun starts (Feature #61)
+    await broadcast_run_started(
+        project_name="my-project",
+        run_id="abc-123-...",
+        spec_id="def-456-...",
+        display_name="Implement Feature X",
+        icon="🔧",
+        started_at=datetime.now(timezone.utc),
+    )
 
     # After running acceptance validators
     results = evaluate_acceptance_spec(validators, context, gate_mode, run)
@@ -65,6 +76,58 @@ def _utc_now() -> datetime:
 # =============================================================================
 # Data Classes for WebSocket Message Payloads
 # =============================================================================
+
+@dataclass
+class RunStartedPayload:
+    """
+    Payload for agent_run_started WebSocket message.
+
+    Feature #61: WebSocket agent_run_started Event
+
+    Attributes:
+        run_id: UUID of the AgentRun
+        spec_id: UUID of the AgentSpec being executed
+        display_name: Human-readable name of the spec
+        icon: Emoji or icon name for the spec
+        started_at: When the run began execution
+        timestamp: When this message was created
+    """
+    run_id: str
+    spec_id: str
+    display_name: str
+    icon: Optional[str] = None
+    started_at: Optional[datetime] = None
+    timestamp: Optional[datetime] = None
+
+    def __post_init__(self):
+        """Set default timestamp if not provided."""
+        if self.timestamp is None:
+            self.timestamp = _utc_now()
+
+    def to_message(self) -> dict[str, Any]:
+        """
+        Convert to WebSocket message format.
+
+        Returns:
+            Dict with message type and payload following Feature #61 spec:
+            - type: "agent_run_started"
+            - run_id: UUID of the run
+            - spec_id: UUID of the spec
+            - display_name: Human-readable spec name
+            - icon: Spec icon (emoji or name)
+            - started_at: ISO timestamp when run started
+            - timestamp: ISO timestamp when message was created
+        """
+        return {
+            "type": "agent_run_started",
+            "run_id": self.run_id,
+            "spec_id": self.spec_id,
+            "display_name": self.display_name,
+            "icon": self.icon,
+            "started_at": self.started_at.isoformat() if self.started_at else None,
+            "timestamp": self.timestamp.isoformat() if self.timestamp else None,
+        }
+
 
 @dataclass
 class ValidatorResultPayload:
@@ -162,6 +225,136 @@ def _get_connection_manager():
     except ImportError:
         _logger.debug("server.websocket not available - WebSocket broadcasting disabled")
         return None
+
+
+# =============================================================================
+# Feature #61: agent_run_started Broadcasting
+# =============================================================================
+
+async def broadcast_run_started(
+    project_name: str,
+    run_id: str,
+    spec_id: str,
+    display_name: str,
+    icon: Optional[str] = None,
+    started_at: Optional[datetime] = None,
+) -> bool:
+    """
+    Broadcast agent_run_started WebSocket message to all connected clients.
+
+    Feature #61: WebSocket agent_run_started Event
+
+    This function publishes a message when an AgentRun status changes to running,
+    containing the run_id, spec_id, display_name, icon, and started_at timestamp.
+
+    Args:
+        project_name: Name of the project for routing the message
+        run_id: UUID of the AgentRun
+        spec_id: UUID of the AgentSpec being executed
+        display_name: Human-readable name of the spec
+        icon: Emoji or icon name for the spec (optional)
+        started_at: When the run started execution (optional, defaults to now)
+
+    Returns:
+        True if broadcast was attempted, False if WebSocket manager not available
+
+    Example:
+        >>> await broadcast_run_started(
+        ...     project_name="my-project",
+        ...     run_id="abc-123-...",
+        ...     spec_id="def-456-...",
+        ...     display_name="Implement User Auth",
+        ...     icon="🔐",
+        ...     started_at=run.started_at,
+        ... )
+    """
+    manager = _get_connection_manager()
+    if manager is None:
+        _logger.debug("WebSocket manager not available, skipping run_started broadcast")
+        return False
+
+    # Set default started_at if not provided
+    if started_at is None:
+        started_at = _utc_now()
+
+    # Build the message payload
+    payload = RunStartedPayload(
+        run_id=run_id,
+        spec_id=spec_id,
+        display_name=display_name,
+        icon=icon,
+        started_at=started_at,
+    )
+
+    message = payload.to_message()
+
+    _logger.info(
+        "Broadcasting agent_run_started for run %s: spec=%s, display_name=%s",
+        run_id, spec_id, display_name
+    )
+
+    # Broadcast to all connections for this project
+    try:
+        await manager.broadcast_to_project(project_name, message)
+        return True
+    except Exception as e:
+        _logger.warning(f"Failed to broadcast run_started: {e}")
+        return False
+
+
+def broadcast_run_started_sync(
+    project_name: str,
+    run_id: str,
+    spec_id: str,
+    display_name: str,
+    icon: Optional[str] = None,
+    started_at: Optional[datetime] = None,
+) -> bool:
+    """
+    Synchronous wrapper for broadcast_run_started.
+
+    Use this when calling from synchronous code (e.g., the HarnessKernel).
+    Creates a new event loop if one isn't running, or schedules on the
+    existing loop.
+
+    Args:
+        Same as broadcast_run_started
+
+    Returns:
+        True if broadcast was scheduled, False if WebSocket manager not available
+    """
+    manager = _get_connection_manager()
+    if manager is None:
+        return False
+
+    try:
+        # Check if we're in an async context
+        loop = asyncio.get_running_loop()
+        # Schedule the coroutine to run
+        asyncio.create_task(broadcast_run_started(
+            project_name=project_name,
+            run_id=run_id,
+            spec_id=spec_id,
+            display_name=display_name,
+            icon=icon,
+            started_at=started_at,
+        ))
+        return True
+    except RuntimeError:
+        # No running event loop - create one
+        try:
+            asyncio.run(broadcast_run_started(
+                project_name=project_name,
+                run_id=run_id,
+                spec_id=spec_id,
+                display_name=display_name,
+                icon=icon,
+                started_at=started_at,
+            ))
+            return True
+        except Exception as e:
+            _logger.warning(f"Failed to broadcast run_started synchronously: {e}")
+            return False
 
 
 async def broadcast_acceptance_update(
@@ -375,3 +568,182 @@ def build_acceptance_update_from_results(
         validator_results=validator_payloads,
         gate_mode=gate_mode,
     )
+
+
+# =============================================================================
+# Feature #60: agent_spec_created Broadcasting
+# =============================================================================
+
+@dataclass
+class AgentSpecCreatedPayload:
+    """
+    Payload for agent_spec_created WebSocket message.
+
+    Feature #60: WebSocket agent_spec_created Event
+
+    Attributes:
+        spec_id: UUID of the newly created AgentSpec
+        name: Machine-readable name of the spec
+        display_name: Human-readable display name
+        icon: Emoji or icon identifier (optional)
+        task_type: Type of task (coding, testing, etc.)
+        timestamp: When the spec was created
+    """
+    spec_id: str
+    name: str
+    display_name: str
+    icon: Optional[str]
+    task_type: str
+    timestamp: Optional[datetime] = None
+
+    def __post_init__(self):
+        """Set default timestamp if not provided."""
+        if self.timestamp is None:
+            self.timestamp = _utc_now()
+
+    def to_message(self) -> dict[str, Any]:
+        """
+        Convert to WebSocket message format.
+
+        Returns:
+            Dict with message type and payload following Feature #60 spec:
+            - type: "agent_spec_created"
+            - spec_id: UUID of the spec
+            - name: Machine-readable name
+            - display_name: Human-readable name
+            - icon: Emoji or icon identifier
+            - task_type: Type of task
+        """
+        return {
+            "type": "agent_spec_created",
+            "spec_id": self.spec_id,
+            "name": self.name,
+            "display_name": self.display_name,
+            "icon": self.icon,
+            "task_type": self.task_type,
+            "timestamp": self.timestamp.isoformat() if self.timestamp else None,
+        }
+
+
+async def broadcast_agent_spec_created(
+    project_name: str,
+    spec_id: str,
+    name: str,
+    display_name: str,
+    icon: Optional[str],
+    task_type: str,
+) -> bool:
+    """
+    Broadcast agent_spec_created WebSocket message to all connected clients.
+
+    Feature #60: WebSocket agent_spec_created Event
+
+    This function publishes a message when a new AgentSpec is registered,
+    containing the spec_id, name, display_name, icon, and task_type.
+
+    Args:
+        project_name: Name of the project for routing the message
+        spec_id: UUID of the newly created AgentSpec
+        name: Machine-readable name of the spec
+        display_name: Human-readable display name
+        icon: Emoji or icon identifier (optional)
+        task_type: Type of task (coding, testing, etc.)
+
+    Returns:
+        True if broadcast was attempted, False if WebSocket manager not available
+
+    Example:
+        >>> await broadcast_agent_spec_created(
+        ...     project_name="my-project",
+        ...     spec_id="abc-123-...",
+        ...     name="feature-auth-login-impl",
+        ...     display_name="Implement Login Feature",
+        ...     icon="🔐",
+        ...     task_type="coding",
+        ... )
+    """
+    manager = _get_connection_manager()
+    if manager is None:
+        _logger.debug("WebSocket manager not available, skipping agent_spec_created broadcast")
+        return False
+
+    # Build the message payload
+    payload = AgentSpecCreatedPayload(
+        spec_id=spec_id,
+        name=name,
+        display_name=display_name,
+        icon=icon,
+        task_type=task_type,
+    )
+
+    message = payload.to_message()
+
+    _logger.info(
+        "Broadcasting agent_spec_created for spec %s: name=%s, display_name=%s, task_type=%s",
+        spec_id, name, display_name, task_type
+    )
+
+    # Broadcast to all connections for this project
+    # Feature #60 Step 4: Broadcast to all connected clients
+    # Feature #60 Step 5: Handle WebSocket errors gracefully
+    try:
+        await manager.broadcast_to_project(project_name, message)
+        return True
+    except Exception as e:
+        _logger.warning(f"Failed to broadcast agent_spec_created: {e}")
+        return False
+
+
+def broadcast_agent_spec_created_sync(
+    project_name: str,
+    spec_id: str,
+    name: str,
+    display_name: str,
+    icon: Optional[str],
+    task_type: str,
+) -> bool:
+    """
+    Synchronous wrapper for broadcast_agent_spec_created.
+
+    Use this when calling from synchronous code (e.g., API routes).
+    Creates a new event loop if one isn't running, or schedules on the
+    existing loop.
+
+    Args:
+        Same as broadcast_agent_spec_created
+
+    Returns:
+        True if broadcast was scheduled, False if WebSocket manager not available
+    """
+    manager = _get_connection_manager()
+    if manager is None:
+        return False
+
+    try:
+        # Check if we're in an async context
+        loop = asyncio.get_running_loop()
+        # Schedule the coroutine to run
+        asyncio.create_task(broadcast_agent_spec_created(
+            project_name=project_name,
+            spec_id=spec_id,
+            name=name,
+            display_name=display_name,
+            icon=icon,
+            task_type=task_type,
+        ))
+        return True
+    except RuntimeError:
+        # No running event loop - create one
+        try:
+            asyncio.run(broadcast_agent_spec_created(
+                project_name=project_name,
+                spec_id=spec_id,
+                name=name,
+                display_name=display_name,
+                icon=icon,
+                task_type=task_type,
+            ))
+            return True
+        except Exception as e:
+            _logger.warning(f"Failed to broadcast agent_spec_created synchronously: {e}")
+            return False

@@ -7463,3 +7463,170 @@ All 5 feature steps verified:
 
 **Session completed successfully.**
 
+---
+
+## Session: 2026-01-27 (Coding Agent - Feature #60)
+
+### Feature #60: WebSocket agent_spec_created Event - COMPLETED
+
+**Status:** PASSING
+
+**Category:** F. UI-Backend Integration
+
+**Description:** Broadcast WebSocket message when new AgentSpec is registered for UI card creation.
+
+**Dependencies:** [11] - POST /api/agent-specs Create AgentSpec Endpoint (passing)
+
+**Verification Summary (5 Steps - All Passed):**
+
+1. **After AgentSpec creation, publish WebSocket message** - PASS
+   - broadcast_agent_spec_created function exists and is callable
+   - broadcast_agent_spec_created_sync synchronous wrapper exists
+   - create_agent_spec API endpoint calls broadcast after successful creation
+
+2. **Message type: agent_spec_created** - PASS
+   - AgentSpecCreatedPayload.to_message() returns {"type": "agent_spec_created", ...}
+   - Message type is exactly "agent_spec_created"
+
+3. **Payload includes: spec_id, name, display_name, icon, task_type** - PASS
+   - All required fields present in message payload
+   - spec_id: UUID of the newly created AgentSpec
+   - name: Machine-readable spec name
+   - display_name: Human-readable display name
+   - icon: Emoji or icon identifier (can be None)
+   - task_type: Type of task (coding, testing, etc.)
+   - timestamp: When message was created (bonus field)
+
+4. **Broadcast to all connected clients** - PASS
+   - Uses ConnectionManager.broadcast_to_project() for project-scoped broadcast
+   - Returns True on successful broadcast attempt
+   - Broadcasts to correct project based on project_name parameter
+
+5. **Handle WebSocket errors gracefully** - PASS
+   - Catches all exceptions during broadcast
+   - Returns False on error (doesn't propagate exception)
+   - Logs warning message for debugging
+   - Handles missing manager gracefully (returns False)
+
+**Implementation Details:**
+
+Added to api/websocket_events.py:
+- AgentSpecCreatedPayload dataclass with all required fields
+- to_message() method returning WebSocket message format
+- broadcast_agent_spec_created() async function for broadcasting
+- broadcast_agent_spec_created_sync() sync wrapper function
+
+Modified server/routers/agent_specs.py:
+- Added broadcast call after successful AgentSpec creation in create_agent_spec endpoint
+- Wrapped broadcast in try/except to not fail API request if broadcast fails
+
+**Test Results:**
+- tests/test_feature_60_websocket_spec_created.py: 25/25 tests PASS
+- tests/verify_feature_60.py: All 5 verification steps PASS
+
+**Files Created:**
+- tests/test_feature_60_websocket_spec_created.py: Comprehensive test suite (25 tests)
+- tests/verify_feature_60.py: Feature verification script
+
+**Files Modified:**
+- api/websocket_events.py: Added AgentSpecCreatedPayload and broadcast functions
+- server/routers/agent_specs.py: Added WebSocket broadcast after spec creation
+
+---
+
+**Updated Progress:**
+- Total: 93/103 features passing (approximately 90.3%)
+- Feature #60: WebSocket agent_spec_created Event - PASSING
+
+**Session completed successfully.**
+
+## Session: 2026-01-27 (Coding Agent - Feature #61)
+
+### Feature #61: WebSocket agent_run_started Event - COMPLETED
+
+**Status:** PASSING
+
+**Category:** F. UI-Backend Integration
+
+**Description:** Broadcast WebSocket message when AgentRun begins for real-time UI updates.
+
+**Dependencies:** [16] - Feature #16: POST /api/agent-specs/:id/execute Trigger Execution - PASSING
+
+**Implementation Summary:**
+
+1. **Step 1: When AgentRun status changes to running, publish message** - PASS
+   - Integrated broadcast_run_started call in _execute_spec_background
+   - Called immediately after run.status changes to "running"
+   - Broadcast happens before any execution logic
+
+2. **Step 2: Message type: agent_run_started** - PASS
+   - RunStartedPayload.to_message() returns type="agent_run_started"
+   - Message format validated via unit tests
+
+3. **Step 3: Payload: run_id, spec_id, display_name, icon, started_at** - PASS
+   - All required fields present in payload
+   - run_id: UUID of the AgentRun
+   - spec_id: UUID of the AgentSpec being executed
+   - display_name: Human-readable spec name
+   - icon: Emoji or icon identifier
+   - started_at: Timestamp when run started
+   - timestamp: When message was created (extra field for tracking)
+
+4. **Step 4: Broadcast to all connected clients** - PASS
+   - Uses ConnectionManager.broadcast_to_project() for project-scoped broadcast
+   - Returns True on successful broadcast attempt
+   - Broadcasts to correct project based on project_name parameter
+
+**Implementation Details:**
+
+Added to api/websocket_events.py:
+- RunStartedPayload dataclass with all required fields
+- to_message() method returning WebSocket message format
+- broadcast_run_started() async function for broadcasting
+- broadcast_run_started_sync() sync wrapper function
+
+Modified server/routers/agent_specs.py:
+- Added project_name parameter to _execute_spec_background function
+- Added broadcast_run_started call after run transitions to "running"
+- Fetches spec.display_name and spec.icon for the message payload
+
+**Test Results:**
+- tests/test_feature_61_websocket_run_started.py: 19/19 tests PASS
+- tests/verify_feature_61.py: All 7 verification steps PASS
+- tests/test_websocket_run_started_e2e.py: E2E test PASS - confirmed real WebSocket message received
+
+**Files Created:**
+- tests/test_feature_61_websocket_run_started.py: Comprehensive test suite (19 tests)
+- tests/verify_feature_61.py: Feature verification script
+- tests/test_websocket_run_started_e2e.py: End-to-end WebSocket test
+
+**Files Modified:**
+- api/websocket_events.py: Added RunStartedPayload and broadcast functions
+- api/__init__.py: Exported new functions
+- server/routers/agent_specs.py: Added WebSocket broadcast when run starts
+
+---
+
+**Updated Progress:**
+- Total: 95/103 features passing (approximately 92.2%)
+- Feature #61: WebSocket agent_run_started Event - PASSING
+
+**Session completed successfully.**
+
+[Testing] 2026-01-27 13:43:23 - Feature #43 regression test PASSED
+  - Feature: Tool Hints System Prompt Injection
+  - Category: N. Feedback & Notification
+  - Verification: All feature steps pass
+  - Test suite: 36/36 pytest tests pass (test_prompt_builder.py)
+  - Step 1: Extract tool_hints dict from spec.tool_policy - PASS
+  - Step 2: Format hints as markdown guidelines - PASS
+  - Step 3: Append to system prompt in dedicated section - PASS
+  - Step 4: Example format ## Tool Usage Guidelines - feature_mark_passing: Call only after verification - PASS
+  - Additional verification:
+    - verify_feature_43.py: All 5 steps PASS
+    - verify_feature_43_integration.py: All integration tests PASS
+    - StaticSpecAdapter correctly includes tool_hints in tool_policy for coding/testing/initializer specs
+    - build_system_prompt() correctly injects tool_hints as markdown section
+    - inject_tool_hints_into_prompt() correctly appends hints to existing prompts
+  - Dependencies verified: Feature #1 (passing), Feature #26 (passing)
+  - No regression found - feature still working correctly
