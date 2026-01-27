@@ -80,6 +80,15 @@ dmypy.json
 # Claude Code
 # ===================
 .claude/settings.local.json
+.claude_settings.json
+.claude_assistant_settings.json
+
+# ===================
+# SQLite Databases
+# ===================
+*.db
+*.db-shm
+*.db-wal
 
 # ===================
 # IDE / Editors
