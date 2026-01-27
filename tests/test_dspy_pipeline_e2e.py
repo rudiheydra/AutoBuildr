@@ -1141,6 +1141,114 @@ class TestPersistenceAfterKernelRun:
 
 
 # =============================================================================
+# Feature #119: Proof: Acceptance gate PASS case — deterministic validators only
+# =============================================================================
+
+# Allowed deterministic validator types (no llm_judge)
+DETERMINISTIC_VALIDATOR_TYPES = {"test_pass", "file_exists", "forbidden_patterns"}
+
+
+def test_acceptance_gate_pass_deterministic(db_session, tmp_path):
+    """
+    Prove acceptance gate returns verdict='passed' when all deterministic
+    validators pass. No llm_judge.
+
+    Steps:
+    1. Create a real file at tmp_path/test_output.txt
+    2. Create AcceptanceSpec with file_exists validator pointing to that file
+    3. Evaluate via AcceptanceGate.evaluate(run, acceptance_spec, context)
+    4. Assert verdict='passed', gate_mode='all_pass'
+    5. Assert only deterministic validators used (no llm_judge)
+    """
+    # Step 1: Create a real file at tmp_path/test_output.txt
+    test_file = tmp_path / "test_output.txt"
+    test_file.write_text("Deterministic validator test output content\n")
+    assert test_file.exists(), "Test file must exist before evaluation"
+
+    # Step 2: Create an AgentSpec + AgentRun in the in-memory DB
+    spec = AgentSpec(
+        id="test-spec-gate-deterministic-001",
+        name="test-spec-gate-deterministic",
+        display_name="Deterministic Gate Test",
+        objective="Test acceptance gate with deterministic validators only",
+        task_type="testing",
+        tool_policy={
+            "allowed_tools": ["Read"],
+            "forbidden_patterns": [],
+            "policy_version": "v1",
+        },
+        max_turns=5,
+        timeout_seconds=120,
+    )
+    db_session.add(spec)
+    db_session.commit()
+
+    run = AgentRun(
+        id=generate_uuid(),
+        agent_spec_id=spec.id,
+        status="running",
+        turns_used=1,
+        tokens_in=100,
+        tokens_out=200,
+        retry_count=0,
+    )
+    db_session.add(run)
+    db_session.commit()
+
+    # Step 3: Create AcceptanceSpec with file_exists validator pointing to the real file
+    acceptance_spec = AcceptanceSpec(
+        id=generate_uuid(),
+        agent_spec_id=spec.id,
+        validators=[
+            {
+                "type": "file_exists",
+                "config": {
+                    "path": str(test_file),
+                    "should_exist": True,
+                    "description": "Test output file should exist",
+                },
+                "weight": 1.0,
+                "required": False,
+            },
+        ],
+        gate_mode="all_pass",
+        retry_policy="none",
+        max_retries=0,
+    )
+
+    # Step 4: Evaluate via AcceptanceGate
+    gate = AcceptanceGate()
+    result = gate.evaluate(run, acceptance_spec, context={})
+
+    # Step 5: Assert verdict='passed' and gate_mode='all_pass'
+    assert result.passed is True, f"Expected passed=True, got {result.passed}"
+    assert result.verdict == "passed", f"Expected verdict='passed', got '{result.verdict}'"
+    assert result.gate_mode == "all_pass", f"Expected gate_mode='all_pass', got '{result.gate_mode}'"
+
+    # Step 6: Assert only deterministic validators used (no llm_judge)
+    for vr in result.validator_results:
+        assert vr.validator_type in DETERMINISTIC_VALIDATOR_TYPES, (
+            f"Non-deterministic validator found: {vr.validator_type}. "
+            f"Only deterministic validators allowed: {DETERMINISTIC_VALIDATOR_TYPES}"
+        )
+    for ar in result.acceptance_results:
+        assert ar["type"] in DETERMINISTIC_VALIDATOR_TYPES, (
+            f"Non-deterministic validator type in acceptance_results: {ar['type']}. "
+            f"Only deterministic validators allowed: {DETERMINISTIC_VALIDATOR_TYPES}"
+        )
+
+    # Verify the file_exists validator specifically passed
+    assert len(result.validator_results) == 1, (
+        f"Expected exactly 1 validator result, got {len(result.validator_results)}"
+    )
+    assert result.validator_results[0].passed is True
+    assert result.validator_results[0].validator_type == "file_exists"
+
+    # Verify no required validators failed
+    assert result.required_failed is False, "No required validators should have failed"
+
+
+# =============================================================================
 # Feature #120: Proof — Acceptance gate FAIL case
 #               Missing file fails deterministically
 # =============================================================================
