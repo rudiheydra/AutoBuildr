@@ -86,9 +86,25 @@ class SpecChatSession:
         self.created_at = datetime.now()
         self._conversation_id: Optional[str] = None
         self._client_entered: bool = False  # Track if context manager is active
+        self._app_spec_deleted: bool = False  # Track if we deleted app_spec.txt
+
+    def _restore_template_if_needed(self) -> None:
+        """Restore app_spec template if spec creation didn't complete."""
+        if not self.complete and self._app_spec_deleted:
+            prompts_dir = self.project_dir / "prompts"
+            app_spec_path = prompts_dir / "app_spec.txt"
+            if not app_spec_path.exists():
+                # Restore from template
+                template = ROOT_DIR / ".claude" / "templates" / "app_spec.template.txt"
+                if template.exists():
+                    shutil.copy(template, app_spec_path)
+                    logger.info("Restored app_spec.txt template after incomplete spec creation")
+                else:
+                    logger.warning(f"Template not found at {template}, cannot restore app_spec.txt")
 
     async def close(self) -> None:
         """Clean up resources and close the Claude client."""
+        self._restore_template_if_needed()
         if self.client and self._client_entered:
             try:
                 await self.client.__aexit__(None, None, None)
@@ -129,6 +145,7 @@ class SpecChatSession:
         app_spec_path = prompts_dir / "app_spec.txt"
         if app_spec_path.exists():
             app_spec_path.unlink()
+            self._app_spec_deleted = True
             logger.info("Deleted scaffolded app_spec.txt for fresh spec creation")
 
         # Create security settings file (like client.py does)

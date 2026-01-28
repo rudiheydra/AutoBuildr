@@ -38,6 +38,7 @@ from api.dependency_resolver import (
     validate_dependency_graph,
 )
 from progress import has_features
+from prompts import has_project_prompts
 from server.utils.process_utils import kill_process_tree
 
 # Root directory of AutoBuildr (where this script and autonomous_agent_demo.py live)
@@ -1112,6 +1113,29 @@ class ParallelOrchestrator:
 
         # Phase 1: Check if initialization needed
         if not has_features(self.project_dir):
+            # Verify spec creation phase completed before running initializer
+            spec_status = self.project_dir / "prompts" / ".spec_status.json"
+            spec_ready = spec_status.exists()
+            if not spec_ready:
+                # Fallback: check if app_spec.txt has real content (not template)
+                spec_ready = has_project_prompts(self.project_dir)
+
+            if not spec_ready:
+                print("=" * 70, flush=True)
+                print("  ERROR: Project specification not found", flush=True)
+                print("=" * 70, flush=True)
+                print(flush=True)
+                print(f"  Project: {self.project_dir}", flush=True)
+                print(flush=True)
+                print("  The spec creation phase has not completed.", flush=True)
+                print("  The initializer needs app_spec.txt to create features.", flush=True)
+                print(flush=True)
+                print("  To create the project specification:", flush=True)
+                print("    UI:  Click 'Create Spec' on the project page", flush=True)
+                print("    CLI: claude /create-spec <project-dir>", flush=True)
+                print("=" * 70, flush=True)
+                return
+
             print("=" * 70, flush=True)
             print("  INITIALIZATION PHASE", flush=True)
             print("=" * 70, flush=True)

@@ -8971,3 +8971,20 @@ Created comprehensive test suite:
   - Live API dependency-health endpoint: healthy (no issues)
   - Browser automation unavailable (Chrome launch failure in container)
   - No regression found - feature still working correctly
+[Testing] 2026-01-27 19:59:53 - Feature #76 regression test PASSED
+  - Feature: HarnessKernel Error Recovery
+  - Category: E. Error Handling
+  - All 8 verification steps passed:
+    Step 1: Wrap Claude API calls in try/except - PASS
+    Step 2: Catch RateLimitError and retry with backoff - PASS
+    Step 3: Catch APIError and record in run.error - PASS
+    Step 4: Catch tool execution exceptions - PASS
+    Step 5: Record failed event with error details - PASS
+    Step 6: Check retry_policy and max_retries - PASS
+    Step 7: If retries available, increment retry_count and retry - PASS
+    Step 8: If no retries, set status to failed and finalize - PASS
+  - Unit tests: 43/43 passed, 1 skipped (test_feature_76_error_recovery.py)
+  - Inline verification: 46/46 passed (all 8 feature steps)
+  - Source code intact: api/error_recovery.py (928 lines)
+  - Browser automation unavailable (Chrome launch failure in container)
+  - No regression found - feature still working correctly

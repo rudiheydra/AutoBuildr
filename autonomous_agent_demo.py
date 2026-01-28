@@ -156,6 +156,21 @@ Authentication:
         help="Testing agents per coding agent (0-3, default: 1). Set to 0 to disable testing agents.",
     )
 
+    # Spec-driven execution mode
+    parser.add_argument(
+        "--spec",
+        action="store_true",
+        default=False,
+        help="Enable spec-driven execution: Feature -> AgentSpec -> HarnessKernel (instead of legacy prompt path)",
+    )
+
+    parser.add_argument(
+        "--materialize-agents",
+        action="store_true",
+        default=False,
+        help="Write AgentSpec snapshot markdown files to .claude/agents/generated/ (for inspection only)",
+    )
+
     return parser.parse_args()
 
 
@@ -193,8 +208,33 @@ def main() -> None:
             print("Use an absolute path or register the project first.")
             return
 
+    # Determine spec mode: CLI flag takes precedence, then env var
+    spec_mode = args.spec or os.environ.get("AUTOBUILDR_MODE", "legacy") == "spec"
+
     try:
-        if args.agent_type:
+        if spec_mode and not args.agent_type:
+            # Spec-driven execution mode
+            print("[ENTRY] Using spec-driven execution (--spec)", flush=True)
+
+            from api.database import create_database
+            from api.spec_orchestrator import SpecOrchestrator
+
+            engine, SessionLocal = create_database(project_dir)
+            session = SessionLocal()
+
+            try:
+                orchestrator = SpecOrchestrator(
+                    project_dir=project_dir,
+                    session=session,
+                    engine=engine,
+                    yolo_mode=args.yolo,
+                    materialize_agents=args.materialize_agents,
+                )
+                orchestrator.run_loop()
+            finally:
+                session.close()
+
+        elif args.agent_type:
             # Subprocess mode - spawned by orchestrator for a specific role
             asyncio.run(
                 run_autonomous_agent(
@@ -208,7 +248,8 @@ def main() -> None:
                 )
             )
         else:
-            # Entry point mode - always use unified orchestrator
+            # Entry point mode - legacy unified orchestrator
+            print("[ENTRY] Using legacy execution", flush=True)
             from parallel_orchestrator import run_parallel_orchestrator
 
             # Clamp concurrency to valid range (1-5)

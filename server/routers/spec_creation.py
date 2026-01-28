@@ -371,5 +371,7 @@ async def spec_chat_websocket(websocket: WebSocket, project_name: str):
             pass
 
     finally:
-        # Don't remove the session on disconnect - allow resume
-        pass
+        # Restore app_spec.txt template if spec creation didn't complete
+        # This prevents leaving the project in a broken state (no app_spec.txt)
+        if session:
+            session._restore_template_if_needed()

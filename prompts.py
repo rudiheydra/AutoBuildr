@@ -256,15 +256,24 @@ def has_project_prompts(project_dir: Path) -> bool:
         if legacy_spec.exists():
             try:
                 content = legacy_spec.read_text(encoding="utf-8")
-                return "<project_specification>" in content
+                if "<project_specification>" not in content:
+                    return False
+                if "YOUR_PROJECT_NAME" in content:
+                    return False
+                return True
             except (OSError, PermissionError):
                 return False
         return False
 
-    # Check for valid spec content
+    # Check for valid spec content (not just the template)
     try:
         content = app_spec.read_text(encoding="utf-8")
-        return "<project_specification>" in content
+        if "<project_specification>" not in content:
+            return False
+        # Reject template placeholder — real specs have actual project names
+        if "YOUR_PROJECT_NAME" in content:
+            return False
+        return True
     except (OSError, PermissionError):
         return False
 
