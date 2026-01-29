@@ -571,6 +571,46 @@ def _migrate_add_agent_event_artifact_fk(engine) -> None:
         )
 
 
+def _migrate_artifact_not_null_content_hash_size(engine) -> None:
+    """Fix NULL values in artifacts.content_hash and artifacts.size_bytes.
+
+    Feature #147: The spec implies content_hash and size_bytes are required fields
+    on artifacts. The CRUD layer always sets these values, but existing databases
+    may have NULL values from legacy code. This migration:
+    1. Sets default values for any existing NULL rows
+    2. SQLite doesn't support ALTER COLUMN to add NOT NULL, so we rely on the
+       SQLAlchemy model's nullable=False for new databases. For existing databases,
+       we just ensure no NULL values remain.
+    """
+    from sqlalchemy import inspect
+
+    inspector = inspect(engine)
+    existing_tables = inspector.get_table_names()
+
+    if "artifacts" not in existing_tables:
+        return  # Table doesn't exist yet, will be created with NOT NULL
+
+    try:
+        with engine.connect() as conn:
+            # Fix NULL content_hash values with a placeholder hash
+            # (empty string SHA256 hash as default for legacy data)
+            conn.execute(text(
+                "UPDATE artifacts SET content_hash = "
+                "'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' "
+                "WHERE content_hash IS NULL"
+            ))
+            # Fix NULL size_bytes values
+            conn.execute(text(
+                "UPDATE artifacts SET size_bytes = 0 WHERE size_bytes IS NULL"
+            ))
+            conn.commit()
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(
+            f"Could not fix NULL content_hash/size_bytes in artifacts: {e}"
+        )
+
+
 def create_database(project_dir: Path) -> tuple:
     """
     Create database and return engine + session maker.
@@ -624,6 +664,9 @@ def create_database(project_dir: Path) -> tuple:
 
     # Feature #144: Ensure agent_events.artifact_ref FK to artifacts.id
     _migrate_add_agent_event_artifact_fk(engine)
+
+    # Feature #147: Fix NULL content_hash/size_bytes in artifacts
+    _migrate_artifact_not_null_content_hash_size(engine)
 
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     return engine, SessionLocal

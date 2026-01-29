@@ -151,7 +151,7 @@ async def download_artifact_content(
     else:
         # Generate a filename from artifact type and hash
         extension = ".txt" if "text" in content_type else ".bin"
-        hash_prefix = (artifact.content_hash or "unknown")[:8]
+        hash_prefix = (artifact.content_hash or "unknown")[:8]  # Feature #147: content_hash is NOT NULL, fallback for safety
         filename = f"{artifact.artifact_type}_{hash_prefix}{extension}"
 
     # If content is inline, return it directly
@@ -163,7 +163,7 @@ async def download_artifact_content(
                 "Content-Disposition": f'attachment; filename="{filename}"',
                 "Content-Length": str(len(artifact.content_inline.encode("utf-8"))),
                 "X-Artifact-Id": artifact_id,
-                "X-Content-Hash": artifact.content_hash or "",
+                "X-Content-Hash": artifact.content_hash,  # Feature #147: NOT NULL
             }
         )
 
@@ -192,6 +192,6 @@ async def download_artifact_content(
             "Content-Disposition": f'attachment; filename="{filename}"',
             "Content-Length": str(file_size),
             "X-Artifact-Id": artifact_id,
-            "X-Content-Hash": artifact.content_hash or "",
+            "X-Content-Hash": artifact.content_hash,  # Feature #147: NOT NULL
         }
     )

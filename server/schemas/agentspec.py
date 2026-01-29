@@ -781,13 +781,13 @@ class ArtifactListItemResponse(BaseModel):
         default=None,
         description="Path to content file for large artifacts (>4KB)"
     )
-    content_hash: str | None = Field(
-        default=None,
-        description="SHA256 hash of content for integrity and deduplication"
+    content_hash: str = Field(
+        ...,
+        description="SHA256 hash of content for integrity and deduplication (required, Feature #147)"
     )
-    size_bytes: int | None = Field(
-        default=None,
-        description="Size of artifact content in bytes"
+    size_bytes: int = Field(
+        ...,
+        description="Size of artifact content in bytes (required, Feature #147)"
     )
     created_at: datetime = Field(
         ...,
@@ -867,13 +867,13 @@ class ArtifactResponse(BaseModel):
         default=None,
         description="Path to content file for large artifacts (>4KB)"
     )
-    content_hash: str | None = Field(
-        default=None,
-        description="SHA256 hash of content for integrity and deduplication"
+    content_hash: str = Field(
+        ...,
+        description="SHA256 hash of content for integrity and deduplication (required, Feature #147)"
     )
-    size_bytes: int | None = Field(
-        default=None,
-        description="Size of artifact content in bytes"
+    size_bytes: int = Field(
+        ...,
+        description="Size of artifact content in bytes (required, Feature #147)"
     )
     created_at: datetime = Field(
         ...,

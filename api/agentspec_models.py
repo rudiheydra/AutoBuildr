@@ -614,8 +614,8 @@ class Artifact(Base):
     # Content storage (file-based for large, inline for small)
     content_ref = Column(String(255), nullable=True)  # path to content file: .autobuildr/artifacts/{run_id}/{sha256}.blob
     content_inline = Column(Text, nullable=True)  # small content stored inline (<=4KB)
-    content_hash = Column(String(64), nullable=True)  # SHA256 for dedup and integrity
-    size_bytes = Column(Integer, nullable=True)
+    content_hash = Column(String(64), nullable=False)  # SHA256 for dedup and integrity (Feature #147: NOT NULL)
+    size_bytes = Column(Integer, nullable=False)  # Feature #147: NOT NULL - always set by CRUD layer
 
     created_at = Column(DateTime, nullable=False, default=_utc_now)
     artifact_metadata = Column(JSON, nullable=True)  # type-specific metadata (renamed to avoid SQLAlchemy reserved word)
