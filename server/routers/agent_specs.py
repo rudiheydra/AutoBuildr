@@ -196,6 +196,7 @@ async def create_agent_spec(
         timeout_seconds=spec_data.timeout_seconds,
         parent_spec_id=spec_data.parent_spec_id,
         source_feature_id=spec_data.source_feature_id,
+        spec_path=spec_data.spec_path,
         priority=spec_data.priority,
         tags=spec_data.tags,
         created_at=created_at,
@@ -277,6 +278,7 @@ async def create_agent_spec(
         timeout_seconds=spec_dict["timeout_seconds"],
         parent_spec_id=spec_dict["parent_spec_id"],
         source_feature_id=spec_dict["source_feature_id"],
+        spec_path=spec_dict.get("spec_path"),
         created_at=spec_dict["created_at"],
         priority=spec_dict["priority"],
         tags=spec_dict["tags"],
@@ -593,6 +595,7 @@ async def get_agent_spec(
         timeout_seconds=spec_dict["timeout_seconds"],
         parent_spec_id=spec_dict["parent_spec_id"],
         source_feature_id=spec_dict["source_feature_id"],
+        spec_path=spec_dict.get("spec_path"),
         created_at=spec_dict["created_at"],
         priority=spec_dict["priority"],
         tags=spec_dict["tags"],
@@ -615,10 +618,16 @@ async def _execute_spec_background(
     project_name: str,
 ) -> None:
     """
-    Background task to execute an AgentSpec.
+    Background task to execute an AgentSpec via HarnessKernel.
 
-    This is a placeholder implementation that will be replaced with the
-    actual HarnessKernel execution when it's implemented.
+    Feature #136: Wire execute endpoint to actually call HarnessKernel.execute().
+
+    This function:
+    1. Transitions the pre-created AgentRun to 'running' status
+    2. Broadcasts WebSocket notification (Feature #61)
+    3. Invokes HarnessKernel.execute(spec) for real kernel execution
+    4. Syncs results from the kernel's run back to the pre-created run
+    5. Handles errors gracefully, updating run status to 'failed' on failure
 
     Args:
         project_dir: Path to the project directory
@@ -641,6 +650,13 @@ async def _execute_spec_background(
 
             # Get the spec for display_name and icon
             spec = db.query(AgentSpecModel).filter(AgentSpecModel.id == spec_id).first()
+            if not spec:
+                _logger.error(f"AgentSpec {spec_id} not found for run {run_id}")
+                run.status = "failed"
+                run.completed_at = _utc_now()
+                run.error = f"AgentSpec '{spec_id}' not found"
+                db.commit()
+                return
             display_name = spec.display_name if spec else f"Run {run_id[:8]}"
             icon = spec.icon if spec else None
 
@@ -664,24 +680,81 @@ async def _execute_spec_background(
                 started_at=run.started_at,
             )
 
-        # TODO: This is where HarnessKernel.execute(spec) will be called
-        # For now, we just log that execution would happen here
-        _logger.info(f"[PLACEHOLDER] Would execute HarnessKernel for spec {spec_id}")
+        # Phase 2: Execute via HarnessKernel (Feature #136)
+        # Use a separate DB session for the kernel execution to ensure
+        # proper transaction isolation and commit behavior
+        from api.harness_kernel import HarnessKernel
 
-        # Simulate a small delay for demonstration purposes
-        # In production, this is where the actual kernel execution happens
-        await asyncio.sleep(0.1)
+        with get_db_session(project_dir) as kernel_db:
+            # Load the spec in the kernel's session with acceptance_spec eagerly loaded
+            kernel_spec = kernel_db.query(AgentSpecModel).options(
+                joinedload(AgentSpecModel.acceptance_spec)
+            ).filter(AgentSpecModel.id == spec_id).first()
 
-        # Note: In the real implementation, the kernel will:
-        # 1. Build system prompt from spec
-        # 2. Execute via Claude SDK
-        # 3. Record events for each turn
-        # 4. Run acceptance validators
-        # 5. Update final status and verdict
+            if not kernel_spec:
+                raise RuntimeError(f"AgentSpec '{spec_id}' not found in kernel session")
+
+            _logger.info(f"Invoking HarnessKernel.execute() for spec {spec_id}")
+
+            # Create kernel and execute the spec
+            # The kernel creates its own AgentRun internally and manages
+            # the full execution lifecycle (turns, events, acceptance, verdict)
+            kernel = HarnessKernel(db=kernel_db)
+            kernel_run = kernel.execute(
+                kernel_spec,
+                turn_executor=None,  # No Claude SDK executor yet; completes immediately
+                context={
+                    "project_dir": str(project_dir),
+                },
+            )
+
+            _logger.info(
+                f"HarnessKernel execution completed: kernel_run={kernel_run.id}, "
+                f"status={kernel_run.status}, verdict={kernel_run.final_verdict}, "
+                f"turns={kernel_run.turns_used}"
+            )
+
+            # Capture kernel run results before session closes
+            kernel_status = kernel_run.status
+            kernel_completed_at = kernel_run.completed_at
+            kernel_turns_used = kernel_run.turns_used
+            kernel_tokens_in = kernel_run.tokens_in
+            kernel_tokens_out = kernel_run.tokens_out
+            kernel_final_verdict = kernel_run.final_verdict
+            kernel_acceptance_results = kernel_run.acceptance_results
+            kernel_error = kernel_run.error
+            kernel_retry_count = kernel_run.retry_count
+
+        # Phase 3: Sync kernel results back to the pre-created run
+        # The endpoint returned run_id to the client, so we update that
+        # record with the actual execution results from HarnessKernel
+        with get_db_session(project_dir) as sync_db:
+            original_run = sync_db.query(AgentRunModel).filter(
+                AgentRunModel.id == run_id
+            ).first()
+
+            if original_run:
+                original_run.status = kernel_status
+                original_run.completed_at = kernel_completed_at or _utc_now()
+                original_run.turns_used = kernel_turns_used
+                original_run.tokens_in = kernel_tokens_in
+                original_run.tokens_out = kernel_tokens_out
+                original_run.final_verdict = kernel_final_verdict
+                original_run.acceptance_results = kernel_acceptance_results
+                original_run.error = kernel_error
+                original_run.retry_count = kernel_retry_count
+                sync_db.commit()
+
+                _logger.info(
+                    f"Synced kernel results to original run {run_id}: "
+                    f"status={kernel_status}, verdict={kernel_final_verdict}"
+                )
+            else:
+                _logger.warning(f"Original run {run_id} not found during result sync")
 
     except Exception as e:
         _logger.exception(f"Error executing spec {spec_id}: {e}")
-        # Mark run as failed
+        # Mark run as failed with error details
         try:
             with get_db_session(project_dir) as db:
                 run = db.query(AgentRunModel).filter(AgentRunModel.id == run_id).first()
@@ -757,7 +830,7 @@ async def execute_agent_spec(
     The execution will:
     1. Validate AgentSpec (Feature #78, Steps 1-4)
     2. Transition the run to 'running' status
-    3. Execute the spec via HarnessKernel (when implemented)
+    3. Execute the spec via HarnessKernel (Feature #136)
     4. Record events for each tool call and turn
     5. Run acceptance validators
     6. Update final status (completed/failed/timeout)
@@ -1074,6 +1147,7 @@ async def update_agent_spec(
         timeout_seconds=spec_dict["timeout_seconds"],
         parent_spec_id=spec_dict["parent_spec_id"],
         source_feature_id=spec_dict["source_feature_id"],
+        spec_path=spec_dict.get("spec_path"),
         created_at=spec_dict["created_at"],
         priority=spec_dict["priority"],
         tags=spec_dict["tags"],

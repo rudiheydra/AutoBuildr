@@ -60,6 +60,7 @@ def create_agent_spec(
     timeout_seconds: int = 1800,
     parent_spec_id: str | None = None,
     source_feature_id: int | None = None,
+    spec_path: str | None = None,
     priority: int = 500,
     tags: list[str] | None = None,
     spec_version: str = "v1",
@@ -82,6 +83,7 @@ def create_agent_spec(
         timeout_seconds: Wall-clock timeout
         parent_spec_id: Parent spec ID for sub-agent spawning (future)
         source_feature_id: Linked Feature ID (optional)
+        spec_path: Optional file path to the spec definition
         priority: Execution priority (lower = higher priority)
         tags: Optional tags for filtering
         spec_version: Version string for forward compatibility
@@ -109,6 +111,7 @@ def create_agent_spec(
         timeout_seconds=timeout_seconds,
         parent_spec_id=parent_spec_id,
         source_feature_id=source_feature_id,
+        spec_path=spec_path,
         priority=priority,
         tags=tags,
     )
@@ -329,7 +332,7 @@ def complete_run(
     Args:
         session: SQLAlchemy session
         run_id: Run ID
-        verdict: One of: passed, failed, partial
+        verdict: One of: passed, failed, error
         acceptance_results: List of validator results
 
     Returns:
