@@ -40,6 +40,20 @@ from sqlalchemy.orm import Session
 if TYPE_CHECKING:
     from api.agentspec_models import AgentEvent, AgentRun, AgentSpec, AcceptanceSpec
 
+# Import tool policy enforcement (Feature #129)
+from api.tool_policy import (
+    ToolPolicyEnforcer,
+    ToolCallBlocked,
+    ForbiddenToolBlocked,
+    DirectoryAccessBlocked,
+    create_enforcer_for_run,
+    record_policy_violation_event,
+    record_allowed_tools_violation,
+    record_forbidden_patterns_violation,
+    record_forbidden_tools_violation,
+    PolicyViolation,
+)
+
 
 # =============================================================================
 # Database Transaction Safety (Feature #77)
@@ -862,6 +876,8 @@ class HarnessKernel:
         # Feature #49: Store spec and context for graceful budget exhaustion handling
         self._current_spec: Optional["AgentSpec"] = None
         self._validator_context: dict[str, Any] = {}
+        # Feature #129: Tool policy enforcer for filtering tool calls
+        self._tool_policy_enforcer: Optional[ToolPolicyEnforcer] = None
 
     def initialize_run(self, run: "AgentRun", spec: "AgentSpec") -> BudgetTracker:
         """
@@ -1564,6 +1580,229 @@ class HarnessKernel:
         _logger.error("Recorded failed event: run=%s, error=%s", run_id, error_message)
         return event
 
+    # =========================================================================
+    # Feature #129: Tool Policy Enforcement
+    # =========================================================================
+
+    def _initialize_tool_policy_enforcer(self, spec: "AgentSpec") -> None:
+        """
+        Initialize the ToolPolicyEnforcer from an AgentSpec.
+
+        Feature #129: Tool policy enforcement filters tools and blocks forbidden patterns.
+
+        Creates and caches a ToolPolicyEnforcer that:
+        - Compiles forbidden_patterns as regex (cached for performance)
+        - Extracts allowed_tools from spec.tool_policy
+        - Is used during execution to validate each tool call
+
+        Args:
+            spec: The AgentSpec with tool_policy
+        """
+        try:
+            self._tool_policy_enforcer = create_enforcer_for_run(spec)
+            _logger.info(
+                "Tool policy enforcer initialized for spec %s: "
+                "%d forbidden patterns, %s allowed tools",
+                spec.id,
+                self._tool_policy_enforcer.pattern_count,
+                "all" if self._tool_policy_enforcer.allowed_tools is None
+                else len(self._tool_policy_enforcer.allowed_tools),
+            )
+        except Exception as e:
+            # Fail-safe: If enforcer creation fails, log warning but continue
+            # (don't block execution due to policy initialization error)
+            _logger.warning(
+                "Failed to initialize tool policy enforcer for spec %s: %s. "
+                "Execution will continue without tool policy enforcement.",
+                spec.id, e,
+            )
+            self._tool_policy_enforcer = None
+
+    def _enforce_tool_policy(
+        self,
+        run_id: str,
+        tool_name: str,
+        arguments: dict[str, Any] | None,
+        turn_number: int,
+    ) -> tuple[bool, str | None]:
+        """
+        Enforce tool policy on a single tool call.
+
+        Feature #129: Checks the tool call against the spec's tool_policy:
+        1. Verifies tool_name is in allowed_tools (if specified)
+        2. Checks tool arguments against forbidden_patterns (regex)
+        3. Records policy_violation event if blocked
+        4. Returns error result instead of crashing
+
+        Args:
+            run_id: ID of the current AgentRun
+            tool_name: Name of the tool being called
+            arguments: Tool arguments
+            turn_number: Current turn number for event recording
+
+        Returns:
+            Tuple of (allowed: bool, error_message: str | None)
+            - (True, None) if the tool call is allowed
+            - (False, error_message) if the tool call is blocked
+        """
+        if self._tool_policy_enforcer is None:
+            # No enforcer configured - allow all tool calls
+            return (True, None)
+
+        try:
+            self._tool_policy_enforcer.validate_tool_call(tool_name, arguments)
+            return (True, None)
+
+        except ToolCallBlocked as e:
+            # Tool call blocked by allowed_tools check or forbidden_patterns
+            _logger.warning(
+                "Feature #129: Tool call blocked for run %s: tool=%s, pattern=%s",
+                run_id, tool_name, e.pattern_matched,
+            )
+
+            # Record policy violation event
+            self._event_sequence += 1
+            if e.pattern_matched == "[not_in_allowed_tools]":
+                record_allowed_tools_violation(
+                    db=self.db,
+                    run_id=run_id,
+                    sequence=self._event_sequence,
+                    tool_name=tool_name,
+                    turn_number=turn_number,
+                    allowed_tools=self._tool_policy_enforcer.allowed_tools,
+                    arguments=arguments,
+                )
+            else:
+                record_forbidden_patterns_violation(
+                    db=self.db,
+                    run_id=run_id,
+                    sequence=self._event_sequence,
+                    tool_name=tool_name,
+                    turn_number=turn_number,
+                    pattern_matched=e.pattern_matched,
+                    arguments=arguments,
+                )
+
+            error_msg = self._tool_policy_enforcer.get_blocked_error_message(
+                tool_name, e.pattern_matched
+            )
+            return (False, error_msg)
+
+        except ForbiddenToolBlocked as e:
+            # Tool explicitly blocked via forbidden_tools list
+            _logger.warning(
+                "Feature #129: Forbidden tool blocked for run %s: tool=%s",
+                run_id, tool_name,
+            )
+
+            self._event_sequence += 1
+            record_forbidden_tools_violation(
+                db=self.db,
+                run_id=run_id,
+                sequence=self._event_sequence,
+                tool_name=tool_name,
+                turn_number=turn_number,
+                forbidden_tools=self._tool_policy_enforcer.forbidden_tools,
+                arguments=arguments,
+            )
+
+            error_msg = self._tool_policy_enforcer.get_forbidden_tool_error_message(
+                tool_name
+            )
+            return (False, error_msg)
+
+        except DirectoryAccessBlocked as e:
+            # Tool blocked by directory sandbox
+            _logger.warning(
+                "Feature #129: Directory access blocked for run %s: tool=%s, path=%s",
+                run_id, tool_name, e.target_path,
+            )
+
+            self._event_sequence += 1
+            from api.tool_policy import record_directory_sandbox_violation
+            record_directory_sandbox_violation(
+                db=self.db,
+                run_id=run_id,
+                sequence=self._event_sequence,
+                tool_name=tool_name,
+                turn_number=turn_number,
+                attempted_path=e.target_path,
+                reason=e.reason,
+                allowed_directories=[str(d) for d in self._tool_policy_enforcer.allowed_directories],
+            )
+
+            error_msg = self._tool_policy_enforcer.get_directory_blocked_error_message(
+                tool_name, e.target_path, e.reason
+            )
+            return (False, error_msg)
+
+        except Exception as e:
+            # Unexpected error in policy enforcement - fail-safe: allow the call
+            _logger.error(
+                "Unexpected error in tool policy enforcement for run %s: %s. "
+                "Allowing tool call (fail-safe).",
+                run_id, e,
+            )
+            return (True, None)
+
+    def _filter_tool_events_with_policy(
+        self,
+        run_id: str,
+        tool_events: list[dict[str, Any]],
+        turn_number: int,
+    ) -> list[dict[str, Any]]:
+        """
+        Filter tool events through tool policy enforcement.
+
+        Feature #129: For each tool event from the turn executor, check against
+        the tool policy. Blocked tool calls get their result replaced with an
+        error message and is_error set to True.
+
+        This method does NOT terminate the run for blocked calls - execution
+        continues with the error result.
+
+        Args:
+            run_id: ID of the current AgentRun
+            tool_events: List of tool event dicts from turn executor
+            turn_number: Current turn number
+
+        Returns:
+            Filtered tool events list - blocked events have is_error=True and
+            result set to the error message
+        """
+        if self._tool_policy_enforcer is None:
+            return tool_events
+
+        filtered = []
+        for event in tool_events:
+            tool_name = event.get("tool_name", "unknown")
+            arguments = event.get("arguments")
+
+            allowed, error_msg = self._enforce_tool_policy(
+                run_id=run_id,
+                tool_name=tool_name,
+                arguments=arguments,
+                turn_number=turn_number,
+            )
+
+            if allowed:
+                filtered.append(event)
+            else:
+                # Replace with error result - blocked tool call
+                blocked_event = {
+                    "tool_name": tool_name,
+                    "arguments": arguments,
+                    "result": error_msg,
+                    "is_error": True,
+                    "blocked_by_policy": True,
+                }
+                # Preserve tool_use_id if present (for conversation threading)
+                if "tool_use_id" in event:
+                    blocked_event["tool_use_id"] = event["tool_use_id"]
+                filtered.append(blocked_event)
+
+        return filtered
+
     def _run_acceptance_validators(
         self,
         run: "AgentRun",
@@ -1881,6 +2120,10 @@ class HarnessKernel:
         self._current_spec = spec
         self._validator_context = validator_context
 
+        # Feature #129: Initialize tool policy enforcer from spec
+        # Compiles forbidden_patterns as regex and caches for performance
+        self._initialize_tool_policy_enforcer(spec)
+
         try:
             # Step 2: Initialize run (sets status=running, starts budget tracker)
             self.initialize_run(run, spec)
@@ -1954,6 +2197,13 @@ class HarnessKernel:
                         _logger.error("Failed to commit turn error for %s: %s", run.id, tx_error)
                         rollback_and_record_error(self.db, run.id, tx_error)
                     return run
+
+                # Feature #129: Filter tool events through tool policy enforcement
+                # Blocked tool calls get error results but do NOT terminate the run
+                turn_number = self._budget_tracker.turns_used if self._budget_tracker else 0
+                tool_events = self._filter_tool_events_with_policy(
+                    run.id, tool_events, turn_number
+                )
 
                 # Record tool events (tool_call and tool_result pairs)
                 for event in tool_events:
@@ -2046,3 +2296,5 @@ class HarnessKernel:
             # The session should be closed by the context manager that owns it
             self._current_spec = None
             self._validator_context = {}
+            # Feature #129: Clear tool policy enforcer to prevent memory leaks
+            self._tool_policy_enforcer = None

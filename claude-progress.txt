@@ -1,6 +1,59 @@
 # AutoBuildr Progress Log
 # ======================
 
+## Session: 2026-01-30 (Coding Agent - Feature #129)
+
+### Feature #129: Tool policy enforcement filters tools and blocks forbidden patterns - COMPLETED
+
+**Status:** PASSING
+
+**Category:** security
+
+**Description:** During kernel execution via the --spec path, the tool policy from the AgentSpec is enforced. The turn executor or kernel must filter tool calls against spec.tool_policy.allowed_tools and check tool arguments against spec.tool_policy.forbidden_patterns.
+
+**Implementation Details:**
+- Modified `api/harness_kernel.py`:
+  - Added `_tool_policy_enforcer` attribute to HarnessKernel
+  - Added `_initialize_tool_policy_enforcer()` method - creates ToolPolicyEnforcer from spec at start of execute()
+  - Added `_enforce_tool_policy()` method - checks individual tool calls against allowed_tools and forbidden_patterns, records policy_violation events
+  - Added `_filter_tool_events_with_policy()` method - filters all tool events from turn executor, replacing blocked events with error results
+  - Integrated into `execute()` loop: enforcer initialized once, all tool events filtered before recording
+  - Blocked tool calls get error results but do NOT terminate the run
+  - Enforcer cleaned up in finally block to prevent memory leaks
+
+- Created `tests/test_feature_129_tool_policy_enforcement.py` (27 tests):
+  - TestStep1AllowedToolsCheck (3 tests): Kernel initializes enforcer, creates from spec, allowed tools pass
+  - TestStep2BlockedToolReturnsError (3 tests): Not-in-allowed raises, kernel blocks, error tuple returned
+  - TestStep3ForbiddenPatternsCheck (4 tests): Safe args pass, rm -rf blocked, DROP TABLE blocked, chmod 777 blocked
+  - TestStep4ForbiddenPatternBlocking (2 tests): Kernel blocks patterns, filter replaces blocked events
+  - TestStep5PolicyViolationEvents (3 tests): Policy violation events created, forbidden patterns logged, turn_number present
+  - TestStep6RunContinuesAfterBlock (3 tests): Run continues after block, multiple blocks don't crash, status not failed
+  - TestStep7RegexCachedPerformance (6 tests): Patterns compiled as regex, cached in enforcer, once-per-execute, invalid handled, case-insensitive
+  - TestIntegration (3 tests): Mixed events, no-policy allows all, enforcer cleaned up
+
+**Verification Summary (All 7 Feature Steps Passed):**
+1. Kernel checks each tool call against tool_policy.allowed_tools - PASS
+2. Tool NOT in allowed_tools is blocked and returns error - PASS
+3. Tool arguments checked against tool_policy.forbidden_patterns - PASS
+4. Tool call matching forbidden pattern is blocked - PASS
+5. Blocked tool calls logged as policy_violation events - PASS
+6. Blocked tool call does NOT terminate the run - PASS
+7. Forbidden patterns compiled as regex and cached for performance - PASS
+
+**Test Results:**
+- tests/test_feature_129_tool_policy_enforcement.py: 27/27 passed
+- tests/test_harness_kernel.py: 56/56 passed (no regressions)
+- tests/test_tool_policy.py + tests/test_dspy_pipeline_e2e.py: 112/112 passed (no regressions)
+- tests/test_turn_executor.py: 60/60 passed (no regressions)
+
+**Updated Progress:**
+- Total: 128/133 features passing (approximately 96.2%)
+- Feature #129: Tool policy enforcement - PASSING
+
+**Session completed successfully.**
+
+---
+
 ## Session: 2026-01-30 (Coding Agent - Feature #130)
 
 ### Feature #130: Acceptance gate evaluates validators and determines final verdict - COMPLETED
