@@ -47,6 +47,7 @@ from api.feature_compiler import FeatureCompiler
 from api.harness_kernel import BudgetTracker, HarnessKernel
 from api.spec_builder import BuildResult, SpecBuilder
 from api.spec_name_generator import generate_spec_name
+from api.spec_orchestrator import SpecOrchestrator
 from api.task_type_detector import detect_task_type, detect_task_type_detailed
 from api.tool_policy import derive_budget, derive_tool_policy
 from api.validator_generator import generate_validators_from_steps
@@ -2560,4 +2561,470 @@ class TestAcceptanceGateEvaluatesValidators:
         )
         assert payload["validator_count"] == 2, (
             f"Expected validator_count=2, got {payload['validator_count']}"
+        )
+
+
+class TestVerdictSyncsBackToFeature:
+    """Feature #131: Verdict syncs back to Feature.passes after kernel run.
+
+    After HarnessKernel returns an AgentRun with a final_verdict, the --spec
+    orchestrator syncs the result back to the originating Feature record.
+    If final_verdict is 'passed', Feature.passes is set to True. If final_verdict
+    is 'failed' or 'error', Feature.passes remains unchanged (or is set to False).
+    In all cases, Feature.in_progress is cleared to False.
+
+    Verification steps:
+    1. Verify the orchestrator reads AgentRun.final_verdict after kernel execution
+    2. Verify that when final_verdict='passed', Feature.passes is set to True in the database
+    3. Verify that when final_verdict='failed', Feature.passes is not set to True
+    4. Verify that Feature.in_progress is set to False regardless of verdict
+    5. Verify the feature update uses the source_feature_id from the AgentSpec to find the correct Feature
+    6. Verify this works correctly for multiple features processed in sequence
+    """
+
+    _subdir_counter = 0
+
+    def _create_feature_with_spec(
+        self, db_session, tmp_path, feature_id, files_to_create=None,
+        gate_mode="all_pass", category="A. Database",
+    ):
+        """Helper: create a Feature, compile it to an AgentSpec with file_exists validators.
+
+        Args:
+            db_session: Database session
+            tmp_path: Pytest tmp_path fixture
+            feature_id: Unique feature ID
+            files_to_create: List of filenames to pre-create (validators check file_a.txt, file_b.txt)
+            gate_mode: Gate mode for acceptance spec
+            category: Feature category (affects task_type)
+
+        Returns:
+            Tuple of (feature, spec)
+        """
+        # Use a unique subdirectory for each call
+        TestVerdictSyncsBackToFeature._subdir_counter += 1
+        subdir = tmp_path / f"verdict_{TestVerdictSyncsBackToFeature._subdir_counter}"
+        subdir.mkdir(parents=True, exist_ok=True)
+
+        # Create test files if requested
+        if files_to_create:
+            for fname in files_to_create:
+                (subdir / fname).write_text(f"content of {fname}")
+
+        # Create feature in DB
+        feature = Feature(
+            id=feature_id,
+            priority=feature_id,
+            category=category,
+            name=f"Verdict Sync Test Feature {feature_id}",
+            description=f"Test feature {feature_id} for verdict sync verification",
+            steps=[
+                "Verify file_a.txt exists",
+                "Verify file_b.txt exists",
+            ],
+            passes=False,
+            in_progress=False,
+        )
+        db_session.add(feature)
+        db_session.commit()
+
+        # Compile feature → AgentSpec
+        compiler = FeatureCompiler()
+        spec = compiler.compile(feature)
+
+        # Override the acceptance_spec with file-based validators for deterministic testing
+        validators = [
+            {
+                "type": "file_exists",
+                "config": {
+                    "path": str(subdir / "file_a.txt"),
+                    "should_exist": True,
+                    "description": "Validator A: file_a.txt must exist",
+                },
+                "weight": 1.0,
+                "required": False,
+            },
+            {
+                "type": "file_exists",
+                "config": {
+                    "path": str(subdir / "file_b.txt"),
+                    "should_exist": True,
+                    "description": "Validator B: file_b.txt must exist",
+                },
+                "weight": 1.0,
+                "required": False,
+            },
+        ]
+
+        # Replace the auto-generated acceptance spec with deterministic file validators
+        if spec.acceptance_spec:
+            spec.acceptance_spec.validators = validators
+            spec.acceptance_spec.gate_mode = gate_mode
+        else:
+            acceptance = AcceptanceSpec(
+                id=generate_uuid(),
+                agent_spec_id=spec.id,
+                validators=validators,
+                gate_mode=gate_mode,
+                retry_policy="none",
+                max_retries=0,
+            )
+            spec.acceptance_spec = acceptance
+
+        # Persist spec + acceptance_spec
+        db_session.add(spec)
+        if spec.acceptance_spec and spec.acceptance_spec not in db_session:
+            db_session.add(spec.acceptance_spec)
+        db_session.commit()
+        db_session.refresh(spec)
+
+        return feature, spec
+
+    def test_step1_orchestrator_reads_final_verdict(self, db_session, tmp_path):
+        """Step 1: Verify the orchestrator reads AgentRun.final_verdict after kernel execution.
+
+        Create a feature, compile to spec, execute via kernel, then verify
+        SpecOrchestrator.sync_verdict() reads the final_verdict from the run.
+        """
+        feature, spec = self._create_feature_with_spec(
+            db_session, tmp_path, feature_id=3100,
+            files_to_create=["file_a.txt", "file_b.txt"],
+        )
+
+        # Mark feature in_progress (as orchestrator would)
+        feature.in_progress = True
+        db_session.commit()
+
+        # Execute via kernel with a mock executor that completes immediately
+        def completing_executor(run, spec):
+            return (True, {"action": "completed"}, [], 50, 25)
+
+        kernel = HarnessKernel(db=db_session)
+        run = kernel.execute(spec, turn_executor=completing_executor)
+
+        # Verify the run has a final_verdict set
+        assert run.final_verdict is not None, (
+            "AgentRun.final_verdict must be set after kernel execution"
+        )
+        assert run.final_verdict in ("passed", "failed", "partial"), (
+            f"final_verdict must be passed/failed/partial, got '{run.final_verdict}'"
+        )
+
+        # Now use sync_verdict to sync back to feature
+        orchestrator = SpecOrchestrator(
+            project_dir=tmp_path,
+            session=db_session,
+        )
+        orchestrator.sync_verdict(feature, run)
+
+        # Verify the orchestrator read the verdict and acted on it
+        db_session.refresh(feature)
+        assert feature.passes is True, (
+            f"Feature.passes should be True after sync_verdict with verdict='passed', "
+            f"got {feature.passes} (verdict was '{run.final_verdict}')"
+        )
+
+    def test_step2_passed_verdict_sets_feature_passes_true(self, db_session, tmp_path):
+        """Step 2: Verify that when final_verdict='passed', Feature.passes is set to True
+        in the database.
+
+        Both validators pass (both files exist) → verdict='passed' → Feature.passes=True.
+        """
+        feature, spec = self._create_feature_with_spec(
+            db_session, tmp_path, feature_id=3101,
+            files_to_create=["file_a.txt", "file_b.txt"],
+        )
+
+        # Pre-condition: Feature.passes is False
+        assert feature.passes is False, "Pre-condition: Feature.passes should start as False"
+
+        # Mark in_progress
+        feature.in_progress = True
+        db_session.commit()
+
+        # Execute kernel — both validators pass → verdict='passed'
+        def completing_executor(run, spec):
+            return (True, {"action": "completed"}, [], 50, 25)
+
+        kernel = HarnessKernel(db=db_session)
+        run = kernel.execute(spec, turn_executor=completing_executor)
+
+        assert run.final_verdict == "passed", (
+            f"Both files exist, expected verdict='passed', got '{run.final_verdict}'"
+        )
+
+        # Sync verdict back to feature
+        orchestrator = SpecOrchestrator(
+            project_dir=tmp_path,
+            session=db_session,
+        )
+        orchestrator.sync_verdict(feature, run)
+
+        # Verify Feature.passes is True in database
+        db_session.refresh(feature)
+        assert feature.passes is True, (
+            f"Feature.passes should be True after verdict='passed', got {feature.passes}"
+        )
+
+        # Double-check by querying DB directly
+        db_feature = db_session.query(Feature).filter(Feature.id == 3101).first()
+        assert db_feature.passes is True, (
+            f"DB Feature.passes should be True, got {db_feature.passes}"
+        )
+
+    def test_step3_failed_verdict_does_not_set_passes_true(self, db_session, tmp_path):
+        """Step 3: Verify that when final_verdict='failed', Feature.passes is not set to True.
+
+        No files exist → both validators fail → verdict='failed' → Feature.passes=False.
+        """
+        feature, spec = self._create_feature_with_spec(
+            db_session, tmp_path, feature_id=3102,
+            files_to_create=[],  # No files → both validators fail
+        )
+
+        # Pre-condition: Feature.passes is False
+        assert feature.passes is False
+
+        # Mark in_progress
+        feature.in_progress = True
+        db_session.commit()
+
+        # Execute kernel — no files → verdict='failed'
+        def completing_executor(run, spec):
+            return (True, {"action": "completed"}, [], 50, 25)
+
+        kernel = HarnessKernel(db=db_session)
+        run = kernel.execute(spec, turn_executor=completing_executor)
+
+        assert run.final_verdict == "failed", (
+            f"No files exist, expected verdict='failed', got '{run.final_verdict}'"
+        )
+
+        # Sync verdict back to feature
+        orchestrator = SpecOrchestrator(
+            project_dir=tmp_path,
+            session=db_session,
+        )
+        orchestrator.sync_verdict(feature, run)
+
+        # Verify Feature.passes is NOT True
+        db_session.refresh(feature)
+        assert feature.passes is False, (
+            f"Feature.passes should remain False after verdict='failed', got {feature.passes}"
+        )
+
+        # Double-check by querying DB directly
+        db_feature = db_session.query(Feature).filter(Feature.id == 3102).first()
+        assert db_feature.passes is False, (
+            f"DB Feature.passes should be False after 'failed' verdict, got {db_feature.passes}"
+        )
+
+    def test_step4_in_progress_cleared_regardless_of_verdict(self, db_session, tmp_path):
+        """Step 4: Verify that Feature.in_progress is set to False regardless of verdict.
+
+        Test both 'passed' and 'failed' verdicts - in_progress must be cleared in both cases.
+        """
+        # Case A: Passed verdict
+        feature_a, spec_a = self._create_feature_with_spec(
+            db_session, tmp_path, feature_id=3103,
+            files_to_create=["file_a.txt", "file_b.txt"],
+        )
+        feature_a.in_progress = True
+        db_session.commit()
+
+        def completing_executor(run, spec):
+            return (True, {"action": "completed"}, [], 50, 25)
+
+        kernel_a = HarnessKernel(db=db_session)
+        run_a = kernel_a.execute(spec_a, turn_executor=completing_executor)
+
+        assert run_a.final_verdict == "passed"
+
+        orchestrator = SpecOrchestrator(
+            project_dir=tmp_path,
+            session=db_session,
+        )
+        orchestrator.sync_verdict(feature_a, run_a)
+
+        db_session.refresh(feature_a)
+        assert feature_a.in_progress is False, (
+            f"Feature.in_progress should be False after 'passed' verdict, got {feature_a.in_progress}"
+        )
+
+        # Case B: Failed verdict
+        feature_b, spec_b = self._create_feature_with_spec(
+            db_session, tmp_path, feature_id=3104,
+            files_to_create=[],  # No files → verdict='failed'
+        )
+        feature_b.in_progress = True
+        db_session.commit()
+
+        kernel_b = HarnessKernel(db=db_session)
+        run_b = kernel_b.execute(spec_b, turn_executor=completing_executor)
+
+        assert run_b.final_verdict == "failed"
+
+        orchestrator.sync_verdict(feature_b, run_b)
+
+        db_session.refresh(feature_b)
+        assert feature_b.in_progress is False, (
+            f"Feature.in_progress should be False after 'failed' verdict, got {feature_b.in_progress}"
+        )
+
+    def test_step5_uses_source_feature_id_from_agentspec(self, db_session, tmp_path):
+        """Step 5: Verify the feature update uses the source_feature_id from the AgentSpec
+        to find the correct Feature.
+
+        Compile Feature #3105 → AgentSpec with source_feature_id=3105.
+        After kernel execution, verify source_feature_id links spec→feature correctly.
+        """
+        feature, spec = self._create_feature_with_spec(
+            db_session, tmp_path, feature_id=3105,
+            files_to_create=["file_a.txt", "file_b.txt"],
+        )
+
+        # Verify source_feature_id was set correctly during compilation
+        assert spec.source_feature_id == 3105, (
+            f"AgentSpec.source_feature_id should be 3105, got {spec.source_feature_id}"
+        )
+
+        # Mark in_progress
+        feature.in_progress = True
+        db_session.commit()
+
+        # Execute
+        def completing_executor(run, spec):
+            return (True, {"action": "completed"}, [], 50, 25)
+
+        kernel = HarnessKernel(db=db_session)
+        run = kernel.execute(spec, turn_executor=completing_executor)
+
+        # Use source_feature_id to find the correct feature (as orchestrator does)
+        target_feature = db_session.query(Feature).filter(
+            Feature.id == spec.source_feature_id
+        ).first()
+
+        assert target_feature is not None, (
+            f"Feature with id={spec.source_feature_id} should exist in DB"
+        )
+        assert target_feature.id == feature.id, (
+            f"source_feature_id should point to feature {feature.id}, "
+            f"got {target_feature.id}"
+        )
+
+        # Sync verdict using the feature found via source_feature_id
+        orchestrator = SpecOrchestrator(
+            project_dir=tmp_path,
+            session=db_session,
+        )
+        orchestrator.sync_verdict(target_feature, run)
+
+        # Verify the correct feature was updated
+        db_session.refresh(feature)
+        assert feature.passes is True, (
+            f"Feature #{feature.id} (found via source_feature_id) should be passes=True"
+        )
+        assert feature.in_progress is False, (
+            f"Feature #{feature.id} (found via source_feature_id) should be in_progress=False"
+        )
+
+    def test_step6_multiple_features_processed_in_sequence(self, db_session, tmp_path):
+        """Step 6: Verify this works correctly for multiple features processed in sequence.
+
+        Process 3 features in sequence with different verdicts:
+        - Feature A: all pass → passes=True
+        - Feature B: all fail → passes=False
+        - Feature C: all pass → passes=True
+
+        After processing all 3, verify each has correct state.
+        """
+        orchestrator = SpecOrchestrator(
+            project_dir=tmp_path,
+            session=db_session,
+        )
+
+        features_and_specs = []
+
+        # Feature A: Both files exist → verdict='passed'
+        feature_a, spec_a = self._create_feature_with_spec(
+            db_session, tmp_path, feature_id=3106,
+            files_to_create=["file_a.txt", "file_b.txt"],
+        )
+        features_and_specs.append(("A", feature_a, spec_a, "passed"))
+
+        # Feature B: No files → verdict='failed'
+        feature_b, spec_b = self._create_feature_with_spec(
+            db_session, tmp_path, feature_id=3107,
+            files_to_create=[],
+        )
+        features_and_specs.append(("B", feature_b, spec_b, "failed"))
+
+        # Feature C: Both files exist → verdict='passed'
+        feature_c, spec_c = self._create_feature_with_spec(
+            db_session, tmp_path, feature_id=3108,
+            files_to_create=["file_a.txt", "file_b.txt"],
+        )
+        features_and_specs.append(("C", feature_c, spec_c, "passed"))
+
+        # Process all features in sequence (simulating orchestrator run_loop)
+        def completing_executor(run, spec):
+            return (True, {"action": "completed"}, [], 50, 25)
+
+        results = []
+        for label, feature, spec, expected_verdict in features_and_specs:
+            # Mark in_progress
+            feature.in_progress = True
+            db_session.commit()
+
+            # Execute
+            kernel = HarnessKernel(db=db_session)
+            run = kernel.execute(spec, turn_executor=completing_executor)
+
+            assert run.final_verdict == expected_verdict, (
+                f"Feature {label}: expected verdict='{expected_verdict}', "
+                f"got '{run.final_verdict}'"
+            )
+
+            # Sync
+            orchestrator.sync_verdict(feature, run)
+            results.append((label, feature, run))
+
+        # Verify final states of all features
+        for label, feature, run in results:
+            db_session.refresh(feature)
+
+        # Feature A: passed → passes=True, in_progress=False
+        assert feature_a.passes is True, (
+            f"Feature A: passes should be True, got {feature_a.passes}"
+        )
+        assert feature_a.in_progress is False, (
+            f"Feature A: in_progress should be False, got {feature_a.in_progress}"
+        )
+
+        # Feature B: failed → passes=False, in_progress=False
+        assert feature_b.passes is False, (
+            f"Feature B: passes should be False, got {feature_b.passes}"
+        )
+        assert feature_b.in_progress is False, (
+            f"Feature B: in_progress should be False, got {feature_b.in_progress}"
+        )
+
+        # Feature C: passed → passes=True, in_progress=False
+        assert feature_c.passes is True, (
+            f"Feature C: passes should be True, got {feature_c.passes}"
+        )
+        assert feature_c.in_progress is False, (
+            f"Feature C: in_progress should be False, got {feature_c.in_progress}"
+        )
+
+        # Verify DB counts
+        total_passing = db_session.query(Feature).filter(Feature.passes == True).count()
+        total_in_progress = db_session.query(Feature).filter(Feature.in_progress == True).count()
+
+        # At least features A and C should be passing (there may be others from other tests)
+        assert total_passing >= 2, (
+            f"At least 2 features should be passing, got {total_passing}"
+        )
+        assert total_in_progress == 0, (
+            f"No features should be in_progress after processing, got {total_in_progress}"
         )
