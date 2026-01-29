@@ -535,6 +535,42 @@ def _migrate_add_agent_event_run_event_type_index(engine) -> None:
         )
 
 
+def _migrate_add_agent_event_artifact_fk(engine) -> None:
+    """Ensure agent_events.artifact_ref FK to artifacts.id is recognized.
+
+    Feature #144: The model now declares artifact_ref as ForeignKey('artifacts.id').
+    New databases get the FK constraint automatically from CREATE TABLE.
+    For existing SQLite databases, ALTER TABLE ADD FOREIGN KEY is not supported,
+    so we enable PRAGMA foreign_keys to enforce the FK at runtime and clean up
+    any orphaned artifact_ref values that point to non-existent artifacts.
+    """
+    from sqlalchemy import inspect
+
+    inspector = inspect(engine)
+    existing_tables = inspector.get_table_names()
+
+    if "agent_events" not in existing_tables or "artifacts" not in existing_tables:
+        return  # Tables don't exist yet, will be created with FK
+
+    # Enable FK enforcement for this connection
+    # (also done globally, but ensure it's on for cleanup)
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("PRAGMA foreign_keys=ON"))
+            # Clean up orphaned artifact_ref values that would violate the FK
+            conn.execute(text(
+                "UPDATE agent_events SET artifact_ref = NULL "
+                "WHERE artifact_ref IS NOT NULL "
+                "AND artifact_ref NOT IN (SELECT id FROM artifacts)"
+            ))
+            conn.commit()
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(
+            f"Could not clean up orphaned artifact_ref values: {e}"
+        )
+
+
 def create_database(project_dir: Path) -> tuple:
     """
     Create database and return engine + session maker.
@@ -585,6 +621,9 @@ def create_database(project_dir: Path) -> tuple:
 
     # Feature #143: Add composite index on agent_events(run_id, event_type)
     _migrate_add_agent_event_run_event_type_index(engine)
+
+    # Feature #144: Ensure agent_events.artifact_ref FK to artifacts.id
+    _migrate_add_agent_event_artifact_fk(engine)
 
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     return engine, SessionLocal
