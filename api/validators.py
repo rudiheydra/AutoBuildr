@@ -864,6 +864,371 @@ def _get_match_context(text: str, match: re.Match, context_chars: int = 50) -> s
 
 
 # =============================================================================
+# LintCleanValidator
+# =============================================================================
+
+class LintCleanValidator(Validator):
+    """
+    Validator that runs a linter command and checks for zero errors.
+
+    This validator executes a specified linter command and validates that it
+    reports no errors (exit code 0 by default). It's designed for integration
+    with common linters like flake8, eslint, ruff, pylint, etc.
+
+    Unlike TestPassValidator which is a general-purpose command runner,
+    LintCleanValidator provides lint-specific features:
+    - Counts error/warning lines in output
+    - Supports configurable error patterns for different linters
+    - Reports a summary of lint issues found
+
+    Config Options:
+        command (str, required): The linter command to execute. Supports variable
+            interpolation like {project_dir}, {feature_id}.
+        expected_exit_code (int, optional): Expected exit code for "clean" lint.
+            Default 0. Some linters use non-zero codes for warnings.
+        timeout_seconds (int, optional): Command timeout in seconds, default 120.
+        working_directory (str, optional): Working directory for command execution.
+            Supports variable interpolation.
+        error_pattern (str, optional): Regex pattern to identify error lines in
+            linter output. If not provided, counts all non-empty output lines.
+        description (str, optional): Human-readable description of the check.
+
+    Context Variables:
+        project_dir: Base project directory
+        Any other variables used in the command template
+
+    Example Config:
+        {
+            "command": "flake8 {project_dir}/src --max-line-length=120",
+            "expected_exit_code": 0,
+            "timeout_seconds": 120,
+            "description": "Python code must pass flake8 linting"
+        }
+
+    Example with error_pattern:
+        {
+            "command": "eslint {project_dir}/src --format compact",
+            "error_pattern": "\\\\d+ error",
+            "description": "JavaScript code must pass ESLint"
+        }
+    """
+
+    validator_type: str = "lint_clean"
+
+    def evaluate(
+        self,
+        config: dict[str, Any],
+        context: dict[str, Any],
+        run: "AgentRun | None" = None,
+    ) -> ValidatorResult:
+        """
+        Execute a linter command and validate clean output.
+
+        Args:
+            config: Validator configuration containing:
+                - command (required): Linter command to execute, with optional {variables}
+                - expected_exit_code (optional, default 0): Exit code for clean lint
+                - timeout_seconds (optional, default 120): Command timeout
+                - working_directory (optional): Working directory for command
+                - error_pattern (optional): Regex pattern to count error lines
+                - description (optional): Human-readable check description
+            context: Runtime context with variable values for interpolation
+            run: Optional AgentRun (not used by this validator)
+
+        Returns:
+            ValidatorResult indicating whether the linter found zero errors.
+        """
+        # Extract command from validator config
+        command_template = config.get("command")
+
+        if not command_template:
+            return ValidatorResult(
+                passed=False,
+                message="Validator config missing required 'command' field",
+                score=0.0,
+                details={"config": config},
+                validator_type=self.validator_type,
+            )
+
+        # Interpolate variables in command
+        interpolated_command = self.interpolate_path(command_template, context)
+
+        # Extract expected_exit_code (default 0 = clean lint)
+        expected_exit_code = config.get("expected_exit_code", 0)
+        if isinstance(expected_exit_code, str):
+            try:
+                expected_exit_code = int(expected_exit_code)
+            except ValueError:
+                return ValidatorResult(
+                    passed=False,
+                    message=f"Invalid expected_exit_code: {expected_exit_code}",
+                    score=0.0,
+                    details={"config": config},
+                    validator_type=self.validator_type,
+                )
+
+        # Extract timeout_seconds (default 120 for linters, which can be slow)
+        timeout_seconds = config.get("timeout_seconds", 120)
+        if isinstance(timeout_seconds, str):
+            try:
+                timeout_seconds = int(timeout_seconds)
+            except ValueError:
+                timeout_seconds = 120
+        timeout_seconds = max(1, min(timeout_seconds, 3600))
+
+        # Extract optional working directory
+        working_directory = config.get("working_directory")
+        if working_directory:
+            working_directory = self.interpolate_path(working_directory, context)
+        if not working_directory and "project_dir" in context:
+            working_directory = context["project_dir"]
+
+        # Extract optional error pattern for counting lint issues
+        error_pattern_str = config.get("error_pattern")
+        error_pattern = None
+        if error_pattern_str:
+            try:
+                error_pattern = re.compile(error_pattern_str)
+            except re.error as e:
+                return ValidatorResult(
+                    passed=False,
+                    message=f"Invalid error_pattern regex: {e}",
+                    score=0.0,
+                    details={"config": config, "error_pattern": error_pattern_str},
+                    validator_type=self.validator_type,
+                )
+
+        description = config.get("description", "")
+
+        _logger.debug(
+            "LintCleanValidator: command=%s, expected_exit_code=%d, timeout=%ds, cwd=%s",
+            interpolated_command, expected_exit_code, timeout_seconds, working_directory
+        )
+
+        # Execute linter command
+        try:
+            result = subprocess.run(
+                interpolated_command,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=timeout_seconds,
+                cwd=working_directory,
+            )
+
+            stdout = result.stdout
+            stderr = result.stderr
+            actual_exit_code = result.returncode
+
+            # Truncate output if too long (keep last 4KB)
+            max_output_len = 4096
+            if len(stdout) > max_output_len:
+                stdout = "...(truncated)...\n" + stdout[-max_output_len:]
+            if len(stderr) > max_output_len:
+                stderr = "...(truncated)...\n" + stderr[-max_output_len:]
+
+            # Count lint issues in output
+            combined_output = (stdout + "\n" + stderr).strip()
+            issue_count = self._count_lint_issues(combined_output, error_pattern)
+
+            # Determine pass/fail based on exit code
+            passed = actual_exit_code == expected_exit_code
+            score = 1.0 if passed else 0.0
+
+            # Build descriptive message
+            if passed:
+                message = f"Lint clean: command exited with code {actual_exit_code}"
+                if issue_count == 0:
+                    message += " (no issues found)"
+            else:
+                message = (
+                    f"Lint failed: command exited with code {actual_exit_code} "
+                    f"(expected {expected_exit_code}), {issue_count} issue(s) found"
+                )
+
+            if description:
+                message = f"{message} ({description})"
+
+            _logger.info(
+                "LintCleanValidator: %s - exit_code=%d, expected=%d, issues=%d",
+                "PASSED" if passed else "FAILED",
+                actual_exit_code, expected_exit_code, issue_count
+            )
+
+            return ValidatorResult(
+                passed=passed,
+                message=message,
+                score=score,
+                details={
+                    "command_template": command_template,
+                    "interpolated_command": interpolated_command,
+                    "expected_exit_code": expected_exit_code,
+                    "actual_exit_code": actual_exit_code,
+                    "timeout_seconds": timeout_seconds,
+                    "working_directory": working_directory,
+                    "issue_count": issue_count,
+                    "stdout": stdout,
+                    "stderr": stderr,
+                },
+                validator_type=self.validator_type,
+            )
+
+        except subprocess.TimeoutExpired as e:
+            stdout = e.stdout if e.stdout else ""
+            stderr = e.stderr if e.stderr else ""
+            if isinstance(stdout, bytes):
+                stdout = stdout.decode("utf-8", errors="replace")
+            if isinstance(stderr, bytes):
+                stderr = stderr.decode("utf-8", errors="replace")
+
+            message = f"Lint command timed out after {timeout_seconds} seconds"
+            if description:
+                message = f"{message} ({description})"
+
+            _logger.warning(
+                "LintCleanValidator: TIMEOUT - command='%s' timed out after %ds",
+                interpolated_command, timeout_seconds
+            )
+
+            return ValidatorResult(
+                passed=False,
+                message=message,
+                score=0.0,
+                details={
+                    "command_template": command_template,
+                    "interpolated_command": interpolated_command,
+                    "expected_exit_code": expected_exit_code,
+                    "actual_exit_code": None,
+                    "timeout_seconds": timeout_seconds,
+                    "working_directory": working_directory,
+                    "issue_count": None,
+                    "stdout": stdout,
+                    "stderr": stderr,
+                    "error": "timeout",
+                },
+                validator_type=self.validator_type,
+            )
+
+        except FileNotFoundError as e:
+            message = f"Lint command not found: {e.filename or interpolated_command}"
+            if description:
+                message = f"{message} ({description})"
+
+            _logger.warning(
+                "LintCleanValidator: FAILED - command not found: %s",
+                e.filename or interpolated_command
+            )
+
+            return ValidatorResult(
+                passed=False,
+                message=message,
+                score=0.0,
+                details={
+                    "command_template": command_template,
+                    "interpolated_command": interpolated_command,
+                    "expected_exit_code": expected_exit_code,
+                    "actual_exit_code": None,
+                    "timeout_seconds": timeout_seconds,
+                    "working_directory": working_directory,
+                    "issue_count": None,
+                    "stdout": "",
+                    "stderr": "",
+                    "error": "command_not_found",
+                    "error_message": str(e),
+                },
+                validator_type=self.validator_type,
+            )
+
+        except OSError as e:
+            message = f"Lint command execution failed: {e}"
+            if description:
+                message = f"{message} ({description})"
+
+            _logger.error(
+                "LintCleanValidator: FAILED - OS error executing command: %s", e
+            )
+
+            return ValidatorResult(
+                passed=False,
+                message=message,
+                score=0.0,
+                details={
+                    "command_template": command_template,
+                    "interpolated_command": interpolated_command,
+                    "expected_exit_code": expected_exit_code,
+                    "actual_exit_code": None,
+                    "timeout_seconds": timeout_seconds,
+                    "working_directory": working_directory,
+                    "issue_count": None,
+                    "stdout": "",
+                    "stderr": "",
+                    "error": "os_error",
+                    "error_message": str(e),
+                },
+                validator_type=self.validator_type,
+            )
+
+        except Exception as e:
+            message = f"Unexpected error executing lint command: {e}"
+            if description:
+                message = f"{message} ({description})"
+
+            _logger.exception(
+                "LintCleanValidator: FAILED - unexpected error executing command"
+            )
+
+            return ValidatorResult(
+                passed=False,
+                message=message,
+                score=0.0,
+                details={
+                    "command_template": command_template,
+                    "interpolated_command": interpolated_command,
+                    "expected_exit_code": expected_exit_code,
+                    "actual_exit_code": None,
+                    "timeout_seconds": timeout_seconds,
+                    "working_directory": working_directory,
+                    "issue_count": None,
+                    "stdout": "",
+                    "stderr": "",
+                    "error": "unexpected_error",
+                    "error_message": str(e),
+                },
+                validator_type=self.validator_type,
+            )
+
+    def _count_lint_issues(
+        self,
+        output: str,
+        error_pattern: re.Pattern | None = None,
+    ) -> int:
+        """
+        Count lint issues in command output.
+
+        If an error_pattern is provided, counts lines matching that pattern.
+        Otherwise, counts all non-empty lines in the output (common for linters
+        that output one issue per line).
+
+        Args:
+            output: Combined stdout + stderr from the linter command
+            error_pattern: Optional compiled regex to identify error lines
+
+        Returns:
+            Number of lint issues found
+        """
+        if not output or not output.strip():
+            return 0
+
+        lines = output.strip().split("\n")
+
+        if error_pattern:
+            return sum(1 for line in lines if error_pattern.search(line))
+        else:
+            # Count all non-empty lines as potential issues
+            return sum(1 for line in lines if line.strip())
+
+
+# =============================================================================
 # Validator Registry
 # =============================================================================
 
@@ -872,6 +1237,7 @@ VALIDATOR_REGISTRY: dict[str, type[Validator]] = {
     "file_exists": FileExistsValidator,
     "forbidden_patterns": ForbiddenPatternsValidator,
     "test_pass": TestPassValidator,
+    "lint_clean": LintCleanValidator,
 }
 
 
@@ -1002,7 +1368,7 @@ class GateResult:
 
     Attributes:
         passed: Overall gate pass/fail based on gate_mode
-        verdict: Final verdict string (passed, failed, partial)
+        verdict: Final verdict string (passed, failed, error)
         gate_mode: Gate mode used for evaluation
         validator_results: Per-validator outcomes
         acceptance_results: JSON-serializable results for AgentRun storage
@@ -1010,7 +1376,7 @@ class GateResult:
         summary: Human-readable summary of the evaluation
     """
     passed: bool
-    verdict: str  # "passed", "failed", or "partial"
+    verdict: str  # "passed", "failed", or "error"
     gate_mode: str
     validator_results: list[ValidatorResult]
     acceptance_results: list[dict[str, Any]]
@@ -1306,7 +1672,7 @@ class AcceptanceGate:
 
         Returns:
             Tuple of (passed: bool, verdict: str)
-            verdict is one of: "passed", "failed", "partial"
+            verdict is one of: "passed", "failed", "error"
         """
         # Handle empty results
         if not validator_results:
@@ -1314,9 +1680,9 @@ class AcceptanceGate:
 
         # Required validators take precedence
         if required_failed:
-            # Check if any validator passed (partial)
+            # Check if any validator passed (error)
             any_passed = any(r.passed for r in validator_results)
-            verdict = "partial" if any_passed else "failed"
+            verdict = "error" if any_passed else "failed"
             return False, verdict
 
         # Step 5: For all_pass mode: verdict = passed if all passed
@@ -1325,9 +1691,9 @@ class AcceptanceGate:
             if all_passed:
                 return True, "passed"
             else:
-                # Check if any passed (partial)
+                # Check if any passed (error)
                 any_passed = any(r.passed for r in validator_results)
-                verdict = "partial" if any_passed else "failed"
+                verdict = "error" if any_passed else "failed"
                 return False, verdict
 
         # Step 6: For any_pass mode: verdict = passed if any passed
@@ -1345,7 +1711,7 @@ class AcceptanceGate:
                 return True, "passed"
             else:
                 any_passed = any(r.passed for r in validator_results)
-                verdict = "partial" if any_passed else "failed"
+                verdict = "error" if any_passed else "failed"
                 return False, verdict
 
     def _build_summary(

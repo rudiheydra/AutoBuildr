@@ -148,6 +148,7 @@ from api.validators import (
     AcceptanceGate,
     FileExistsValidator,
     GateResult,
+    LintCleanValidator,
     Validator,
     ValidatorResult,
     VALIDATOR_REGISTRY,
@@ -465,10 +466,11 @@ __all__ = [
     "MASCOT_POOL",
     "TASK_TYPE_ICONS",
     "DEFAULT_ICON",
-    # Validators exports (Feature #35: AcceptanceGate)
+    # Validators exports (Feature #35: AcceptanceGate, Feature #140: LintCleanValidator)
     "AcceptanceGate",
     "FileExistsValidator",
     "GateResult",
+    "LintCleanValidator",
     "Validator",
     "ValidatorResult",
     "VALIDATOR_REGISTRY",
