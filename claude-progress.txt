@@ -1,6 +1,55 @@
 # AutoBuildr Progress Log
 # ======================
 
+## Session: 2026-01-30 (Coding Agent - Feature #146)
+
+### Feature #146: Handle agent_spec_created WebSocket event in frontend UI - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Dependencies:** None
+
+**Description:** The spec requires an agent_spec_created WebSocket message when a new spec is registered. This event type was not handled in the frontend. Added it to the WSMessageType enum and handled it in the WebSocket message handler.
+
+**Changes Made:**
+1. `ui/src/lib/types.ts`:
+   - Added `'agent_spec_created'` to `WSMessageType` union type (line 303)
+   - Created `WSAgentSpecCreatedMessage` interface with all required fields: `type`, `spec_id`, `name`, `display_name`, `icon`, `task_type`, `timestamp`
+   - Added `WSAgentSpecCreatedMessage` to `WSMessage` discriminated union
+
+2. `ui/src/hooks/useWebSocket.ts`:
+   - Added `case 'agent_spec_created'` to the message switch handler
+   - Logs spec_id and display_name via console.debug for debugging
+   - Positioned before the existing Phase 3 AgentRun cases
+
+3. `tests/verify_feature_146.py`: Verification script with 6 steps covering:
+   - WSMessageType includes agent_spec_created
+   - Interface exists with all required fields
+   - Handler has case in switch statement
+   - State handling for messages
+   - Backend emits events correctly
+   - Frontend type system correctly handles the event
+
+**Backend Already Implemented (Feature #60):**
+- `api/websocket_events.py`: `broadcast_agent_spec_created()` function emits the event
+- `server/routers/agent_specs.py`: Calls broadcast after AgentSpec creation
+- `AgentSpecCreatedPayload` dataclass with `to_message()` method
+
+**Verification:** All 6 steps pass. TypeScript compiles cleanly. No regressions.
+- Browser automation unavailable (Chrome SIGTRAP in container)
+
+**Commit:** cf3feac
+
+**Updated Progress:**
+- Feature #146: Handle agent_spec_created WebSocket event in frontend UI - PASSING
+- Total: 143/150 features passing (95.3%)
+
+**Session completed successfully.**
+
+---
+
 ## Session: 2026-01-30 (Coding Agent - Feature #143)
 
 ### Feature #143: Add composite index on agent_events(run_id, event_type) - COMPLETED
@@ -10500,3 +10549,12 @@ Created comprehensive test suite:
 
 **Session completed successfully.**
 [Testing] Feature #17 regression test PASSED - all 30 unit tests pass, no regression found
+[Testing] 2026-01-30 09:59:05 - Feature #34 regression test PASSED
+  - Feature: forbidden_patterns Acceptance Validator
+  - Category: D. Workflow Completeness
+  - Verification script: 33/33 checks PASS (all 8 steps)
+  - Unit tests: 56/56 PASS (5.52s)
+  - Source code intact: api/validators.py (ForbiddenPatternsValidator class unchanged since f9f7cfc)
+  - API server healthy on port 8888
+  - Browser automation unavailable (Chrome SIGTRAP in container)
+  - No regression found - feature still working correctly
