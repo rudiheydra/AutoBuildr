@@ -1,6 +1,56 @@
 # AutoBuildr Progress Log
 # ======================
 
+## Session: 2026-01-30 (Coding Agent - Feature #130)
+
+### Feature #130: Acceptance gate evaluates validators and determines final verdict - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Description:** After the kernel finishes executing turns, the AcceptanceGate evaluates all validators defined in the AgentSpec's AcceptanceSpec. Each validator runs independently and produces a ValidatorResult. The gate mode determines the overall verdict.
+
+**Verification Summary (All 8 Feature Steps Passed):**
+
+1. **AcceptanceGate.evaluate() called after kernel execution** - PASS
+   - Kernel execute() with turn executor -> acceptance_results populated on AgentRun
+   - Proves AcceptanceGate.evaluate() was called
+
+2. **Each validator executed independently** - PASS
+   - 2 validators (file_a exists, file_b missing) both produce results
+   - Validator A passes, Validator B fails - independent execution confirmed
+
+3. **ValidatorResult contains passed (bool), message (str), score (float)** - PASS
+   - All results verified: passed is bool, message is non-empty str, score is 0.0-1.0
+
+4. **gate_mode='all_pass' requires ALL validators** - PASS
+   - All pass -> verdict='passed'; one fails -> verdict='partial' (not 'passed')
+
+5. **gate_mode='any_pass' requires at least ONE validator** - PASS
+   - One pass -> verdict='passed'; none pass -> verdict='failed'
+
+6. **AgentRun.final_verdict set to gate's verdict** - PASS
+   - Verified on run object and in database
+
+7. **AgentRun.acceptance_results as JSON array** - PASS
+   - List of dicts with passed, message, score, validator_type fields
+
+8. **acceptance_check event recorded** - PASS
+   - AgentEvent with event_type='acceptance_check' found in DB
+   - Payload contains final_verdict, gate_mode, results, validator_count
+
+**Test Suite:** 62/62 tests pass in test_dspy_pipeline_e2e.py (0 regressions)
+**Commit:** 1278564
+
+**Updated Progress:**
+- Total: 129/133 features passing (approximately 97.0%)
+- Feature #130: Acceptance gate evaluates validators and determines final verdict - PASSING
+
+**Session completed successfully.**
+
+---
+
 ## Session: 2026-01-30 (Coding Agent - Feature #127)
 
 ### Feature #127: FeatureCompiler produces AgentSpecs with correct task_type and tool_policy - COMPLETED
@@ -9200,5 +9250,106 @@ Created comprehensive test suite:
   - Types: AgentRun.error field is string|null (types.ts line 173)
   - API health: healthy
   - Production build exists (219KB JS bundle)
+  - Browser automation unavailable (Chrome launch failure in container)
+  - No regression found - feature still working correctly
+[Testing] 2026-01-29 21:36:26 - Feature #31 regression test PASSED
+  - Feature: Artifact Storage with Content-Addressing
+  - Category: G. State & Persistence
+  - All 10 verification steps passed:
+    Step 1: Create ArtifactStorage class with store() method - PASS
+    Step 2: Compute SHA256 hash of content - PASS
+    Step 3: Check content size against ARTIFACT_INLINE_MAX_SIZE (4096 bytes) - PASS
+    Step 4: If small, store in content_inline field - PASS
+    Step 5: If large, write to file: .autobuildr/artifacts/{run_id}/{hash}.blob - PASS
+    Step 6: Create parent directories if needed - PASS
+    Step 7: Set content_ref to file path - PASS
+    Step 8: Set size_bytes to content length - PASS
+    Step 9: Check for existing artifact with same hash (deduplication) - PASS
+    Step 10: Return Artifact record - PASS
+  - Unit tests: 33/33 passed (test_artifact_storage.py in 4.27s)
+  - E2E verification: All 6 tests passed (verify_feature_31_e2e.py)
+  - Python verification script: 10/10 passed (verify_feature_31.py)
+  - Source code intact: api/artifact_storage.py (376 lines, no uncommitted changes)
+  - API endpoint: /api/artifacts/:id/content returns correct 404 for nonexistent artifacts
+  - API endpoint: /api/agent-runs/:id/artifacts returns correct artifact lists
+  - Browser automation unavailable (Chrome launch failure in container)
+  - No regression found - feature still working correctly
+
+---
+
+## Session: 2026-01-30 (Coding Agent - Feature #128)
+
+### Feature #128: HarnessKernel executes spec with max_turns and timeout budget enforcement - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Dependencies:** #126 (Turn executor bridge), #127 (FeatureCompiler produces AgentSpecs) - both passing
+
+**Description:** Prove HarnessKernel.execute() enforces max_turns and timeout budget constraints, records timeout events, runs acceptance validators after budget exhaustion (graceful termination), and tracks token usage.
+
+**Verification Summary (All 7 Feature Steps Passed):**
+
+1. **Verify HarnessKernel.execute() is called with the compiled AgentSpec in the --spec path** - PASS
+   - test_execute_called_with_compiled_spec: Feature→FeatureCompiler→AgentSpec→HarnessKernel.execute()
+   - Run created with correct agent_spec_id linking back to compiled spec
+
+2. **Verify turns_used is incremented after each turn and matches actual count** - PASS
+   - test_turns_used_incremented_correctly: 5-turn execution
+   - Observed turns_used before each turn: [0, 1, 2, 3, 4]
+   - Final turns_used=5, persisted in DB
+
+3. **Create spec with max_turns=2 and verify execution stops after exactly 2 turns** - PASS
+   - test_max_turns_stops_execution: Never-completing executor with max_turns=2
+   - Executor called exactly 2 times, turns_used=2
+
+4. **Verify budget exhaustion sets status='timeout' (not 'failed')** - PASS
+   - test_budget_exhaustion_sets_timeout_status: status=='timeout' confirmed
+   - Explicitly asserted status != 'failed'
+   - DB persistence verified
+
+5. **Verify 'timeout' event recorded in agent_events** - PASS
+   - test_timeout_event_recorded: timeout event found in events
+   - Payload contains reason='max_turns_exceeded', turns_used=2
+   - Event has correct structure with budget state
+
+6. **Verify acceptance validators run after budget exhaustion (graceful termination)** - PASS
+   - test_acceptance_validators_run_after_budget_exhaustion
+   - AcceptanceSpec with file_exists validator
+   - acceptance_check event recorded after timeout
+   - run.acceptance_results populated with validator results
+   - run.final_verdict set (partial/passed/failed)
+
+7. **Verify tokens_in and tokens_out tracked on AgentRun** - PASS
+   - test_tokens_tracked_on_agent_run: 3 turns × (200 in, 100 out) = 600 in, 300 out
+   - test_tokens_tracked_even_on_timeout: 2 turns × (150 in, 75 out) = 300 in, 150 out
+   - Both cases verified in DB persistence
+
+**Test Results:**
+- tests/test_dspy_pipeline_e2e.py::TestHarnessKernelBudgetEnforcement: 8/8 tests PASS
+- Full suite: 54/54 tests pass (no regressions)
+
+**No production code changes needed** — all budget enforcement infrastructure already existed in api/harness_kernel.py. Tests prove the behavior end-to-end.
+
+**Commit:** 9c04a99
+
+**Updated Progress:**
+- Feature #128: HarnessKernel budget enforcement - PASSING
+- Total: 128/133 features passing (approximately 96.2%)
+
+**Session completed successfully.**
+[Testing] 2026-01-30 08:39:24 - Feature #113 regression test PASSED
+  - Feature: E2E test: SpecBuilder DSPy (TestStep7 — 4 tests)
+  - Category: functional
+  - All 5 verification steps passed:
+    Step 1: Create test class TestStep7SpecBuilderDSPy with 4 test methods - PASS
+    Step 2: Mock dspy.LM, dspy.ChainOfThought, dspy.configure to avoid real API calls - PASS
+    Step 3: Test SpecBuilder.build() success returns BuildResult with agent_spec and acceptance_spec - PASS
+    Step 4: Test empty description returns failed BuildResult - PASS
+    Step 5: All 4 tests pass: pytest TestStep7SpecBuilderDSPy -v (4/4 in 4.10s) - PASS
+  - Source code intact: api/spec_builder.py (BuildResult, SpecBuilder classes present)
+  - Test fixtures intact: mock_dspy_prediction, env_with_fake_key
+  - Full suite: 60/62 pass (2 failures in unrelated TestAcceptanceGateEvaluatesValidators)
   - Browser automation unavailable (Chrome launch failure in container)
   - No regression found - feature still working correctly
