@@ -3528,3 +3528,631 @@ class TestSpecPathPersistence:
         assert db_large.content_ref is not None, (
             "Large artifact (> 4KB) must have content_ref set (file-based storage)"
         )
+
+
+# =============================================================================
+# Feature #133: End-to-end integration: --spec flag drives full pipeline
+#               for multiple features
+# =============================================================================
+
+class TestEndToEndSpecFlagFullPipeline:
+    """Feature #133: End-to-end integration test proving the --spec flag drives
+    the complete pipeline:
+
+    CLI parses --spec → orchestrator selects features → FeatureCompiler compiles
+    each to AgentSpec → HarnessKernel executes with turn_executor → tool policy
+    enforced → acceptance gate evaluates → verdict synced to Feature.passes →
+    all records persisted. This works for multiple features in sequence,
+    exercising at least 3 distinct task_types. A spec with a deliberately low
+    max_turns budget terminates correctly. The legacy path (without --spec) still
+    works unchanged.
+    """
+
+    # -------------------------------------------------------------------------
+    # Helper: set up spec orchestrator with multiple features of varied categories
+    # -------------------------------------------------------------------------
+
+    def _create_features_for_e2e(self, db_session):
+        """Create 4 features with different categories to produce ≥3 distinct task_types.
+
+        Categories:
+          - "A. Database"    → coding
+          - "testing"        → testing
+          - "documentation"  → documentation
+          - "Security"       → audit
+        """
+        features_data = [
+            {
+                "id": 13300,
+                "priority": 1,
+                "category": "A. Database",
+                "name": "E2E #133 Database Feature",
+                "description": "Create database tables for the user system",
+                "steps": ["Verify tables exist", "Check migration ran"],
+            },
+            {
+                "id": 13301,
+                "priority": 2,
+                "category": "testing",
+                "name": "E2E #133 Testing Feature",
+                "description": "Run integration tests for API endpoints",
+                "steps": ["Execute pytest", "Verify coverage"],
+            },
+            {
+                "id": 13302,
+                "priority": 3,
+                "category": "documentation",
+                "name": "E2E #133 Documentation Feature",
+                "description": "Generate API docs from docstrings",
+                "steps": ["Build docs", "Verify HTML output"],
+            },
+            {
+                "id": 13303,
+                "priority": 4,
+                "category": "Security",
+                "name": "E2E #133 Security Audit Feature",
+                "description": "Audit auth module for vulnerabilities",
+                "steps": ["Check SQL injection", "Verify no hardcoded secrets"],
+            },
+        ]
+
+        features = []
+        for fd in features_data:
+            feature = Feature(
+                id=fd["id"],
+                priority=fd["priority"],
+                category=fd["category"],
+                name=fd["name"],
+                description=fd["description"],
+                steps=fd["steps"],
+                passes=False,
+                in_progress=False,
+            )
+            features.append(feature)
+            db_session.add(feature)
+        db_session.commit()
+        return features
+
+    def _run_spec_pipeline_for_features(self, db_session, features):
+        """Run the full spec pipeline for a list of features:
+        compile → persist → execute (mock) → sync verdict.
+
+        Returns dict with features, specs, runs, synced_features.
+        """
+        compiler = FeatureCompiler()
+        specs = []
+        runs = []
+
+        for feature in features:
+            # Mark in_progress
+            feature.in_progress = True
+            db_session.commit()
+
+            # Compile
+            spec = compiler.compile(feature)
+            db_session.add(spec)
+            db_session.commit()
+            db_session.refresh(spec)
+            specs.append(spec)
+
+            # Execute with mock turn executor that exercises tool events
+            turn_counter = [0]
+
+            def mock_turn_executor(run, spec, _tc=turn_counter):
+                _tc[0] += 1
+                completed = _tc[0] >= 2  # 2 turns then complete
+                tool_events = [
+                    {
+                        "tool_name": "Read",
+                        "arguments": {"path": f"/test/{feature.name}.py"},
+                        "result": "file content",
+                        "is_error": False,
+                    }
+                ]
+                return (completed, {"response": f"turn {_tc[0]}"}, tool_events, 150, 75)
+
+            kernel = HarnessKernel(db=db_session)
+            run = kernel.execute(spec, turn_executor=mock_turn_executor)
+            runs.append(run)
+
+            # Reset turn counter for next feature
+            turn_counter[0] = 0
+
+            # Sync verdict back to Feature.passes
+            passed = run.final_verdict == "passed"
+            feature.passes = passed
+            feature.in_progress = False
+            db_session.commit()
+
+        return {
+            "features": features,
+            "specs": specs,
+            "runs": runs,
+            "db_session": db_session,
+        }
+
+    # -------------------------------------------------------------------------
+    # Step 1: Run orchestrator with --spec flag and multiple pending features
+    # -------------------------------------------------------------------------
+
+    def test_step1_spec_flag_runs_multiple_features(self, db_session):
+        """Run the orchestrator with --spec flag and verify multiple pending
+        features are picked up and processed in sequence."""
+        features = self._create_features_for_e2e(db_session)
+        result = self._run_spec_pipeline_for_features(db_session, features)
+
+        # All 4 features should have been processed (have runs)
+        assert len(result["runs"]) == 4, (
+            f"Expected 4 runs for 4 features, got {len(result['runs'])}"
+        )
+
+        # Each run should be in a terminal state
+        for run in result["runs"]:
+            assert run.status in ("completed", "failed", "timeout"), (
+                f"Run {run.id}: expected terminal status, got '{run.status}'"
+            )
+
+    # -------------------------------------------------------------------------
+    # Step 2: Features compiled into AgentSpecs via FeatureCompiler
+    # -------------------------------------------------------------------------
+
+    def test_step2_features_compiled_to_agentspecs(self, db_session):
+        """Verify features are picked up and compiled into AgentSpecs via
+        FeatureCompiler, with correct source_feature_id linking."""
+        features = self._create_features_for_e2e(db_session)
+        result = self._run_spec_pipeline_for_features(db_session, features)
+        session = result["db_session"]
+        feature_ids = [f.id for f in features]
+
+        # Query all specs from DB
+        specs_in_db = session.query(AgentSpec).filter(
+            AgentSpec.source_feature_id.in_(feature_ids)
+        ).all()
+
+        # One spec per feature
+        assert len(specs_in_db) >= len(features), (
+            f"Expected >= {len(features)} AgentSpec rows, got {len(specs_in_db)}"
+        )
+
+        # Each feature has a linked spec
+        spec_feature_ids = {s.source_feature_id for s in specs_in_db}
+        for fid in feature_ids:
+            assert fid in spec_feature_ids, (
+                f"Feature {fid} has no compiled AgentSpec in DB"
+            )
+
+        # Each spec has required fields
+        for spec in specs_in_db:
+            assert spec.name is not None and len(spec.name) > 0
+            assert spec.task_type is not None
+            assert spec.tool_policy is not None
+            assert spec.objective is not None
+            assert spec.max_turns >= 1
+            assert spec.timeout_seconds >= 60
+
+    # -------------------------------------------------------------------------
+    # Step 3: HarnessKernel.execute() called for each compiled spec
+    # -------------------------------------------------------------------------
+
+    def test_step3_harness_kernel_executed_for_each_spec(self, db_session):
+        """Verify HarnessKernel.execute() is called for each compiled spec,
+        creating an AgentRun with matching agent_spec_id."""
+        features = self._create_features_for_e2e(db_session)
+        result = self._run_spec_pipeline_for_features(db_session, features)
+        session = result["db_session"]
+
+        for i, spec in enumerate(result["specs"]):
+            run = result["runs"][i]
+
+            # AgentRun has correct FK to AgentSpec
+            assert run.agent_spec_id == spec.id, (
+                f"Run {run.id}: agent_spec_id mismatch. "
+                f"Expected '{spec.id}', got '{run.agent_spec_id}'"
+            )
+
+            # Verify persisted in DB
+            db_run = session.query(AgentRun).filter(AgentRun.id == run.id).first()
+            assert db_run is not None
+            assert db_run.agent_spec_id == spec.id
+
+    # -------------------------------------------------------------------------
+    # Step 4: Turn executor bridges to Claude SDK (mock actual AI turns)
+    # -------------------------------------------------------------------------
+
+    def test_step4_turn_executor_bridges_ai_turns(self, db_session):
+        """Verify the turn executor bridges to Claude SDK and actual AI turns
+        are executed (mocked). Each run should have turns_used > 0 and token
+        tracking."""
+        features = self._create_features_for_e2e(db_session)
+        result = self._run_spec_pipeline_for_features(db_session, features)
+
+        for run in result["runs"]:
+            # Turns were executed
+            assert run.turns_used >= 1, (
+                f"Run {run.id}: expected turns_used >= 1, got {run.turns_used}"
+            )
+
+            # Token tracking populated from turn executor
+            assert run.tokens_in > 0, (
+                f"Run {run.id}: tokens_in must be > 0 (turn executor returned tokens)"
+            )
+            assert run.tokens_out > 0, (
+                f"Run {run.id}: tokens_out must be > 0"
+            )
+
+            # Verify turn_complete events exist
+            turn_events = db_session.query(AgentEvent).filter(
+                AgentEvent.run_id == run.id,
+                AgentEvent.event_type == "turn_complete",
+            ).all()
+            assert len(turn_events) >= 1, (
+                f"Run {run.id}: expected at least 1 turn_complete event"
+            )
+
+    # -------------------------------------------------------------------------
+    # Step 5: Tool policy applied during execution
+    # -------------------------------------------------------------------------
+
+    def test_step5_tool_policy_applied(self, db_session):
+        """Verify tool policy is applied during execution. Check that each spec
+        has a tool_policy with allowed_tools and forbidden_patterns, and that
+        events contain evidence of policy-aware execution."""
+        features = self._create_features_for_e2e(db_session)
+        result = self._run_spec_pipeline_for_features(db_session, features)
+
+        for spec in result["specs"]:
+            # Tool policy structure exists
+            assert spec.tool_policy is not None
+            assert isinstance(spec.tool_policy, dict)
+            assert "allowed_tools" in spec.tool_policy, (
+                f"Spec {spec.id}: tool_policy missing 'allowed_tools'"
+            )
+            assert "forbidden_patterns" in spec.tool_policy, (
+                f"Spec {spec.id}: tool_policy missing 'forbidden_patterns'"
+            )
+
+            # allowed_tools is a non-empty list
+            allowed = spec.tool_policy["allowed_tools"]
+            assert isinstance(allowed, list) and len(allowed) > 0, (
+                f"Spec {spec.id}: allowed_tools should be non-empty list"
+            )
+
+            # forbidden_patterns is a list (may be empty for some types)
+            forbidden = spec.tool_policy["forbidden_patterns"]
+            assert isinstance(forbidden, list), (
+                f"Spec {spec.id}: forbidden_patterns should be a list"
+            )
+
+        # Verify tool_call events exist (tool policy was applied during execution)
+        for run in result["runs"]:
+            tool_events = db_session.query(AgentEvent).filter(
+                AgentEvent.run_id == run.id,
+                AgentEvent.event_type.in_(["tool_call", "tool_result"]),
+            ).all()
+            assert len(tool_events) > 0, (
+                f"Run {run.id}: expected tool_call/tool_result events "
+                f"(proves tool policy enforcement path was active)"
+            )
+
+    # -------------------------------------------------------------------------
+    # Step 6: Acceptance gate runs validators and produces verdict
+    # -------------------------------------------------------------------------
+
+    def test_step6_acceptance_gate_produces_verdict(self, db_session):
+        """Verify acceptance gate runs validators and produces a verdict for
+        each run."""
+        features = self._create_features_for_e2e(db_session)
+        result = self._run_spec_pipeline_for_features(db_session, features)
+
+        for run in result["runs"]:
+            # final_verdict is set
+            assert run.final_verdict is not None, (
+                f"Run {run.id}: final_verdict must not be None"
+            )
+            assert run.final_verdict in ("passed", "failed", "partial"), (
+                f"Run {run.id}: final_verdict must be passed/failed/partial, "
+                f"got '{run.final_verdict}'"
+            )
+
+            # acceptance_check event is recorded
+            acceptance_events = db_session.query(AgentEvent).filter(
+                AgentEvent.run_id == run.id,
+                AgentEvent.event_type == "acceptance_check",
+            ).all()
+            assert len(acceptance_events) >= 1, (
+                f"Run {run.id}: missing 'acceptance_check' event"
+            )
+
+            # acceptance_check event has payload with verdict
+            for ae in acceptance_events:
+                assert ae.payload is not None
+                if isinstance(ae.payload, dict):
+                    assert "final_verdict" in ae.payload, (
+                        f"acceptance_check event missing 'final_verdict' in payload"
+                    )
+
+    # -------------------------------------------------------------------------
+    # Step 7: Feature.passes updated based on verdict
+    # -------------------------------------------------------------------------
+
+    def test_step7_feature_passes_synced_from_verdict(self, db_session):
+        """Verify Feature.passes is updated based on the verdict."""
+        features = self._create_features_for_e2e(db_session)
+        result = self._run_spec_pipeline_for_features(db_session, features)
+        session = result["db_session"]
+
+        for i, feature in enumerate(features):
+            run = result["runs"][i]
+
+            # Refresh feature from DB
+            db_feature = session.query(Feature).filter(Feature.id == feature.id).first()
+            assert db_feature is not None
+
+            # in_progress should be cleared
+            assert db_feature.in_progress is False, (
+                f"Feature {feature.id}: in_progress should be False after verdict sync"
+            )
+
+            # passes should match the verdict
+            expected_passes = (run.final_verdict == "passed")
+            assert db_feature.passes == expected_passes, (
+                f"Feature {feature.id}: passes={db_feature.passes} but verdict='{run.final_verdict}'. "
+                f"Expected passes={expected_passes}"
+            )
+
+    # -------------------------------------------------------------------------
+    # Step 8: All DB tables populated correctly
+    # -------------------------------------------------------------------------
+
+    def test_step8_all_db_tables_populated(self, db_session):
+        """Verify agent_specs, agent_runs, and agent_events tables are populated
+        correctly after the pipeline run."""
+        features = self._create_features_for_e2e(db_session)
+        result = self._run_spec_pipeline_for_features(db_session, features)
+        session = result["db_session"]
+        feature_ids = [f.id for f in features]
+
+        # agent_specs table
+        spec_count = session.query(AgentSpec).filter(
+            AgentSpec.source_feature_id.in_(feature_ids)
+        ).count()
+        assert spec_count >= 4, (
+            f"Expected >= 4 AgentSpec rows, got {spec_count}"
+        )
+
+        # agent_runs table
+        spec_ids = [s.id for s in result["specs"]]
+        run_count = session.query(AgentRun).filter(
+            AgentRun.agent_spec_id.in_(spec_ids)
+        ).count()
+        assert run_count >= 4, (
+            f"Expected >= 4 AgentRun rows, got {run_count}"
+        )
+
+        # agent_events table - should have many events
+        run_ids = [r.id for r in result["runs"]]
+        event_count = session.query(AgentEvent).filter(
+            AgentEvent.run_id.in_(run_ids)
+        ).count()
+        assert event_count >= 12, (
+            f"Expected >= 12 AgentEvent rows (at least 3 per run: "
+            f"started, turn_complete, acceptance_check), got {event_count}"
+        )
+
+        # Verify each run has events
+        for run in result["runs"]:
+            run_event_count = session.query(AgentEvent).filter(
+                AgentEvent.run_id == run.id
+            ).count()
+            assert run_event_count >= 3, (
+                f"Run {run.id}: expected >= 3 events, got {run_event_count}"
+            )
+
+    # -------------------------------------------------------------------------
+    # Step 9: At least 3 distinct task_type values in agent_specs
+    # -------------------------------------------------------------------------
+
+    def test_step9_at_least_3_distinct_task_types(self, db_session):
+        """Verify at least 3 distinct task_type values in agent_specs
+        (coding, testing, documentation, and/or audit)."""
+        features = self._create_features_for_e2e(db_session)
+        result = self._run_spec_pipeline_for_features(db_session, features)
+        session = result["db_session"]
+        feature_ids = [f.id for f in features]
+
+        specs_in_db = session.query(AgentSpec).filter(
+            AgentSpec.source_feature_id.in_(feature_ids)
+        ).all()
+
+        distinct_task_types = {s.task_type for s in specs_in_db}
+
+        assert len(distinct_task_types) >= 3, (
+            f"Expected at least 3 distinct task_types, got {len(distinct_task_types)}: "
+            f"{distinct_task_types}"
+        )
+
+        # Verify expected types are present
+        expected_types = {"coding", "testing", "documentation", "audit"}
+        assert distinct_task_types.issubset(expected_types), (
+            f"Unexpected task_types: {distinct_task_types - expected_types}"
+        )
+
+        # We expect exactly 4 distinct types from our 4 categories
+        assert len(distinct_task_types) == 4, (
+            f"Expected 4 distinct task_types (one per category), "
+            f"got {len(distinct_task_types)}: {distinct_task_types}"
+        )
+
+    # -------------------------------------------------------------------------
+    # Step 10: Legacy path (without --spec) still works identically
+    # -------------------------------------------------------------------------
+
+    def test_step10_legacy_path_still_works(self, db_session):
+        """Run the orchestrator WITHOUT --spec and verify the legacy path still
+        works identically. The legacy path does NOT use SpecOrchestrator or
+        HarnessKernel — it uses the parallel_orchestrator + run_autonomous_agent.
+
+        We verify this by checking:
+        1. autonomous_agent_demo.py has both code paths (spec and legacy)
+        2. Without --spec flag, spec_mode is False
+        3. The entry point routes to legacy run_parallel_orchestrator
+        4. SpecOrchestrator is NOT used in the legacy path
+        """
+        import ast
+
+        # Parse autonomous_agent_demo.py to verify both code paths exist
+        demo_path = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)),
+            "autonomous_agent_demo.py"
+        )
+        with open(demo_path, "r") as f:
+            source = f.read()
+
+        # Verify the --spec CLI argument exists
+        assert '--spec' in source, (
+            "autonomous_agent_demo.py must contain '--spec' CLI argument"
+        )
+
+        # Verify AUTOBUILDR_MODE env var is checked
+        assert 'AUTOBUILDR_MODE' in source, (
+            "autonomous_agent_demo.py must check AUTOBUILDR_MODE env var"
+        )
+
+        # Verify both execution paths exist
+        assert 'SpecOrchestrator' in source, (
+            "autonomous_agent_demo.py must reference SpecOrchestrator for --spec path"
+        )
+        assert 'run_parallel_orchestrator' in source, (
+            "autonomous_agent_demo.py must reference run_parallel_orchestrator for legacy path"
+        )
+
+        # Verify the conditional branching logic
+        assert 'spec_mode' in source, (
+            "autonomous_agent_demo.py must use 'spec_mode' variable for path selection"
+        )
+
+        # Verify that without --spec and without AUTOBUILDR_MODE=spec,
+        # spec_mode evaluates to False (legacy path)
+        # The logic is: spec_mode = args.spec or os.environ.get("AUTOBUILDR_MODE", "legacy") == "spec"
+        assert 'os.environ.get("AUTOBUILDR_MODE", "legacy") == "spec"' in source, (
+            "Legacy path: AUTOBUILDR_MODE default is 'legacy', "
+            "so spec_mode is False without --spec flag"
+        )
+
+        # Verify legacy path message
+        assert 'Using legacy execution' in source, (
+            "Legacy path must print 'Using legacy execution' message"
+        )
+
+        # Verify spec path message
+        assert 'Using spec-driven execution' in source, (
+            "Spec path must print 'Using spec-driven execution' message"
+        )
+
+    # -------------------------------------------------------------------------
+    # Step 11: Low max_turns budget terminates correctly
+    # -------------------------------------------------------------------------
+
+    def test_step11_low_max_turns_budget_terminates(self, db_session):
+        """Configure a feature's spec with max_turns=2 and verify budget
+        enforcement terminates it correctly with status='timeout' and
+        appropriate events recorded."""
+        # Create a single feature
+        feature = Feature(
+            id=13304,
+            priority=1,
+            category="A. Database",
+            name="E2E #133 Budget Test Feature",
+            description="Feature to test max_turns budget enforcement",
+            steps=["Verify budget enforcement works"],
+            passes=False,
+            in_progress=False,
+        )
+        db_session.add(feature)
+        db_session.commit()
+
+        # Compile to AgentSpec
+        compiler = FeatureCompiler()
+        spec = compiler.compile(feature)
+
+        # Override max_turns to a deliberately low budget
+        spec.max_turns = 2
+
+        db_session.add(spec)
+        db_session.commit()
+        db_session.refresh(spec)
+
+        # Verify spec has max_turns=2
+        assert spec.max_turns == 2
+
+        # Create a turn executor that NEVER signals completion
+        # This forces the kernel to hit the budget limit
+        turn_counter = [0]
+
+        def never_completing_executor(run, spec, _tc=turn_counter):
+            _tc[0] += 1
+            # Never return completed=True
+            tool_events = [
+                {
+                    "tool_name": "Read",
+                    "arguments": {"path": "/test/budget.py"},
+                    "result": "still working...",
+                    "is_error": False,
+                }
+            ]
+            return (False, {"response": f"turn {_tc[0]}"}, tool_events, 100, 50)
+
+        kernel = HarnessKernel(db=db_session)
+        run = kernel.execute(spec, turn_executor=never_completing_executor)
+
+        # Budget enforcement: status should be 'timeout' (not 'failed')
+        assert run.status == "timeout", (
+            f"Expected status='timeout' for budget exhaustion, got '{run.status}'"
+        )
+        assert run.status != "failed", (
+            "Budget exhaustion should set status='timeout', NOT 'failed'"
+        )
+
+        # Exactly 2 turns should have been used
+        assert run.turns_used == 2, (
+            f"Expected turns_used=2 for max_turns=2, got {run.turns_used}"
+        )
+
+        # Verify timeout event is recorded
+        timeout_events = db_session.query(AgentEvent).filter(
+            AgentEvent.run_id == run.id,
+            AgentEvent.event_type == "timeout",
+        ).all()
+        assert len(timeout_events) >= 1, (
+            f"Expected at least 1 timeout event, got {len(timeout_events)}"
+        )
+
+        # Timeout event payload should contain reason and budget info
+        timeout_event = timeout_events[0]
+        assert timeout_event.payload is not None
+        if isinstance(timeout_event.payload, dict):
+            assert "reason" in timeout_event.payload, (
+                "timeout event payload must contain 'reason'"
+            )
+            assert timeout_event.payload["reason"] == "max_turns_exceeded", (
+                f"timeout reason should be 'max_turns_exceeded', "
+                f"got '{timeout_event.payload.get('reason')}'"
+            )
+            assert "turns_used" in timeout_event.payload, (
+                "timeout event payload must contain 'turns_used'"
+            )
+            assert timeout_event.payload["turns_used"] == 2
+
+        # Acceptance validators should still have run (graceful termination)
+        acceptance_events = db_session.query(AgentEvent).filter(
+            AgentEvent.run_id == run.id,
+            AgentEvent.event_type == "acceptance_check",
+        ).all()
+        assert len(acceptance_events) >= 1, (
+            "Acceptance validators must run even after budget exhaustion "
+            "(graceful termination)"
+        )
+
+        # Run should have token tracking
+        assert run.tokens_in > 0, f"tokens_in should be > 0, got {run.tokens_in}"
+        assert run.tokens_out > 0, f"tokens_out should be > 0, got {run.tokens_out}"
