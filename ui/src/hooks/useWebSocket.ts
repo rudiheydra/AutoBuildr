@@ -328,6 +328,15 @@ export function useProjectWebSocket(projectName: string | null) {
               // Heartbeat response
               break
 
+            // Phase 3 AgentSpec WebSocket events
+            // Feature #146: Handle agent_spec_created in frontend UI
+            case 'agent_spec_created':
+              // When a new AgentSpec is created, log for debugging.
+              // Components that display agent specs can listen for this event
+              // to refresh their data (e.g., invalidate React Query caches).
+              console.debug('[WebSocket] agent_spec_created:', message.spec_id, message.display_name)
+              break
+
             // Phase 3 AgentRun WebSocket events - handled by useAgentRunUpdates hook
             // These are forwarded to components that subscribe via the specialized hook
             case 'agent_run_started':

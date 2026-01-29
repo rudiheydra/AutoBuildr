@@ -300,7 +300,7 @@ export interface OrchestratorStatus {
 }
 
 // WebSocket message types
-export type WSMessageType = 'progress' | 'feature_update' | 'log' | 'agent_status' | 'pong' | 'dev_log' | 'dev_server_status' | 'agent_update' | 'orchestrator_update' | 'agent_run_started' | 'agent_event_logged' | 'agent_acceptance_update'
+export type WSMessageType = 'progress' | 'feature_update' | 'log' | 'agent_status' | 'pong' | 'dev_log' | 'dev_server_status' | 'agent_update' | 'orchestrator_update' | 'agent_run_started' | 'agent_event_logged' | 'agent_acceptance_update' | 'agent_spec_created'
 
 export interface WSProgressMessage {
   type: 'progress'
@@ -375,6 +375,25 @@ export interface WSOrchestratorUpdateMessage {
 }
 
 // ============================================================================
+// AgentSpec WebSocket Message Types (Phase 3 Real-time Updates)
+// ============================================================================
+
+/**
+ * WebSocket message for agent_spec_created event.
+ * Broadcast when a new AgentSpec is registered via the API.
+ * Feature #146: Handle agent_spec_created WebSocket event in frontend UI.
+ */
+export interface WSAgentSpecCreatedMessage {
+  type: 'agent_spec_created'
+  spec_id: string
+  name: string
+  display_name: string
+  icon: string | null
+  task_type: string
+  timestamp: string
+}
+
+// ============================================================================
 // AgentRun WebSocket Message Types (Phase 3 Real-time Updates)
 // ============================================================================
 
@@ -440,6 +459,7 @@ export type WSMessage =
   | WSDevLogMessage
   | WSDevServerStatusMessage
   | WSOrchestratorUpdateMessage
+  | WSAgentSpecCreatedMessage
   | WSAgentRunStartedMessage
   | WSAgentEventLoggedMessage
   | WSAgentAcceptanceUpdateMessage
