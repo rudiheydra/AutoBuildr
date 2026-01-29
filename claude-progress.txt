@@ -1,6 +1,29 @@
 # AutoBuildr Progress Log
 # ======================
 
+## Session: 2026-01-30 (Coding Agent - Feature #137)
+
+### Feature #137: Add spec_path column to AgentSpec model - COMPLETED
+
+**Status:** PASSING
+
+**Category:** data
+
+**Description:** Add spec_path (VARCHAR, nullable) column to agent_specs table, update SQLAlchemy model, Pydantic schemas, CRUD functions, and API routes.
+
+**Verification (5/5 steps passed):**
+1. AgentSpec model class located in api/agentspec_models.py - PASS
+2. spec_path = Column(String(500), nullable=True) added - PASS
+3. All 4 Pydantic schemas updated (Create, Update, Response, WithAcceptanceResponse) - PASS
+4. API serialization includes spec_path in to_dict() and all 3 router endpoints - PASS
+5. Database column created via migration, CRUD read/write verified - PASS
+
+**Files:** api/agentspec_models.py, api/agentspec_crud.py, server/schemas/agentspec.py, server/routers/agent_specs.py, api/database.py
+**Commit:** bbf3fca
+**Tests:** 80/80 pass (no regressions)
+
+---
+
 ## Session: 2026-01-30 (Coding Agent - Feature #135)
 
 ### Feature #135: Create Spec Builder API router with compile and templates endpoints - COMPLETED
@@ -10012,3 +10035,60 @@ Created comprehensive test suite:
   - API health: healthy (http://localhost:8888/api/health)
   - Browser automation unavailable (Chrome launch failure in container)
   - No regression found - feature still working correctly
+[Testing] 2026-01-30 09:37:49 - Feature #106 regression test PASSED
+  - Feature: Create auditor agent definition (.claude/agents/auditor.md)
+  - Category: functional
+  - All 4 verification steps passed:
+    Step 1: Valid YAML frontmatter (name: auditor, model: opus, color: yellow) - PASS
+    Step 2: Description references security/quality audit with read-only tool policies - PASS
+    Step 3: Markdown body documents audit pipeline, security scanning, tool restrictions - PASS
+    Step 4: File parseable by Claude Code (valid YAML between --- delimiters) - PASS
+  - Source file intact: .claude/agents/auditor.md (63 lines, 3374 bytes)
+    - YAML frontmatter: name=auditor, model=opus, color=yellow
+    - Description: 878 chars, references security, quality, audit, read-only
+    - Body: 2406 chars, 8 sections covering audit pipeline, security scanning, tool restrictions
+    - Pipeline references: detect_task_type, derive_tool_policy, ForbiddenPatternsValidator
+  - No uncommitted changes in source file
+  - API server healthy on port 8888
+  - Frontend serving on port 5173
+  - Browser automation unavailable (Chrome launch failure in container)
+  - No regression found - feature still working correctly
+
+---
+
+## Session: 2026-01-30 (Coding Agent - Feature #138)
+
+### Feature #138: Add UNIQUE constraint on agent_specs.name column - COMPLETED
+
+**Status:** PASSING
+
+**Category:** data
+
+**Dependencies:** None
+
+**Description:** The spec requires agent_specs.name to be unique, but the column currently has no uniqueness enforcement. Add unique=True to the name column definition in the SQLAlchemy model.
+
+**Implementation Summary:**
+
+1. **Model change**: Added `unique=True` to `AgentSpec.name` Column definition in `api/agentspec_models.py` (line 184)
+   - Note: This was also independently added by Feature #134 commit (ae97196)
+
+2. **Migration function**: Added `_migrate_add_agentspec_name_unique()` in `api/database.py`
+   - Creates `UNIQUE INDEX uq_agent_specs_name ON agent_specs (name)` for existing databases
+   - Checks for existing unique index/constraint before attempting to create
+   - Idempotent - safe to run multiple times
+   - Called during `create_database()` after table creation
+
+3. **API error handling**: Verified existing error handling in `server/routers/agent_specs.py`
+   - Both create and update endpoints catch `IntegrityError`
+   - Check for "UNIQUE constraint failed" + "name" in error message
+   - Return HTTP 400 with message "Database constraint violation: duplicate name"
+
+4. **Test suite**: 9 tests in `tests/test_feature_138_unique_name.py`
+   - TestModelDefinition (2 tests): Column has unique=True, not nullable
+   - TestDatabaseUniqueness (3 tests): DB enforces uniqueness, different names succeed, CRUD raises
+   - TestAPIErrorResponse (2 tests): API router handles duplicate name properly for create and update
+   - TestMigration (2 tests): Migration creates unique index, is idempotent
+
+**Verification:** All 9 tests pass. Zero regressions (378 pass, 4 pre-existing failures unrelated to this change).
+
