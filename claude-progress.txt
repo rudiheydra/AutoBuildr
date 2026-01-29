@@ -1,6 +1,23 @@
 # AutoBuildr Progress Log
 # ======================
 
+## Session: 2026-01-30 (Coding Agent - Feature #144)
+
+### Feature #144: Make agent_events.artifact_ref a proper Foreign Key to artifacts - COMPLETED
+
+**Status:** PASSING
+
+**Category:** data
+
+**Changes Made:**
+1. `api/agentspec_models.py`: Changed artifact_ref to ForeignKey('artifacts.id', ondelete='SET NULL'), added relationships
+2. `api/database.py`: Added migration to clean orphaned refs
+3. `tests/test_feature_144_artifact_ref_fk.py`: 18 tests all passing
+
+**Commit:** 29aa57e
+
+---
+
 ## Session: 2026-01-30 (Coding Agent - Feature #149)
 
 ### Feature #149: Integrate TemplateRegistry into DSPy SpecBuilder pipeline - COMPLETED
@@ -10807,5 +10824,26 @@ Created comprehensive test suite:
   - API exports: 9 symbols in api/__init__.py (verified)
   - Live server: 0 orphaned runs in database (cleanup working)
   - Source code intact: api/orphaned_run_cleanup.py (459 lines, all functions verified)
+  - Browser automation unavailable (Chrome SIGTRAP in container)
+  - No regression found - feature still working correctly
+[Testing] 2026-01-30T10:13:09+11:00 - Feature #99 regression test PASSED
+  - Feature: Auto-repair function removes self-references from features
+  - Category: functional
+  - All 5 verification steps passed:
+    Step 1: Create repair_self_references(session) function - PASS (exists, callable, correct signature)
+    Step 2: Query all features and check for self-references - PASS (5/10 features with self-refs detected)
+    Step 3: Remove self-reference from each affected features dependencies list - PASS (self-ref removed, valid deps preserved)
+    Step 4: Commit changes in a single transaction - PASS (10 features repaired in 1 commit)
+    Step 5: Return list of repaired feature IDs for logging - PASS (correct type and contents)
+  - Unit tests: 19/19 PASS (test_repair_self_references.py in 26.24s)
+  - Verification script: 5/5 steps PASS (verify_feature_99.py)
+  - Source code intact: api/dependency_resolver.py (lines 780-844, repair_self_references function)
+    - Queries all features, checks self-references via get_dependencies_safe()
+    - Removes self-references with list comprehension, preserving valid deps
+    - Single-transaction commit only when repairs made
+    - Structured logging with before_fix/after_fix actions
+    - Returns list[int] of repaired feature IDs
+  - API endpoint: /api/projects/AutoBuildr/features/99 - working (passes=true, no deps, not blocked)
+  - API server healthy on port 8888
   - Browser automation unavailable (Chrome SIGTRAP in container)
   - No regression found - feature still working correctly
