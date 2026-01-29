@@ -1664,3 +1664,470 @@ class TestSmokeFullWiring:
         )
         assert isinstance(gate_result.acceptance_results, list)
         assert isinstance(gate_result.validator_results, list)
+
+
+# =============================================================================
+# Feature #128: HarnessKernel executes spec with max_turns and timeout budget
+#               enforcement
+# =============================================================================
+
+class TestHarnessKernelBudgetEnforcement:
+    """
+    Prove HarnessKernel.execute() enforces max_turns and timeout budget
+    constraints, records timeout events, runs acceptance validators after
+    budget exhaustion (graceful termination), and tracks token usage.
+
+    Feature #128 verification steps:
+    1. Verify HarnessKernel.execute() is called with the compiled AgentSpec
+       in the --spec path
+    2. Verify turns_used is incremented after each turn and matches the
+       actual number of turns executed
+    3. Create or configure a spec with max_turns=2 and verify execution
+       stops after exactly 2 turns
+    4. Verify that on budget exhaustion, the run status is set to 'timeout'
+       (not 'failed')
+    5. Verify a 'timeout' event is recorded in agent_events when budget is
+       exhausted
+    6. Verify that acceptance validators still run after budget exhaustion
+       (graceful termination)
+    7. Verify tokens_in and tokens_out are tracked and stored on the AgentRun
+    """
+
+    def test_execute_called_with_compiled_spec(self, db_session):
+        """
+        Step 1: Verify HarnessKernel.execute() is called with the compiled
+        AgentSpec in the --spec path.
+
+        Proves: Feature -> FeatureCompiler -> AgentSpec -> HarnessKernel.execute()
+        """
+        # Create a Feature and compile it to AgentSpec (the --spec path)
+        feature = Feature(
+            id=1280,
+            priority=1,
+            category="functional",
+            name="Budget Enforcement Test Feature",
+            description="Test budget enforcement in HarnessKernel",
+            steps=["Run pytest to verify budget enforcement"],
+            passes=False,
+            in_progress=False,
+        )
+        compiler = FeatureCompiler()
+        spec = compiler.compile(feature)
+
+        assert isinstance(spec, AgentSpec)
+        assert spec.source_feature_id == 1280
+
+        # Persist spec to DB
+        db_session.add(spec)
+        db_session.commit()
+        db_session.refresh(spec)
+
+        # Execute via HarnessKernel.execute() with compiled spec
+        def mock_executor(run, spec):
+            return (True, {"response": "done"}, [], 50, 25)
+
+        kernel = HarnessKernel(db=db_session)
+        run = kernel.execute(spec, turn_executor=mock_executor)
+
+        # Verify the kernel received and used the compiled spec
+        assert run is not None
+        assert isinstance(run, AgentRun)
+        assert run.agent_spec_id == spec.id
+        assert run.status in ("completed", "failed", "timeout")
+
+    def test_turns_used_incremented_correctly(self, db_session):
+        """
+        Step 2: Verify turns_used is incremented after each turn and matches
+        the actual number of turns executed.
+        """
+        spec = AgentSpec(
+            id="test-budget-turns-inc-001",
+            name="test-budget-turns-inc",
+            display_name="Turns Increment Test",
+            objective="Verify turns_used increments correctly",
+            task_type="testing",
+            tool_policy={
+                "allowed_tools": ["Read"],
+                "forbidden_patterns": [],
+                "policy_version": "v1",
+            },
+            max_turns=10,
+            timeout_seconds=300,
+        )
+        db_session.add(spec)
+        db_session.commit()
+
+        # Track turns_used values observed during execution
+        observed_turns = []
+        turn_count = 0
+
+        def mock_executor(run, spec):
+            nonlocal turn_count
+            turn_count += 1
+            # Capture turns_used BEFORE this turn is recorded
+            # (it should already reflect previous turns)
+            observed_turns.append(run.turns_used)
+            completed = turn_count >= 5  # Complete after 5 turns
+            return (completed, {"turn": turn_count}, [], 100, 50)
+
+        kernel = HarnessKernel(db=db_session)
+        run = kernel.execute(spec, turn_executor=mock_executor)
+
+        # After 5 turns, turns_used should be exactly 5
+        assert run.turns_used == 5, (
+            f"Expected turns_used=5 after 5 turns, got {run.turns_used}"
+        )
+
+        # Verify turns_used was incrementing correctly
+        # Before turn 1: turns_used=0, before turn 2: turns_used=1, etc.
+        assert observed_turns == [0, 1, 2, 3, 4], (
+            f"Expected observed turns [0, 1, 2, 3, 4], got {observed_turns}"
+        )
+
+        # Verify persisted in DB
+        db_run = db_session.query(AgentRun).filter(
+            AgentRun.id == run.id
+        ).first()
+        assert db_run.turns_used == 5
+
+    def test_max_turns_stops_execution(self, db_session):
+        """
+        Step 3: Create or configure a spec with max_turns=2 and verify
+        execution stops after exactly 2 turns.
+        """
+        spec = AgentSpec(
+            id="test-budget-max2-001",
+            name="test-budget-max2",
+            display_name="Max Turns 2 Test",
+            objective="Verify execution stops after exactly 2 turns",
+            task_type="testing",
+            tool_policy={
+                "allowed_tools": ["Read"],
+                "forbidden_patterns": [],
+                "policy_version": "v1",
+            },
+            max_turns=2,  # KEY: Only 2 turns allowed
+            timeout_seconds=300,
+        )
+        db_session.add(spec)
+        db_session.commit()
+
+        # Executor that never signals completion — keeps asking for more turns
+        executor_calls = 0
+
+        def never_completing_executor(run, spec):
+            nonlocal executor_calls
+            executor_calls += 1
+            # Never signal completion — kernel must stop via budget
+            return (False, {"turn": executor_calls}, [], 100, 50)
+
+        kernel = HarnessKernel(db=db_session)
+        run = kernel.execute(spec, turn_executor=never_completing_executor)
+
+        # Kernel should have stopped after exactly 2 turns
+        assert executor_calls == 2, (
+            f"Expected exactly 2 executor calls (max_turns=2), got {executor_calls}"
+        )
+        assert run.turns_used == 2, (
+            f"Expected turns_used=2, got {run.turns_used}"
+        )
+
+    def test_budget_exhaustion_sets_timeout_status(self, db_session):
+        """
+        Step 4: Verify that on budget exhaustion, the run status is set to
+        'timeout' (not 'failed').
+        """
+        spec = AgentSpec(
+            id="test-budget-timeout-status-001",
+            name="test-budget-timeout-status",
+            display_name="Timeout Status Test",
+            objective="Verify budget exhaustion sets status=timeout",
+            task_type="testing",
+            tool_policy={
+                "allowed_tools": ["Read"],
+                "forbidden_patterns": [],
+                "policy_version": "v1",
+            },
+            max_turns=2,
+            timeout_seconds=300,
+        )
+        db_session.add(spec)
+        db_session.commit()
+
+        def never_completing_executor(run, spec):
+            return (False, {"turn": "data"}, [], 100, 50)
+
+        kernel = HarnessKernel(db=db_session)
+        run = kernel.execute(spec, turn_executor=never_completing_executor)
+
+        # Status MUST be 'timeout', NOT 'failed'
+        assert run.status == "timeout", (
+            f"Expected status='timeout' on budget exhaustion, got '{run.status}'"
+        )
+        assert run.status != "failed", (
+            "Budget exhaustion must NOT set status to 'failed'"
+        )
+
+        # Verify persisted in DB
+        db_run = db_session.query(AgentRun).filter(
+            AgentRun.id == run.id
+        ).first()
+        assert db_run.status == "timeout"
+
+    def test_timeout_event_recorded(self, db_session):
+        """
+        Step 5: Verify a 'timeout' event is recorded in agent_events when
+        budget is exhausted.
+        """
+        spec = AgentSpec(
+            id="test-budget-timeout-event-001",
+            name="test-budget-timeout-event",
+            display_name="Timeout Event Test",
+            objective="Verify timeout event is recorded",
+            task_type="testing",
+            tool_policy={
+                "allowed_tools": ["Read"],
+                "forbidden_patterns": [],
+                "policy_version": "v1",
+            },
+            max_turns=2,
+            timeout_seconds=300,
+        )
+        db_session.add(spec)
+        db_session.commit()
+
+        def never_completing_executor(run, spec):
+            return (False, {"turn": "data"}, [], 100, 50)
+
+        kernel = HarnessKernel(db=db_session)
+        run = kernel.execute(spec, turn_executor=never_completing_executor)
+
+        # Query all events for this run
+        events = db_session.query(AgentEvent).filter(
+            AgentEvent.run_id == run.id
+        ).order_by(AgentEvent.sequence).all()
+
+        event_types = [e.event_type for e in events]
+
+        # Must have a 'timeout' event
+        assert "timeout" in event_types, (
+            f"Expected 'timeout' event in agent_events, got types: {event_types}"
+        )
+
+        # Find the timeout event and verify its payload
+        timeout_events = [e for e in events if e.event_type == "timeout"]
+        assert len(timeout_events) >= 1, "Expected at least 1 timeout event"
+
+        timeout_event = timeout_events[0]
+        assert timeout_event.payload is not None, "Timeout event must have payload"
+        assert "reason" in timeout_event.payload, (
+            f"Timeout event payload must have 'reason', got: {timeout_event.payload}"
+        )
+        assert timeout_event.payload["reason"] == "max_turns_exceeded", (
+            f"Expected reason='max_turns_exceeded', got '{timeout_event.payload['reason']}'"
+        )
+        assert "turns_used" in timeout_event.payload, (
+            "Timeout payload must include turns_used"
+        )
+        assert timeout_event.payload["turns_used"] == 2, (
+            f"Expected turns_used=2 in timeout payload, got {timeout_event.payload['turns_used']}"
+        )
+
+    def test_acceptance_validators_run_after_budget_exhaustion(self, db_session, tmp_path):
+        """
+        Step 6: Verify that acceptance validators still run after budget
+        exhaustion (graceful termination).
+
+        This proves Feature #49: graceful budget exhaustion handling.
+        """
+        # Create a file that the validator can check
+        test_file = tmp_path / "partial_output.txt"
+        test_file.write_text("partial work completed\n")
+
+        spec = AgentSpec(
+            id="test-budget-graceful-001",
+            name="test-budget-graceful",
+            display_name="Graceful Termination Test",
+            objective="Verify validators run after budget exhaustion",
+            task_type="testing",
+            tool_policy={
+                "allowed_tools": ["Read"],
+                "forbidden_patterns": [],
+                "policy_version": "v1",
+            },
+            max_turns=2,
+            timeout_seconds=300,
+        )
+
+        # Create AcceptanceSpec with a file_exists validator
+        acceptance_spec = AcceptanceSpec(
+            id=generate_uuid(),
+            agent_spec_id=spec.id,
+            validators=[
+                {
+                    "type": "file_exists",
+                    "config": {
+                        "path": str(test_file),
+                        "should_exist": True,
+                        "description": "Partial output file should exist",
+                    },
+                    "weight": 1.0,
+                    "required": False,
+                },
+            ],
+            gate_mode="all_pass",
+            retry_policy="none",
+            max_retries=0,
+        )
+        spec.acceptance_spec = acceptance_spec
+
+        db_session.add(spec)
+        db_session.commit()
+        db_session.refresh(spec)
+
+        def never_completing_executor(run, spec):
+            return (False, {"turn": "data"}, [], 100, 50)
+
+        kernel = HarnessKernel(db=db_session)
+        run = kernel.execute(spec, turn_executor=never_completing_executor)
+
+        # Run should be in timeout status (budget exhausted)
+        assert run.status == "timeout", (
+            f"Expected status='timeout', got '{run.status}'"
+        )
+
+        # Verify acceptance validators still ran (graceful termination)
+        # The kernel should have recorded an acceptance_check event
+        events = db_session.query(AgentEvent).filter(
+            AgentEvent.run_id == run.id
+        ).order_by(AgentEvent.sequence).all()
+        event_types = [e.event_type for e in events]
+
+        assert "acceptance_check" in event_types, (
+            f"Expected 'acceptance_check' event after budget exhaustion (graceful "
+            f"termination), but got only: {event_types}"
+        )
+
+        # Verify the acceptance check event has results
+        acceptance_events = [e for e in events if e.event_type == "acceptance_check"]
+        assert len(acceptance_events) >= 1
+        acceptance_payload = acceptance_events[0].payload
+        assert acceptance_payload is not None
+        assert "final_verdict" in acceptance_payload
+        assert "validator_count" in acceptance_payload
+        assert acceptance_payload["validator_count"] >= 1
+
+        # The run should have acceptance_results stored
+        assert run.acceptance_results is not None, (
+            "acceptance_results should be set after graceful termination"
+        )
+        assert len(run.acceptance_results) >= 1, (
+            "At least 1 validator result expected"
+        )
+
+        # The partial verdict should be set
+        assert run.final_verdict is not None, (
+            "final_verdict should be set after graceful termination"
+        )
+        assert run.final_verdict in ("partial", "passed", "failed"), (
+            f"final_verdict should be partial/passed/failed, got '{run.final_verdict}'"
+        )
+
+    def test_tokens_tracked_on_agent_run(self, db_session):
+        """
+        Step 7: Verify tokens_in and tokens_out are tracked and stored on
+        the AgentRun.
+        """
+        spec = AgentSpec(
+            id="test-budget-tokens-001",
+            name="test-budget-tokens",
+            display_name="Token Tracking Test",
+            objective="Verify token tracking on AgentRun",
+            task_type="testing",
+            tool_policy={
+                "allowed_tools": ["Read"],
+                "forbidden_patterns": [],
+                "policy_version": "v1",
+            },
+            max_turns=10,
+            timeout_seconds=300,
+        )
+        db_session.add(spec)
+        db_session.commit()
+
+        turn_count = 0
+
+        def mock_executor(run, spec):
+            nonlocal turn_count
+            turn_count += 1
+            completed = turn_count >= 3  # 3 turns
+            # Each turn: 200 input tokens, 100 output tokens
+            return (completed, {"turn": turn_count}, [], 200, 100)
+
+        kernel = HarnessKernel(db=db_session)
+        run = kernel.execute(spec, turn_executor=mock_executor)
+
+        # After 3 turns with 200 in + 100 out each:
+        # tokens_in should be 600, tokens_out should be 300
+        assert run.tokens_in == 600, (
+            f"Expected tokens_in=600 (3 turns * 200), got {run.tokens_in}"
+        )
+        assert run.tokens_out == 300, (
+            f"Expected tokens_out=300 (3 turns * 100), got {run.tokens_out}"
+        )
+
+        # Verify persisted in DB
+        db_run = db_session.query(AgentRun).filter(
+            AgentRun.id == run.id
+        ).first()
+        assert db_run.tokens_in == 600, (
+            f"DB tokens_in should be 600, got {db_run.tokens_in}"
+        )
+        assert db_run.tokens_out == 300, (
+            f"DB tokens_out should be 300, got {db_run.tokens_out}"
+        )
+
+    def test_tokens_tracked_even_on_timeout(self, db_session):
+        """
+        Additional verification: tokens_in and tokens_out are tracked and
+        stored even when budget is exhausted (timeout).
+        """
+        spec = AgentSpec(
+            id="test-budget-tokens-timeout-001",
+            name="test-budget-tokens-timeout",
+            display_name="Token Tracking on Timeout",
+            objective="Verify tokens tracked even on timeout",
+            task_type="testing",
+            tool_policy={
+                "allowed_tools": ["Read"],
+                "forbidden_patterns": [],
+                "policy_version": "v1",
+            },
+            max_turns=2,
+            timeout_seconds=300,
+        )
+        db_session.add(spec)
+        db_session.commit()
+
+        def never_completing_executor(run, spec):
+            return (False, {"turn": "data"}, [], 150, 75)
+
+        kernel = HarnessKernel(db=db_session)
+        run = kernel.execute(spec, turn_executor=never_completing_executor)
+
+        assert run.status == "timeout"
+
+        # After 2 turns with 150 in + 75 out each:
+        assert run.tokens_in == 300, (
+            f"Expected tokens_in=300 on timeout, got {run.tokens_in}"
+        )
+        assert run.tokens_out == 150, (
+            f"Expected tokens_out=150 on timeout, got {run.tokens_out}"
+        )
+
+        # Verify persisted in DB
+        db_run = db_session.query(AgentRun).filter(
+            AgentRun.id == run.id
+        ).first()
+        assert db_run.tokens_in == 300
+        assert db_run.tokens_out == 150
