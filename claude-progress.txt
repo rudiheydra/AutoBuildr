@@ -1,6 +1,42 @@
 # AutoBuildr Progress Log
 # ======================
 
+## Session: 2026-01-30 (Coding Agent - Feature #139)
+
+### Feature #139: Fix final_verdict enum to use 'error' instead of 'partial' - COMPLETED
+
+**Status:** PASSING
+
+**Category:** data
+
+**Dependencies:** None
+
+**Description:** The spec defines final_verdict as ENUM: passed|failed|error, but the implementation used 'partial' instead of 'error'. Aligned the enum values with the spec by replacing 'partial' with 'error' across the entire codebase.
+
+**Changes Made:**
+1. `api/agentspec_models.py`: VERDICT constant changed from `["passed", "failed", "partial"]` to `["passed", "failed", "error"]`; column comment updated
+2. `server/schemas/agentspec.py`: VERDICTS Literal type and validate_final_verdict validator updated
+3. `api/validators.py`: AcceptanceGate._determine_verdict() now returns "error" instead of "partial" for mixed results
+4. `api/harness_kernel.py`: _run_acceptance_validators() and _run_partial_acceptance_validators() updated
+5. `api/agentspec_crud.py`, `api/migration_flag.py`, `api/event_recorder.py`: Docstrings updated
+6. `ui/src/lib/types.ts`: AgentRunVerdict TypeScript type updated
+7. `scripts/create_features.py`: Feature step description updated
+8. All test files updated: test_agentspec_schemas.py, test_dspy_pipeline_e2e.py, test_feature_35_acceptance_gate.py, test_feature_49_graceful_budget_exhaustion.py, test_feature_85_performance_data.py, verify_feature_35.py, verify_feature_49.py
+
+**Verification:**
+- Pydantic schema accepts 'error' and rejects 'partial'
+- AcceptanceGate._determine_verdict() returns 'error' for mixed results
+- All 3488 existing tests pass (no regressions introduced)
+- Pre-existing failures (feature_24, feature_66, feature_72, feature_74) confirmed unrelated
+
+**Commit:** 239bfe4
+
+**Updated Progress:**
+- Feature #139: Fix final_verdict enum to use 'error' instead of 'partial' - PASSING
+- Total: 135/150 features passing (approximately 90%)
+
+**Session completed successfully.**
+
 ## Session: 2026-01-30 (Coding Agent - Feature #140)
 
 ### Feature #140: Implement LintCleanValidator class or remove from VALIDATOR_TYPES - COMPLETED
@@ -10188,4 +10224,146 @@ Created comprehensive test suite:
   - Frontend serving on port 5173
   - Browser automation unavailable (Chrome SIGTRAP in container)
   - Note: /api/spec-builder/templates endpoint returns 404 (server started before Feature #135 was committed - NOT a Feature #51 regression)
+  - No regression found - feature still working correctly
+
+---
+
+## Session: 2026-01-30 (Coding Agent - Feature #136)
+
+### Feature #136: Wire execute endpoint to actually call HarnessKernel.execute() - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Dependencies:** None
+
+**Description:** POST /api/agent-specs/:id/execute previously contained a placeholder comment instead of invoking the HarnessKernel. Wired the endpoint to call HarnessKernel.execute(spec) with the resolved AgentSpec, so that triggering execution via the API actually runs the agent.
+
+**Verification Summary (All 6 Feature Steps Passed):**
+
+1. **Open server/routers/agent_specs.py and locate the execute endpoint** - PASS
+   - Located _execute_spec_background() function with placeholder at lines 667-681
+   - Identified placeholder: TODO comment, asyncio.sleep(0.1), and placeholder notes
+
+2. **Replace placeholder with actual HarnessKernel instantiation and execution** - PASS
+   - Removed all placeholder code (TODO, sleep, comments)
+   - Added Phase 2: from api.harness_kernel import HarnessKernel
+   - Added kernel = HarnessKernel(db=kernel_db) and kernel.execute(kernel_spec, ...)
+   - Uses separate DB session for kernel execution (transaction isolation)
+
+3. **Pass the resolved AgentSpec to HarnessKernel.execute()** - PASS
+   - Loads spec with kernel_db.query(AgentSpecModel).options(joinedload(acceptance_spec))
+   - Passes resolved spec to kernel.execute(kernel_spec, turn_executor=None, context={...})
+   - test_step3: run.agent_spec_id == spec.id verified
+
+4. **Ensure AgentRun record is updated with results from kernel execution** - PASS
+   - Phase 3 syncs all 9 fields: status, completed_at, turns_used, tokens_in, tokens_out,
+     final_verdict, acceptance_results, error, retry_count
+   - test_step4: status=completed, verdict=passed verified
+
+5. **Handle errors gracefully - if kernel fails, update run to failed** - PASS
+   - Kernel internal error handling catches turn_executor exceptions -> status=failed, error set
+   - Outer try/except also catches unhandled exceptions -> run.status=failed, run.error=str(e)
+   - test_step5: Simulated kernel failure -> status=failed, error propagated
+
+6. **Verify endpoint triggers real kernel execution and returns AgentRun with verdict** - PASS
+   - test_step6: kernel creates run, executes, returns status=completed, verdict=passed
+   - DB persistence verified: db_run.status == run.status, db_run.agent_spec_id == spec.id
+
+**Test Results:**
+- tests/verify_feature_136.py: 7/7 tests PASS (via pytest in 10.58s)
+- tests/test_dspy_pipeline_e2e.py: 86/88 tests PASS (2 pre-existing failures, no regressions)
+
+**Implementation Details:**
+- Modified _execute_spec_background() in server/routers/agent_specs.py
+- Three-phase approach: (1) Transition to running + WebSocket, (2) Kernel execution, (3) Result sync
+- Added spec-not-found early return in Phase 1
+- Docstring updated to reflect Feature #136
+- Browser automation unavailable (Chrome launch failure in container)
+
+**Updated Progress:**
+- Feature #136: Wire execute endpoint to HarnessKernel.execute() - PASSING
+
+**Session completed successfully.**
+[Testing] 2026-01-30 09:45:22 - Feature #111 regression test PASSED
+  - Feature: E2E test: Validator Generation (TestStep5 — 4 tests)
+  - Category: functional
+  - All 5 verification steps passed:
+    Step 1: Create test class TestStep5ValidatorGeneration with 4 test methods - PASS (class exists with 4 methods)
+    Step 2: Test generate_validators_from_steps() produces test_pass from 'Run pytest' step - PASS
+    Step 3: Test file_exists validator from 'File should exist' step - PASS
+    Step 4: Test forbidden_patterns from 'should not contain' step - PASS
+    Step 5: All 4 tests pass: pytest TestStep5ValidatorGeneration -v - PASS (4/4 in 5.65s)
+  - Source code intact: api/validator_generator.py (923 lines, no uncommitted changes)
+    - generate_validators_from_steps() function (line 875)
+    - ValidatorGenerator class (line 259)
+    - Priority-based analysis: file_exists > forbidden_patterns > test_pass > fallback
+    - Command/path/pattern extraction via regex
+  - Direct function verification: All 4 test scenarios produce correct validator types
+  - Test file: tests/test_dspy_pipeline_e2e.py (TestStep5ValidatorGeneration at line 332)
+  - Recent commits only changed TestFullPipelineE2E and TestSmokeFullWiring (unrelated)
+  - API server healthy on port 8888
+  - Frontend serving on port 5173
+  - Browser automation unavailable (Chrome SIGTRAP in container)
+  - No regression found - feature still working correctly
+
+---
+
+## Session: 2026-01-30 (Coding Agent - Feature #142)
+
+### Feature #142: Add composite index on agent_runs(agent_spec_id, status) - COMPLETED
+
+**Status:** PASSING
+
+**Category:** data
+
+**Dependencies:** None
+
+**Description:** The spec requires a composite index on agent_runs(agent_spec_id, status) for efficiently finding runs by spec and status. Currently only separate single-column indexes exist.
+
+**Implementation Summary:**
+
+1. **Model change**: Added Index('ix_agentrun_spec_status', 'agent_spec_id', 'status') to AgentRun.__table_args__ in api/agentspec_models.py
+   - Existing single-column indexes preserved: ix_agentrun_spec, ix_agentrun_status, ix_agentrun_created
+
+2. **Migration function**: Added _migrate_add_agentrun_spec_status_index() in api/database.py
+   - Creates INDEX ix_agentrun_spec_status ON agent_runs (agent_spec_id, status) for existing databases
+   - Idempotent - checks for existing index before creating
+   - Skips gracefully if agent_runs table does not exist yet
+   - Called during create_database() after other AgentSpec migrations
+
+3. **Test suite**: 9 tests in tests/test_feature_142_composite_index.py
+   - TestModelDefinition (3 tests): composite index exists, single-column indexes preserved, column order correct
+   - TestDatabaseSchema (3 tests): index created in DB, single-column indexes in DB, query plan uses index
+   - TestMigration (3 tests): migration creates index, is idempotent, skips when table missing
+
+**Verification:** All 9 tests pass. Zero regressions on related test suites.
+
+**Commit:** 6165b52
+
+**Updated Progress:**
+- Feature #142: Add composite index on agent_runs(agent_spec_id, status) - PASSING
+- Total: 139/150 features passing (92.7%)
+
+**Session completed successfully.**
+[Testing] 2026-01-29 22:49:21 - Feature #100 regression test PASSED
+  - Feature: Auto-repair function removes orphaned dependency references
+  - Category: functional
+  - All 5 verification steps passed:
+    Step 1: Create repair_orphaned_dependencies(session) function - PASS (exists, callable, correct signature)
+    Step 2: Get set of all valid feature IDs - PASS (correctly identifies orphans {999, 888} from {1, 2, 3})
+    Step 3: Filter dependencies to only valid IDs - PASS (orphans removed, valid deps preserved)
+    Step 4: Update features with orphaned refs in single transaction - PASS (3 features repaired, persisted)
+    Step 5: Return dict of {feature_id: [removed_orphan_ids]} for logging - PASS (correct structure)
+  - Unit tests: 21/21 passed (test_repair_orphaned_dependencies.py in 35.98s)
+  - Verification script: 5/5 steps passed (verify_feature_100.py)
+  - Inline tests: 4/4 passed (empty DB, orphans, persistence, idempotency)
+  - Source code intact: api/dependency_resolver.py (lines 706-777, repair_orphaned_dependencies function)
+    - Queries all features, builds valid_ids set, filters deps, single-transaction commit
+    - Structured logging with before_fix/after_fix actions
+    - Returns dict[int, list[int]] for logging
+  - Dependency graph API: /api/projects/AutoBuildr/features/graph - working correctly
+  - API server healthy on port 8888
+  - Browser automation unavailable (Chrome SIGTRAP in container)
   - No regression found - feature still working correctly
