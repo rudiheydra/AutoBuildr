@@ -1,6 +1,69 @@
 # AutoBuildr Progress Log
 # ======================
 
+## Session: 2026-01-30 (Coding Agent - Feature #135)
+
+### Feature #135: Create Spec Builder API router with compile and templates endpoints - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Dependencies:** None
+
+**Description:** The spec requires POST /api/spec-builder/compile and GET /api/spec-builder/templates endpoints. The backend modules (SpecBuilder, TemplateRegistry) exist but have no HTTP router wiring. Created a new router that exposes these two endpoints.
+
+**Verification Summary (All 6 Feature Steps Passed):**
+
+1. **Create server/routers/spec_builder.py with a FastAPI APIRouter** - PASS
+   - Created spec_builder.py with APIRouter(prefix="/api/spec-builder", tags=["spec-builder"])
+   - Includes Pydantic request/response models for compile and templates endpoints
+   - Proper error handling with HTTPException and SpecBuilderError catch
+
+2. **POST /api/spec-builder/compile endpoint** - PASS
+   - Accepts CompileRequest with task_description, task_type, project_context
+   - Returns CompileResponse with success, agent_spec, acceptance_spec, error details
+   - Uses existing SpecBuilder.build() pipeline with get_spec_builder() singleton
+   - Handles initialization errors gracefully (API key not set returns proper error)
+
+3. **GET /api/spec-builder/templates endpoint** - PASS
+   - Returns TemplatesListResponse with templates list and count
+   - Uses existing TemplateRegistry.list_templates() from get_template_registry()
+   - Returns 3 templates: coding_prompt, initializer_prompt, testing_prompt
+   - Each template includes metadata (task_type, required_tools, variables, etc.)
+
+4. **Register the new router in the main FastAPI app** - PASS
+   - Added spec_builder_router to server/routers/__init__.py imports and __all__
+   - Added spec_builder_router import to server/main.py
+   - Added app.include_router(spec_builder_router) in main.py
+
+5. **POST /api/spec-builder/compile accepts task_description, task_type, project_context** - PASS
+   - All 6 valid task types accepted: coding, testing, refactoring, documentation, audit, custom
+   - Invalid task_type returns proper error (not crash)
+   - Empty task_description returns 422 validation error
+   - Default task_type works when not specified
+
+6. **GET /api/spec-builder/templates returns list of available templates** - PASS
+   - Returns 3 templates with complete structure
+   - Each template has: name, path, content_hash, loaded_at, metadata
+   - Metadata includes: task_type, required_tools, variables
+
+**Test Results:**
+- Verification script: 52/52 tests PASS
+- Existing test suite: 86/88 pass (2 pre-existing failures in TestAcceptanceGateEvaluatesValidators - UNIQUE constraint issue, not related to this change)
+- Zero regressions introduced
+
+**Files Created:**
+- server/routers/spec_builder.py (new - 272 lines)
+
+**Files Modified:**
+- server/routers/__init__.py (added spec_builder_router import)
+- server/main.py (added spec_builder_router import and include)
+
+**Session completed successfully.**
+
+---
+
 ## Session: 2026-01-30 (Coding Agent - Feature #133)
 
 ### Feature #133: End-to-end integration: --spec flag drives full pipeline for multiple features - COMPLETED
@@ -9821,3 +9884,131 @@ Created comprehensive test suite:
 - Total: 132/133 features passing (approximately 99.2%)
 
 **Session completed successfully.**
+[Testing] 2026-01-30 08:57:29 - Feature #94 regression test PASSED
+  - Feature: Graph algorithms return partial safe results on bailout
+  - Category: error-handling
+  - All 5 verification steps passed:
+    Step 1: Create cyclic dependency graph that triggers iteration limit - PASS
+    Step 2: Call compute_scheduling_scores() on this graph - PASS
+    Step 3: Verify function returns a dict (not None or exception) - PASS
+    Step 4: Verify processed nodes have valid scores - PASS
+    Step 5: Verify unprocessed nodes get default score of 0 - PASS
+  - Source code intact: api/dependency_resolver.py
+    - compute_scheduling_scores() function (line 510)
+    - Iteration limit: max_iterations = len(features) * 2 (line 542)
+    - Visited set prevents re-processing in cycles (line 546)
+    - BFS bailout on limit exceeded with error logging (lines 556-564)
+    - Orphaned nodes get default depth 0 (lines 574-577)
+  - Unit tests: 20/20 passed (test_compute_scheduling_scores_bailout.py in 3.71s)
+  - Graph cycle protection tests: 33/33 passed (test_graph_cycle_protection.py in 3.94s)
+  - Verification script: All steps PASSED (verify_feature_94.py)
+  - No uncommitted changes in source or test files
+  - Browser automation unavailable (Chrome launch failure in container)
+  - No regression found - feature still working correctly
+[Testing] 2026-01-30 09:33:50 - Feature #51 regression test PASSED
+  - Feature: Skill Template Registry
+  - Category: G. State & Persistence
+  - All 8 verification steps passed:
+    Step 1: Create TemplateRegistry class - PASS
+    Step 2: Scan prompts/ directory for template files - PASS (3 templates: coding_prompt, initializer_prompt, testing_prompt)
+    Step 3: Parse template metadata (task_type, required_tools, etc.) - PASS
+    Step 4: Index templates by task_type - PASS (coding, documentation, testing)
+    Step 5: Implement get_template(task_type) -> Template - PASS
+    Step 6: Implement interpolate(template, variables) -> str - PASS
+    Step 7: Cache compiled templates for performance - PASS (same object returned, cache invalidation works)
+    Step 8: Handle missing template gracefully with fallback - PASS (None return, TemplateNotFoundError, fallback template)
+  - Unit tests: 54/54 passed (test_template_registry.py in 4.59s)
+  - Verification script: 8/8 steps passed (verify_feature_51.py)
+  - Real prompts directory: 3 templates loaded successfully
+  - Source code intact: api/template_registry.py (722 lines, no uncommitted changes)
+    - TemplateRegistry class with scan(), get_template(), interpolate(), list_templates()
+    - TemplateMetadata dataclass with task_type, required_tools, defaults
+    - YAML front matter parsing (with PyYAML and fallback parser)
+    - Variable interpolation with {{var}} and {var} syntax
+    - Thread-safe caching with file modification detection
+    - Singleton registry via get_template_registry()
+  - Module imports verified: api.template_registry, api.static_spec_adapter
+  - Integration: StaticSpecAdapter imports TemplateRegistry successfully
+  - API health: healthy
+  - Frontend serves correctly on port 5173
+  - No uncommitted changes in source or test files
+  - Browser automation unavailable (Chrome launch failure in container)
+  - No regression found - feature still working correctly
+
+---
+
+## Session: 2026-01-30 (Coding Agent - Feature #134)
+
+### Feature #134: Add timeout to EVENT_TYPES constant and Pydantic schema validator - COMPLETED
+
+**Status:** PASSING
+
+**Category:** data
+
+**Dependencies:** None
+
+**Description:** The kernel records timeout events, but 'timeout' was absent from the EVENT_TYPES list in agentspec_models.py and the Pydantic schema validator in server/schemas/agentspec.py. This caused API serialization of timeout events to fail.
+
+**Changes Made:**
+1. `api/agentspec_models.py`: Added `"timeout"` to `EVENT_TYPES` list (line 83)
+2. `server/schemas/agentspec.py`: Added `"timeout"` and `"policy_violation"` to:
+   - `EVENT_TYPES` Literal type (line 30-33)
+   - `validate_event_type` validator allowed list (line 1016-1018)
+   - `AgentEventResponse` docstring (event types documentation)
+   - `event_type` field description
+
+**Verification Summary (All 6 Feature Steps Passed):**
+
+1. **Locate EVENT_TYPES constant in api/agentspec_models.py** - PASS
+   - Found at line 72, added 'timeout' at line 83
+
+2. **Add 'timeout' to EVENT_TYPES list** - PASS
+   - Added as: `"timeout",  # Feature #134: Kernel timeout event recording`
+
+3. **Locate event_type validator in server/schemas/agentspec.py** - PASS
+   - Found Literal type at line 30 and validator at line 1016
+
+4. **Add 'timeout' as valid event_type in Pydantic schema** - PASS
+   - Added to both Literal type and validator allowed list
+
+5. **Verify AgentEvent with event_type='timeout' passes validation** - PASS
+   - EventCreate(event_type='timeout') accepted
+   - AgentEventResponse(event_type='timeout') accepted
+   - JSON serialization works correctly
+
+6. **Verify kernel timeout recording path works end-to-end** - PASS
+   - create_timeout_event() produces event_type='timeout'
+   - BudgetTracker + create_timeout_event + Pydantic serialization all work together
+   - No serialization errors
+
+**Test Results:**
+- tests/test_harness_kernel.py: 56/56 PASS
+- tests/test_feature_28_timeout_seconds.py: 38/38 PASS
+- tests/test_feature_49_graceful_budget_exhaustion.py: 24/24 PASS
+- Total: 118/118 tests pass (no regressions)
+
+**Commit:** ae97196
+
+**Updated Progress:**
+- Feature #134: Add timeout to EVENT_TYPES constant and Pydantic schema validator - PASSING
+- Total: 134/150 features passing (approximately 89.3%)
+
+**Session completed successfully.**
+[Testing] 2026-01-30 09:35:53 - Feature #110 regression test PASSED
+  - Feature: E2E test: Spec Name Generation (TestStep4 — 4 tests)
+  - Category: functional
+  - All 5 verification steps passed:
+    Step 1: Create test class TestStep4NameGeneration with 4 test methods - PASS
+    Step 2: Test generate_spec_name() returns URL-safe string - PASS (regex ^[a-z0-9][a-z0-9\-]*[a-z0-9]$ matches)
+    Step 3: Test name does not exceed 100 characters even for long objectives - PASS
+    Step 4: Test name starts with task_type prefix (e.g., 'testing-') - PASS
+    Step 5: All 4 tests pass: pytest TestStep4NameGeneration - PASS (4/4)
+  - Full spec name generator test suite: 63/63 passed (test_feature_59_spec_name_generator.py in 5.50s)
+  - Source code intact: api/spec_name_generator.py (516 lines)
+    - generate_spec_name() function (line 261)
+    - SPEC_NAME_MAX_LENGTH = 100
+    - URL-safe format: {task_type}-{keywords}-{timestamp}
+    - extract_keywords(), generate_slug(), normalize_slug() all working
+  - API health: healthy (http://localhost:8888/api/health)
+  - Browser automation unavailable (Chrome launch failure in container)
+  - No regression found - feature still working correctly

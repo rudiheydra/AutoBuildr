@@ -40,6 +40,7 @@ from .routers import (
     projects_router,
     schedules_router,
     settings_router,
+    spec_builder_router,
     spec_creation_router,
     terminal_router,
 )
@@ -186,6 +187,7 @@ app.include_router(agent_specs_router)
 app.include_router(artifacts_router)
 app.include_router(schedules_router)
 app.include_router(devserver_router)
+app.include_router(spec_builder_router)
 app.include_router(spec_creation_router)
 app.include_router(expand_project_router)
 app.include_router(filesystem_router)
