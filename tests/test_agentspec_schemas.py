@@ -396,7 +396,7 @@ class TestAgentRunResponse:
         assert response.final_verdict is None
 
         # Test valid values
-        for verdict in ["passed", "failed", "partial"]:
+        for verdict in ["passed", "failed", "error"]:
             response = AgentRunResponse(
                 id="run-uuid",
                 agent_spec_id="spec-uuid",

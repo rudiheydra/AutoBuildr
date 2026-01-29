@@ -317,7 +317,7 @@ def verify_step_7_verdict_determined():
     error = MaxTurnsExceeded(turns_used=5, max_turns=5, run_id=run.id)
     result = kernel.handle_budget_exceeded(run, error)
 
-    if run.final_verdict in ["partial", "failed", "passed"]:
+    if run.final_verdict in ["error", "failed", "passed"]:
         print(f"  PASS: Verdict determined: '{run.final_verdict}'")
         return True
     else:

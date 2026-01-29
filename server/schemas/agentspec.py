@@ -24,7 +24,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 TASK_TYPES = Literal["coding", "testing", "refactoring", "documentation", "audit", "custom"]
 RUN_STATUSES = Literal["pending", "running", "paused", "completed", "failed", "timeout"]
-VERDICTS = Literal["passed", "failed", "partial"]
+VERDICTS = Literal["passed", "failed", "error"]
 GATE_MODES = Literal["all_pass", "any_pass", "weighted"]
 RETRY_POLICIES = Literal["none", "fixed", "exponential"]
 EVENT_TYPES = Literal[
@@ -33,7 +33,7 @@ EVENT_TYPES = Literal[
     "policy_violation", "timeout"
 ]
 ARTIFACT_TYPES = Literal["file_change", "test_result", "log", "metric", "snapshot"]
-VALIDATOR_TYPES = Literal["test_pass", "file_exists", "lint_clean", "forbidden_output", "custom"]
+VALIDATOR_TYPES = Literal["test_pass", "file_exists", "lint_clean", "forbidden_patterns", "custom"]
 
 
 # =============================================================================
@@ -686,7 +686,7 @@ class AgentRunResponse(BaseModel):
         """Validate final_verdict is one of the allowed values or None."""
         if v is None:
             return v
-        allowed = ["passed", "failed", "partial"]
+        allowed = ["passed", "failed", "error"]
         if v not in allowed:
             raise ValueError(f"final_verdict must be one of {allowed} or None, got '{v}'")
         return v

@@ -257,7 +257,7 @@ class TestAllPassGateMode:
         assert all(r.passed for r in result.validator_results)
 
     def test_one_validator_fails(self, acceptance_gate, mock_run, tmp_path):
-        """For all_pass mode: verdict = partial if some pass, some fail."""
+        """For all_pass mode: verdict = error if some pass, some fail."""
         file1 = tmp_path / "exists.txt"
         file1.write_text("test")
 
@@ -271,7 +271,7 @@ class TestAllPassGateMode:
         result = acceptance_gate.evaluate(mock_run, spec)
 
         assert result.passed is False
-        assert result.verdict == "partial"  # Some passed, some failed
+        assert result.verdict == "error"  # Some passed, some failed
         assert len(result.validator_results) == 2
 
     def test_all_validators_fail(self, acceptance_gate, mock_run):
@@ -354,7 +354,7 @@ class TestRequiredValidators:
         # Even with any_pass, required failure should fail the gate
         assert result.passed is False
         assert result.required_failed is True
-        assert result.verdict == "partial"  # One passed, one failed
+        assert result.verdict == "error"  # One passed, one failed
 
     def test_required_validator_passes_gate_succeeds(self, acceptance_gate, mock_run, tmp_path):
         """If required validator passes, it doesn't block gate."""

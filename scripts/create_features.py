@@ -173,7 +173,7 @@ FEATURES = [
         "steps": [
             "Define AgentRunResponse with all AgentRun fields",
             "Add Field validator for status in [pending, running, paused, completed, failed, timeout]",
-            "Add Field validator for final_verdict in [passed, failed, partial] or None",
+            "Add Field validator for final_verdict in [passed, failed, error] or None",
             "Define AgentRunListResponse for paginated lists",
             "Include computed fields for duration_seconds when both timestamps present"
         ]

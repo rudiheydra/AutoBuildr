@@ -419,7 +419,7 @@ def verify_step_11():
         if not isinstance(result, GateResult):
             return False, f"Expected GateResult, got {type(result)}"
 
-        if result.verdict not in ("passed", "failed", "partial"):
+        if result.verdict not in ("passed", "failed", "error"):
             return False, f"Invalid verdict: '{result.verdict}'"
 
     return True, f"GateResult returned with verdict='{result.verdict}'"

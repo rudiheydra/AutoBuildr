@@ -620,8 +620,9 @@ class Artifact(Base):
     created_at = Column(DateTime, nullable=False, default=_utc_now)
     artifact_metadata = Column(JSON, nullable=True)  # type-specific metadata (renamed to avoid SQLAlchemy reserved word)
 
-    # Relationship
+    # Relationships
     run = relationship("AgentRun", back_populates="artifacts")
+    referencing_events = relationship("AgentEvent", back_populates="artifact", foreign_keys="[AgentEvent.artifact_ref]")  # Feature #144
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -683,13 +684,18 @@ class AgentEvent(Base):
     # Large payloads are truncated with artifact_ref pointing to full content
     payload = Column(JSON, nullable=True)
     payload_truncated = Column(Integer, nullable=True)  # if set, original size before truncation
-    artifact_ref = Column(String(36), nullable=True)  # artifact ID if payload was externalized
+    artifact_ref = Column(
+        String(36),
+        ForeignKey("artifacts.id", ondelete="SET NULL"),
+        nullable=True
+    )  # Feature #144: FK to artifacts.id; SET NULL when artifact deleted
 
     # For tool calls (denormalized for query efficiency)
     tool_name = Column(String(100), nullable=True)
 
-    # Relationship
+    # Relationships
     run = relationship("AgentRun", back_populates="events")
+    artifact = relationship("Artifact", back_populates="referencing_events", foreign_keys=[artifact_ref])  # Feature #144
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""

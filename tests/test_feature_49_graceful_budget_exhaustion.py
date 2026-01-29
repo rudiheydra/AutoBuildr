@@ -421,7 +421,7 @@ class TestPartialValidatorExecution:
         # Check that validators ran and stored results
         assert run.acceptance_results is not None
         assert len(run.acceptance_results) > 0
-        assert run.final_verdict in ["partial", "failed", "passed"]
+        assert run.final_verdict in ["error", "failed", "passed"]
 
     def test_partial_validators_run_on_timeout(self, db_session, sample_spec_with_validators):
         """Verify validators run on partial state when timeout exceeded."""
@@ -446,10 +446,10 @@ class TestPartialValidatorExecution:
         # Check that validators ran and stored results
         assert run.acceptance_results is not None
         assert len(run.acceptance_results) > 0
-        assert run.final_verdict in ["partial", "failed", "passed"]
+        assert run.final_verdict in ["error", "failed", "passed"]
 
-    def test_partial_verdict_is_partial_when_some_pass(self, db_session, sample_spec_with_validators):
-        """Verify verdict is 'partial' when some validators pass."""
+    def test_partial_verdict_is_error_when_some_pass(self, db_session, sample_spec_with_validators):
+        """Verify verdict is 'error' when some validators pass."""
         kernel = HarnessKernel(db_session)
 
         run = AgentRun(
@@ -468,9 +468,9 @@ class TestPartialValidatorExecution:
         error = MaxTurnsExceeded(turns_used=5, max_turns=5, run_id=run.id)
         result = kernel.handle_budget_exceeded(run, error)
 
-        # With any_pass gate mode and "/" existing, should have partial verdict
-        assert run.final_verdict in ["partial", "passed"]
-        assert result.final_verdict in ["partial", "passed"]
+        # With any_pass gate mode and "/" existing, should have error verdict
+        assert run.final_verdict in ["error", "passed"]
+        assert result.final_verdict in ["error", "passed"]
 
     def test_partial_verdict_is_failed_when_none_pass(self, db_session, sample_spec_all_fail_validators):
         """Verify verdict is 'failed' when no validators pass."""
@@ -573,7 +573,7 @@ class TestExecutionResultWithPartialResults:
 
         # Should have a verdict from partial validation
         assert result.final_verdict is not None
-        assert result.final_verdict in ["partial", "failed", "passed"]
+        assert result.final_verdict in ["error", "failed", "passed"]
 
     def test_result_is_timeout_property(self, db_session, sample_spec_with_validators):
         """Verify ExecutionResult.is_timeout property works correctly."""
@@ -629,7 +629,7 @@ class TestExecuteWithBudgetExhaustion:
         assert run.error == "max_turns_exceeded"
         assert run.turns_used == 5  # max_turns from spec
         assert run.acceptance_results is not None
-        assert run.final_verdict in ["partial", "failed", "passed"]
+        assert run.final_verdict in ["error", "failed", "passed"]
 
     def test_execute_timeout_exhaustion_with_validators(self, db_session, sample_spec_with_validators):
         """Test timeout handling by directly calling handle_timeout_exceeded."""
@@ -663,7 +663,7 @@ class TestExecuteWithBudgetExhaustion:
         assert run.error == "timeout_exceeded"
         assert run.acceptance_results is not None
         assert result.status == "timeout"
-        assert result.final_verdict in ["partial", "failed", "passed"]
+        assert result.final_verdict in ["error", "failed", "passed"]
 
     def test_execute_records_acceptance_check_event(self, db_session, sample_spec_with_validators):
         """Verify acceptance_check event is recorded on budget exhaustion."""
@@ -890,7 +890,7 @@ class TestAllFeatureSteps:
         assert run.acceptance_results is not None
 
         # Step 7: Verdict determined based on partial results
-        assert run.final_verdict in ["partial", "failed", "passed"]
+        assert run.final_verdict in ["error", "failed", "passed"]
 
         # Step 8: AgentRun returned with timeout status and partial results
         assert run.error == "max_turns_exceeded"
@@ -956,7 +956,7 @@ class TestAllFeatureSteps:
         assert run.acceptance_results is not None
 
         # Step 7: Verdict determined
-        assert run.final_verdict in ["partial", "failed", "passed"]
+        assert run.final_verdict in ["error", "failed", "passed"]
 
         # Step 8: AgentRun returned with timeout status
         assert run.error == "timeout_exceeded"

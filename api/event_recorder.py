@@ -484,7 +484,7 @@ class EventRecorder:
         Args:
             run_id: Run ID
             validators: List of validator results
-            verdict: Overall verdict (passed, failed, partial)
+            verdict: Overall verdict (passed, failed, error)
             gate_mode: Gate mode used (all_pass, any_pass, weighted)
 
         Returns:

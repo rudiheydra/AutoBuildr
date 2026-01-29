@@ -793,7 +793,7 @@ class ExecutionResult:
     run_id: str
     status: str  # completed, failed, timeout
     turns_used: int
-    final_verdict: Optional[str]  # passed, failed, partial
+    final_verdict: Optional[str]  # passed, failed, error
     error: Optional[str]
     # Token tracking for cost visibility (Feature #29, Step 7)
     tokens_in: int = 0
@@ -1487,7 +1487,7 @@ class HarnessKernel:
         Args:
             run_id: ID of the AgentRun
             results: List of validator results
-            final_verdict: The determined verdict (passed/failed/partial)
+            final_verdict: The determined verdict (passed/failed/error)
             gate_mode: The gate mode used (all_pass/any_pass/weighted)
 
         Returns:
@@ -1527,7 +1527,7 @@ class HarnessKernel:
 
         Args:
             run_id: ID of the AgentRun
-            verdict: Final verdict (passed/failed/partial or None)
+            verdict: Final verdict (passed/failed/error or None)
 
         Returns:
             The created AgentEvent
@@ -1863,9 +1863,9 @@ class HarnessKernel:
         if passed:
             final_verdict = "passed"
         else:
-            # Check if any validators passed (partial)
+            # Check if any validators passed (error)
             any_passed = any(r.passed for r in results)
-            final_verdict = "partial" if any_passed else "failed"
+            final_verdict = "error" if any_passed else "failed"
 
         _logger.info(
             "Acceptance validation complete: verdict=%s, passed=%d/%d",
@@ -1897,7 +1897,7 @@ class HarnessKernel:
 
         Returns:
             Tuple of (partial_verdict, partial_acceptance_results)
-            - partial_verdict: "partial" if any validators passed, "failed" if none passed, None if no validators
+            - partial_verdict: "error" if any validators passed, "failed" if none passed, None if no validators
             - partial_acceptance_results: List of validator result dicts
         """
         from api.validators import evaluate_acceptance_spec
@@ -1951,10 +1951,10 @@ class HarnessKernel:
             results_dicts = [r.to_dict() for r in results]
 
             # Feature #49, Step 7: Determine verdict based on partial results
-            # For timeout cases, we use "partial" if any validators passed
+            # For timeout cases, we use "error" if any validators passed
             # This indicates the run made progress but didn't complete
             any_passed = any(r.passed for r in results)
-            partial_verdict = "partial" if any_passed else "failed"
+            partial_verdict = "error" if any_passed else "failed"
 
             _logger.info(
                 "Partial validation complete for run %s: verdict=%s, passed=%d/%d",
@@ -2084,7 +2084,7 @@ class HarnessKernel:
         Returns:
             The finalized AgentRun with:
             - status: completed, failed, or timeout
-            - final_verdict: passed, failed, partial, or None
+            - final_verdict: passed, failed, error, or None
             - turns_used: Number of turns executed
             - tokens_in, tokens_out: Token usage
             - acceptance_results: Validator results

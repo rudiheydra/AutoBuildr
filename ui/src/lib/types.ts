@@ -129,7 +129,7 @@ export type AgentStatus = 'stopped' | 'running' | 'paused' | 'crashed' | 'loadin
 export type AgentRunStatus = 'pending' | 'running' | 'paused' | 'completed' | 'failed' | 'timeout'
 
 // AgentRun verdict - final outcome after acceptance check
-export type AgentRunVerdict = 'passed' | 'failed' | 'partial'
+export type AgentRunVerdict = 'passed' | 'failed' | 'error'
 
 // AgentSpec task types
 export type AgentSpecTaskType = 'coding' | 'testing' | 'refactoring' | 'documentation' | 'audit' | 'custom'

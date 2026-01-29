@@ -792,7 +792,7 @@ class TestFullPipelineE2E:
 
         # The gate should evaluate (may pass or fail depending on validators)
         assert gate_result is not None
-        assert gate_result.verdict in ("passed", "failed", "partial")
+        assert gate_result.verdict in ("passed", "failed", "error")
         assert gate_result.gate_mode == "all_pass"
         assert isinstance(gate_result.acceptance_results, list)
 
@@ -1659,7 +1659,7 @@ class TestSmokeFullWiring:
         assert isinstance(gate_result, GateResult), (
             f"Expected GateResult, got {type(gate_result)}"
         )
-        assert gate_result.verdict in ("passed", "failed", "partial"), (
+        assert gate_result.verdict in ("passed", "failed", "error"), (
             f"Invalid verdict: '{gate_result.verdict}'"
         )
         assert gate_result.gate_mode == "all_pass", (
@@ -2032,8 +2032,8 @@ class TestHarnessKernelBudgetEnforcement:
         assert run.final_verdict is not None, (
             "final_verdict should be set after graceful termination"
         )
-        assert run.final_verdict in ("partial", "passed", "failed"), (
-            f"final_verdict should be partial/passed/failed, got '{run.final_verdict}'"
+        assert run.final_verdict in ("error", "passed", "failed"), (
+            f"final_verdict should be error/passed/failed, got '{run.final_verdict}'"
         )
 
     def test_tokens_tracked_on_agent_run(self, db_session):
@@ -2150,7 +2150,7 @@ class TestAcceptanceGateEvaluatesValidators:
     3. ValidatorResult contains passed (bool), message (str), and score (float)
     4. gate_mode='all_pass' requires ALL validators to pass for verdict='passed'
     5. gate_mode='any_pass' requires at least ONE validator to pass for verdict='passed'
-    6. AgentRun.final_verdict is set to the gate's verdict (passed/failed/partial)
+    6. AgentRun.final_verdict is set to the gate's verdict (passed/failed/error)
     7. AgentRun.acceptance_results contains per-validator results as JSON array
     8. An 'acceptance_check' event is recorded in agent_events with the gate results
     """
@@ -2382,10 +2382,10 @@ class TestAcceptanceGateEvaluatesValidators:
         run_b = kernel_b.execute(spec_b, turn_executor=completing_executor)
 
         assert run_b.final_verdict != "passed", (
-            f"all_pass with one failing: expected 'partial' or 'failed', got '{run_b.final_verdict}'"
+            f"all_pass with one failing: expected 'error' or 'failed', got '{run_b.final_verdict}'"
         )
-        assert run_b.final_verdict in ("partial", "failed"), (
-            f"Expected 'partial' or 'failed', got '{run_b.final_verdict}'"
+        assert run_b.final_verdict in ("error", "failed"), (
+            f"Expected 'error' or 'failed', got '{run_b.final_verdict}'"
         )
 
     def test_step5_gate_mode_any_pass_requires_one_validator(
@@ -2427,7 +2427,7 @@ class TestAcceptanceGateEvaluatesValidators:
         self, db_session, tmp_path
     ):
         """Step 6: Verify AgentRun.final_verdict is set to the gate's verdict
-        (passed/failed/partial).
+        (passed/failed/error).
         """
         # Test passed verdict
         spec, _ = self._create_spec_with_file_validators(
@@ -2445,8 +2445,8 @@ class TestAcceptanceGateEvaluatesValidators:
         assert run.final_verdict is not None, (
             "AgentRun.final_verdict must be set after acceptance gate evaluation"
         )
-        assert run.final_verdict in ("passed", "failed", "partial"), (
-            f"final_verdict must be one of passed/failed/partial, got '{run.final_verdict}'"
+        assert run.final_verdict in ("passed", "failed", "error"), (
+            f"final_verdict must be one of passed/failed/error, got '{run.final_verdict}'"
         )
 
         # Verify it's persisted in the database
@@ -2708,8 +2708,8 @@ class TestVerdictSyncsBackToFeature:
         assert run.final_verdict is not None, (
             "AgentRun.final_verdict must be set after kernel execution"
         )
-        assert run.final_verdict in ("passed", "failed", "partial"), (
-            f"final_verdict must be passed/failed/partial, got '{run.final_verdict}'"
+        assert run.final_verdict in ("passed", "failed", "error"), (
+            f"final_verdict must be passed/failed/error, got '{run.final_verdict}'"
         )
 
         # Now use sync_verdict to sync back to feature
@@ -3849,8 +3849,8 @@ class TestEndToEndSpecFlagFullPipeline:
             assert run.final_verdict is not None, (
                 f"Run {run.id}: final_verdict must not be None"
             )
-            assert run.final_verdict in ("passed", "failed", "partial"), (
-                f"Run {run.id}: final_verdict must be passed/failed/partial, "
+            assert run.final_verdict in ("passed", "failed", "error"), (
+                f"Run {run.id}: final_verdict must be passed/failed/error, "
                 f"got '{run.final_verdict}'"
             )
 

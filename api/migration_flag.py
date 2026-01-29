@@ -104,7 +104,7 @@ class FeatureExecutionResult:
         run_id: ID of the AgentRun if created
         spec_id: ID of the AgentSpec if created (kernel path only)
         status: Final run status (pending/running/completed/failed/timeout)
-        final_verdict: Acceptance verdict (passed/failed/partial)
+        final_verdict: Acceptance verdict (passed/failed/error)
         turns_used: Number of turns consumed
         tokens_in: Input tokens consumed
         tokens_out: Output tokens consumed

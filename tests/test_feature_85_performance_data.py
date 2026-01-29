@@ -232,7 +232,7 @@ def create_test_runs(session, specs: list, num_runs: int) -> list:
         error = None
 
         if status == "completed":
-            final_verdict = "passed" if random.random() > 0.3 else "partial"
+            final_verdict = "passed" if random.random() > 0.3 else "error"
             acceptance_results = {
                 "test_pass": {"passed": True, "message": "Tests passed", "type": "test_pass"},
                 "file_exists": {"passed": True, "message": "File exists", "type": "file_exists"},
