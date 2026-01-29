@@ -388,6 +388,79 @@ def _migrate_add_agentspec_tables(engine) -> None:
                 )
 
 
+def _migrate_add_agentspec_name_unique(engine) -> None:
+    """Add UNIQUE constraint on agent_specs.name column.
+
+    Feature #138: The spec requires agent_specs.name to be unique.
+    For existing databases, we create a unique index on the name column.
+    New databases will get the constraint automatically from the model definition.
+    """
+    from sqlalchemy import inspect
+
+    inspector = inspect(engine)
+    existing_tables = inspector.get_table_names()
+
+    if "agent_specs" not in existing_tables:
+        return  # Table doesn't exist yet, will be created with constraint
+
+    # Check if unique index already exists
+    indexes = inspector.get_indexes("agent_specs")
+    for idx in indexes:
+        if idx.get("unique") and idx.get("column_names") == ["name"]:
+            return  # Already has unique index
+
+    # Also check unique constraints
+    unique_constraints = inspector.get_unique_constraints("agent_specs")
+    for uc in unique_constraints:
+        if uc.get("column_names") == ["name"]:
+            return  # Already has unique constraint
+
+    # Add unique index
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_agent_specs_name ON agent_specs (name)"))
+            conn.commit()
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(
+            f"Could not add unique constraint on agent_specs.name: {e}"
+        )
+
+
+def _migrate_add_agentspec_spec_path(engine) -> None:
+    """Add spec_path column to agent_specs table.
+
+    Feature #137: The spec requires a spec_path (VARCHAR, nullable) column
+    on the agent_specs table. For existing databases, we add the column
+    via ALTER TABLE. New databases will get the column automatically.
+    """
+    from sqlalchemy import inspect
+
+    inspector = inspect(engine)
+    existing_tables = inspector.get_table_names()
+
+    if "agent_specs" not in existing_tables:
+        return  # Table doesn't exist yet, will be created with column
+
+    # Check if column already exists
+    columns = inspector.get_columns("agent_specs")
+    column_names = [col["name"] for col in columns]
+
+    if "spec_path" in column_names:
+        return  # Column already exists
+
+    # Add the column
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE agent_specs ADD COLUMN spec_path VARCHAR(500)"))
+            conn.commit()
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(
+            f"Could not add spec_path column to agent_specs: {e}"
+        )
+
+
 def create_database(project_dir: Path) -> tuple:
     """
     Create database and return engine + session maker.
@@ -426,6 +499,12 @@ def create_database(project_dir: Path) -> tuple:
 
     # Migrate to add AgentSpec tables (AutoBuildr extension)
     _migrate_add_agentspec_tables(engine)
+
+    # Feature #137: Add spec_path column to agent_specs
+    _migrate_add_agentspec_spec_path(engine)
+
+    # Feature #138: Add unique constraint on agent_specs.name
+    _migrate_add_agentspec_name_unique(engine)
 
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     return engine, SessionLocal
