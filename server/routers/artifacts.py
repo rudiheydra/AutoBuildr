@@ -2,9 +2,10 @@
 Artifacts Router
 ================
 
-API endpoints for Artifact content retrieval.
+API endpoints for Artifact metadata and content retrieval.
 
 Implements:
+- GET /api/artifacts/:id - Get artifact metadata (without content body)
 - GET /api/artifacts/:id/content - Download artifact content
 """
 
@@ -18,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from api.agentspec_crud import get_artifact, get_artifact_content
 from api.database import get_db
+from server.schemas.agentspec import ArtifactListItemResponse
 
 # Project root directory for resolving content_ref paths
 ROOT_DIR = Path(__file__).parent.parent.parent
@@ -62,6 +64,48 @@ def _generate_file_chunks(file_path: Path, chunk_size: int = 8192):
     with open(file_path, "rb") as f:
         while chunk := f.read(chunk_size):
             yield chunk
+
+
+@router.get("/{artifact_id}", response_model=ArtifactListItemResponse)
+async def get_artifact_metadata(
+    artifact_id: str,
+    db: Session = Depends(get_db),
+):
+    """
+    Get artifact metadata without the content body.
+
+    Returns artifact metadata including id, run_id, artifact_type, content_hash,
+    size_bytes, metadata, and created_at. Does not include the actual content —
+    use GET /api/artifacts/:id/content to download the content.
+
+    Args:
+        artifact_id: UUID of the Artifact
+
+    Returns:
+        ArtifactListItemResponse with all metadata fields
+
+    Raises:
+        404: If the Artifact is not found
+    """
+    artifact = get_artifact(db, artifact_id)
+    if not artifact:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Artifact {artifact_id} not found"
+        )
+
+    return ArtifactListItemResponse(
+        id=artifact.id,
+        run_id=artifact.run_id,
+        artifact_type=artifact.artifact_type,
+        path=artifact.path,
+        content_ref=artifact.content_ref,
+        content_hash=artifact.content_hash,
+        size_bytes=artifact.size_bytes,
+        created_at=artifact.created_at,
+        metadata=artifact.artifact_metadata,
+        has_inline_content=artifact.content_inline is not None and len(artifact.content_inline) > 0,
+    )
 
 
 @router.get("/{artifact_id}/content")
