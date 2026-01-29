@@ -60,7 +60,7 @@ TASK_TYPES = ["coding", "testing", "refactoring", "documentation", "audit", "cus
 RUN_STATUS = ["pending", "running", "paused", "completed", "failed", "timeout"]
 
 # Verdict - final outcome after acceptance check
-VERDICT = ["passed", "failed", "partial"]
+VERDICT = ["passed", "failed", "error"]
 
 # Gate mode - how validators are combined to determine success
 GATE_MODE = ["all_pass", "any_pass", "weighted"]
@@ -87,7 +87,7 @@ EVENT_TYPES = [
 ARTIFACT_TYPES = ["file_change", "test_result", "log", "metric", "snapshot"]
 
 # Validator types - acceptance criteria checks
-VALIDATOR_TYPES = ["test_pass", "file_exists", "lint_clean", "forbidden_output", "custom"]
+VALIDATOR_TYPES = ["test_pass", "file_exists", "lint_clean", "forbidden_patterns", "custom"]
 
 # Payload size limit for events (chars) - larger outputs go to artifacts
 EVENT_PAYLOAD_MAX_SIZE = 4096
@@ -265,7 +265,7 @@ class AcceptanceSpec(Base):
     - test_pass: Run a test command and check exit code
     - file_exists: Verify a file was created
     - lint_clean: Run linter with no errors
-    - forbidden_output: Ensure certain patterns weren't output
+    - forbidden_patterns: Ensure certain patterns weren't output
     - custom: User-defined validation script
     """
     __tablename__ = "acceptance_specs"
@@ -280,7 +280,7 @@ class AcceptanceSpec(Base):
 
     # Validators stored as JSON array
     # Each validator: {
-    #   "type": "test_pass"|"file_exists"|"lint_clean"|"forbidden_output"|"custom",
+    #   "type": "test_pass"|"file_exists"|"lint_clean"|"forbidden_patterns"|"custom",
     #   "config": {...},  # type-specific configuration
     #   "weight": 1.0,    # for weighted scoring
     #   "required": false # must pass regardless of gate_mode
@@ -341,6 +341,7 @@ class AgentRun(Base):
         Index('ix_agentrun_spec', 'agent_spec_id'),
         Index('ix_agentrun_status', 'status'),
         Index('ix_agentrun_created', 'created_at'),
+        Index('ix_agentrun_spec_status', 'agent_spec_id', 'status'),
     )
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
@@ -361,7 +362,7 @@ class AgentRun(Base):
     tokens_out = Column(Integer, nullable=False, default=0)
 
     # Results
-    final_verdict = Column(String(20), nullable=True)  # passed|failed|partial
+    final_verdict = Column(String(20), nullable=True)  # passed|failed|error
     # Acceptance results: [{validator_index, passed, score, message}]
     acceptance_results = Column(JSON, nullable=True)
 
@@ -662,6 +663,7 @@ class AgentEvent(Base):
 
     __table_args__ = (
         Index('ix_event_run_sequence', 'run_id', 'sequence'),
+        Index('ix_event_run_event_type', 'run_id', 'event_type'),  # Feature #143: Composite index for filtering events by type within a run
         Index('ix_event_timestamp', 'timestamp'),
         Index('ix_event_tool', 'tool_name'),
     )

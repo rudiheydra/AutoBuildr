@@ -461,6 +461,80 @@ def _migrate_add_agentspec_spec_path(engine) -> None:
         )
 
 
+def _migrate_add_agentrun_spec_status_index(engine) -> None:
+    """Add composite index on agent_runs(agent_spec_id, status).
+
+    Feature #142: The spec requires a composite index on agent_runs(agent_spec_id, status)
+    for efficiently finding runs by spec and status. The existing separate single-column
+    indexes on agent_spec_id and status are preserved (they serve different query patterns).
+    New databases will get the composite index automatically from the model definition.
+    """
+    from sqlalchemy import inspect
+
+    inspector = inspect(engine)
+    existing_tables = inspector.get_table_names()
+
+    if "agent_runs" not in existing_tables:
+        return  # Table doesn't exist yet, will be created with index
+
+    # Check if composite index already exists
+    indexes = inspector.get_indexes("agent_runs")
+    for idx in indexes:
+        if idx.get("column_names") == ["agent_spec_id", "status"]:
+            return  # Composite index already exists
+
+    # Create the composite index
+    try:
+        with engine.connect() as conn:
+            conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_agentrun_spec_status "
+                "ON agent_runs (agent_spec_id, status)"
+            ))
+            conn.commit()
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(
+            f"Could not add composite index on agent_runs(agent_spec_id, status): {e}"
+        )
+
+
+def _migrate_add_agent_event_run_event_type_index(engine) -> None:
+    """Add composite index on agent_events(run_id, event_type).
+
+    Feature #143: The spec requires a composite index on agent_events(run_id, event_type)
+    for efficiently filtering events by type within a run. The existing composite index
+    on (run_id, sequence) is preserved (it serves ordering queries).
+    New databases will get the composite index automatically from the model definition.
+    """
+    from sqlalchemy import inspect
+
+    inspector = inspect(engine)
+    existing_tables = inspector.get_table_names()
+
+    if "agent_events" not in existing_tables:
+        return  # Table doesn't exist yet, will be created with index
+
+    # Check if composite index already exists
+    indexes = inspector.get_indexes("agent_events")
+    for idx in indexes:
+        if idx.get("column_names") == ["run_id", "event_type"]:
+            return  # Composite index already exists
+
+    # Create the composite index
+    try:
+        with engine.connect() as conn:
+            conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS ix_event_run_event_type "
+                "ON agent_events (run_id, event_type)"
+            ))
+            conn.commit()
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(
+            f"Could not add composite index on agent_events(run_id, event_type): {e}"
+        )
+
+
 def create_database(project_dir: Path) -> tuple:
     """
     Create database and return engine + session maker.
@@ -505,6 +579,12 @@ def create_database(project_dir: Path) -> tuple:
 
     # Feature #138: Add unique constraint on agent_specs.name
     _migrate_add_agentspec_name_unique(engine)
+
+    # Feature #142: Add composite index on agent_runs(agent_spec_id, status)
+    _migrate_add_agentrun_spec_status_index(engine)
+
+    # Feature #143: Add composite index on agent_events(run_id, event_type)
+    _migrate_add_agent_event_run_event_type_index(engine)
 
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     return engine, SessionLocal
