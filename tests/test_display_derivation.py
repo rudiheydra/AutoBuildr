@@ -229,19 +229,19 @@ class TestDeriveIcon:
     """Tests for derive_icon function."""
 
     def test_coding_icon(self):
-        """Coding task type returns hammer icon."""
+        """Coding task type returns code icon."""
         result = derive_icon("coding")
-        assert result == "hammer"
+        assert result == "code"
 
     def test_testing_icon(self):
-        """Testing task type returns flask icon."""
+        """Testing task type returns test-tube icon."""
         result = derive_icon("testing")
-        assert result == "flask"
+        assert result == "test-tube"
 
     def test_refactoring_icon(self):
-        """Refactoring task type returns recycle icon."""
+        """Refactoring task type returns wrench icon."""
         result = derive_icon("refactoring")
-        assert result == "recycle"
+        assert result == "wrench"
 
     def test_documentation_icon(self):
         """Documentation task type returns book icon."""
@@ -275,9 +275,9 @@ class TestDeriveIcon:
 
     def test_case_insensitive(self):
         """Task type matching is case insensitive."""
-        assert derive_icon("CODING") == "hammer"
-        assert derive_icon("Coding") == "hammer"
-        assert derive_icon("CoDiNg") == "hammer"
+        assert derive_icon("CODING") == "code"
+        assert derive_icon("Coding") == "code"
+        assert derive_icon("CoDiNg") == "code"
 
     def test_context_override(self):
         """Context icon override takes precedence."""
@@ -287,27 +287,27 @@ class TestDeriveIcon:
     def test_context_override_empty_string(self):
         """Empty context icon doesn't override."""
         result = derive_icon("coding", context={"icon": ""})
-        assert result == "hammer"
+        assert result == "code"
 
     def test_context_override_whitespace(self):
         """Whitespace-only context icon doesn't override."""
         result = derive_icon("coding", context={"icon": "   "})
-        assert result == "hammer"
+        assert result == "code"
 
     def test_context_override_none(self):
         """None context icon doesn't override."""
         result = derive_icon("coding", context={"icon": None})
-        assert result == "hammer"
+        assert result == "code"
 
     def test_context_without_icon_key(self):
         """Context without icon key uses task type."""
         result = derive_icon("coding", context={"other_key": "value"})
-        assert result == "hammer"
+        assert result == "code"
 
     def test_context_is_none(self):
         """None context uses task type."""
         result = derive_icon("coding", context=None)
-        assert result == "hammer"
+        assert result == "code"
 
     def test_all_task_types_mapped(self):
         """All defined task types have icon mappings."""
@@ -417,7 +417,7 @@ class TestGetters:
         """get_task_type_icons returns expected content."""
         icons = get_task_type_icons()
         assert "coding" in icons
-        assert icons["coding"] == "hammer"
+        assert icons["coding"] == "code"
 
     def test_get_mascot_pool_returns_copy(self):
         """get_mascot_pool returns a copy, not the original."""
@@ -466,7 +466,7 @@ class TestDeriveDisplayProperties:
             objective="Some objective.",
             task_type="testing"
         )
-        assert result["icon"] == "flask"
+        assert result["icon"] == "test-tube"
 
     def test_mascot_derived_from_feature_id(self):
         """Mascot is derived from feature_id."""
@@ -512,7 +512,7 @@ class TestDeriveDisplayProperties:
             task_type="coding"
         )
         assert result["display_name"] == ""
-        assert result["icon"] == "hammer"
+        assert result["icon"] == "code"
         assert result["mascot_name"] == MASCOT_POOL[0]
 
 
@@ -551,7 +551,7 @@ class TestEdgeCases:
     def test_icon_with_invalid_context_type(self):
         """Handle context that's not a dict."""
         result = derive_icon("coding", context="not a dict")  # type: ignore
-        assert result == "hammer"
+        assert result == "code"
 
     def test_mascot_with_invalid_context_type(self):
         """Handle context that's not a dict."""

@@ -44,6 +44,10 @@ from api.agentspec_models import (
     generate_uuid,
 )
 from api.database import Feature
+from api.display_derivation import (
+    DEFAULT_ICON,
+    TASK_TYPE_ICONS,
+)
 from api.static_spec_adapter import (
     CODING_TOOLS,
     DEFAULT_BUDGETS,
@@ -101,18 +105,8 @@ CATEGORY_TO_TASK_TYPE: dict[str, str] = {
     "feature": "coding",
 }
 
-# Task type to icon mapping
-TASK_TYPE_ICONS: dict[str, str] = {
-    "coding": "code",
-    "testing": "test-tube",
-    "documentation": "book",
-    "refactoring": "wrench",
-    "audit": "shield",
-    "custom": "gear",
-}
-
-# Default icon for unknown task types
-DEFAULT_ICON = "gear"
+# Task type to icon mapping and default icon are imported from
+# api.display_derivation (Feature #148: single source of truth)
 
 
 # =============================================================================

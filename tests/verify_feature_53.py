@@ -11,7 +11,7 @@ for human-friendly presentation.
 Steps to verify:
 1. Extract first sentence of objective as display_name base
 2. Truncate to max 100 chars with ellipsis if needed
-3. Map task_type to icon: coding->hammer, testing->flask, etc.
+3. Map task_type to icon: coding->code, testing->test-tube, etc.
 4. Allow icon override in spec context
 5. Select mascot name from existing pool if needed
 """
@@ -104,13 +104,13 @@ def verify_step2():
 
 
 def verify_step3():
-    """Step 3: Map task_type to icon: coding->hammer, testing->flask, etc."""
+    """Step 3: Map task_type to icon: coding->code, testing->test-tube, etc."""
     print("\n=== Step 3: Map task_type to icon ===")
 
     expected_mappings = {
-        "coding": "hammer",
-        "testing": "flask",
-        "refactoring": "recycle",
+        "coding": "code",
+        "testing": "test-tube",
+        "refactoring": "wrench",
         "documentation": "book",
         "audit": "shield",
         "custom": "gear",
@@ -134,7 +134,7 @@ def verify_step3():
 
     # Test case insensitivity
     result = derive_icon("CODING")
-    passed = result == "hammer"
+    passed = result == "code"
     all_passed = all_passed and passed
     print(f"  CODING (uppercase) -> {result}")
 
@@ -149,11 +149,11 @@ def verify_step4():
     test_cases = [
         # (task_type, context, expected_icon, description)
         ("coding", {"icon": "wrench"}, "wrench", "context override"),
-        ("coding", {"icon": ""}, "hammer", "empty string ignored"),
-        ("coding", {"icon": None}, "hammer", "None ignored"),
-        ("coding", None, "hammer", "None context"),
-        ("coding", {}, "hammer", "empty context"),
-        ("coding", {"other": "value"}, "hammer", "no icon key"),
+        ("coding", {"icon": ""}, "code", "empty string ignored"),
+        ("coding", {"icon": None}, "code", "None ignored"),
+        ("coding", None, "code", "None context"),
+        ("coding", {}, "code", "empty context"),
+        ("coding", {"other": "value"}, "code", "no icon key"),
     ]
 
     all_passed = True
@@ -229,7 +229,7 @@ def verify_combined_derivation():
     print(f"  display_name: '{result['display_name']}' - {'PASS' if passed else 'FAIL'}")
 
     # Check icon
-    expected_icon = "hammer"
+    expected_icon = "code"
     passed = result["icon"] == expected_icon
     all_passed = all_passed and passed
     print(f"  icon: '{result['icon']}' - {'PASS' if passed else 'FAIL'}")

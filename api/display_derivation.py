@@ -19,7 +19,7 @@ Usage:
 
     # Derive icon from task type
     icon = derive_icon("coding")
-    # Returns: "hammer"
+    # Returns: "code"
 
     # Allow context override
     icon = derive_icon("coding", context={"icon": "wrench"})
@@ -49,9 +49,9 @@ ELLIPSIS = "..."
 # Task type to icon mapping
 # Icons use common emoji/icon identifiers for UI flexibility
 TASK_TYPE_ICONS: dict[str, str] = {
-    "coding": "hammer",
-    "testing": "flask",
-    "refactoring": "recycle",
+    "coding": "code",
+    "testing": "test-tube",
+    "refactoring": "wrench",
     "documentation": "book",
     "audit": "shield",
     "custom": "gear",
@@ -205,9 +205,9 @@ def derive_icon(
     Derive an icon from task_type, allowing context override.
 
     Icon mapping:
-    - coding -> hammer
-    - testing -> flask
-    - refactoring -> recycle
+    - coding -> code
+    - testing -> test-tube
+    - refactoring -> wrench
     - documentation -> book
     - audit -> shield
     - custom -> gear (default)
@@ -224,7 +224,7 @@ def derive_icon(
 
     Examples:
         >>> derive_icon("coding")
-        'hammer'
+        'code'
         >>> derive_icon("coding", context={"icon": "wrench"})
         'wrench'
         >>> derive_icon("unknown_type")
@@ -359,7 +359,7 @@ def derive_display_properties(
         ...     task_type="coding",
         ...     feature_id=42
         ... )
-        {'display_name': 'Implement login feature.', 'icon': 'hammer', 'mascot_name': 'Octo'}
+        {'display_name': 'Implement login feature.', 'icon': 'code', 'mascot_name': 'Octo'}
     """
     return {
         "display_name": derive_display_name(objective, max_display_name_length),
