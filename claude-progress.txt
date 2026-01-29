@@ -1,6 +1,173 @@
 # AutoBuildr Progress Log
 # ======================
 
+## Session: 2026-01-30 (Coding Agent - Feature #127)
+
+### Feature #127: FeatureCompiler produces AgentSpecs with correct task_type and tool_policy - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Description:** When the --spec orchestrator path runs, it uses FeatureCompiler.compile(feature) to convert each Feature record into an AgentSpec. The compiled AgentSpec must have the correct task_type derived from the feature's category, an appropriate tool_policy (allowed_tools, forbidden_patterns), sensible max_turns and timeout_seconds budgets, and a linked acceptance_spec with validators derived from the feature's steps. The orchestrator must produce AgentSpecs covering at least 3 distinct task_type values.
+
+**Dependencies:** Feature #125 (CLI --spec flag routes orchestrator through kernel path) - PASSING
+
+**Verification Summary (All 9 Feature Steps Passed):**
+
+1. **Verify FeatureCompiler.compile(feature) is called for each feature in --spec path** - PASS
+   - Source code: api/spec_orchestrator.py line 352: `spec = self.compiler.compile(feature)`
+   - Called inside run_one_feature() which is called from run_loop() for each feature
+   - Test: test_step1_compile_called_per_feature_via_orchestrator (integration with SpecOrchestrator.run_one_feature)
+   - Test: test_step1_compile_returns_agentspec_for_each_category
+   - 2/2 tests PASS
+
+2. **Verify returned AgentSpec has non-empty objective derived from description** - PASS
+   - Objective contains feature name, description, and steps as verification criteria
+   - Tests: 5 tests covering non-empty, contains description text, contains name, contains steps, minimal description
+   - 5/5 tests PASS
+
+3. **Verify task_type is correctly mapped from feature category** - PASS
+   - functional→coding, style→coding, error-handling→coding, security→audit
+   - A. Database→coding, Testing→testing, Documentation→documentation, Refactoring→refactoring
+   - 12 coding categories, testing, documentation, refactoring, audit categories verified
+   - Tests: 8 tests including letter prefix stripping and case insensitivity
+   - 8/8 tests PASS
+
+4. **Verify tool_policy contains allowed_tools appropriate for task_type** - PASS
+   - coding: 23 tools (full toolset including Read, Write, Edit, Bash, browser_* tools)
+   - testing: 17 tools (Read, Glob, Grep, Bash, feature tools, browser tools - no Write/Edit)
+   - audit: 7 tools (Read, Glob, Grep, feature tools - restricted)
+   - documentation: 7 tools (Read, Glob, Grep, Write, Bash, feature tools)
+   - Tests: 9 tests covering all task types, helper functions, copy safety, version key, tool hints
+   - 9/9 tests PASS
+
+5. **Verify tool_policy contains forbidden_patterns for dangerous operations** - PASS
+   - 7 forbidden patterns including rm -rf, DROP TABLE, curl|sh pipe
+   - Same patterns applied to all task types
+   - Tests: 7 tests covering presence, static list match, specific patterns, all task types, copy independence
+   - 7/7 tests PASS
+
+6. **Verify max_turns and timeout_seconds are set to appropriate budgets** - PASS
+   - coding: max_turns=150, timeout=1800s
+   - testing: max_turns=50, timeout=900s
+   - audit: max_turns=30, timeout=600s
+   - documentation: max_turns=30, timeout=600s
+   - refactoring: defaults to coding budget (150/1800)
+   - Tests: 8 tests covering all task types and edge cases
+   - 8/8 tests PASS
+
+7. **Verify acceptance_spec is created with validators from feature.steps** - PASS
+   - Each step → test_pass validator + 1 feature_passing validator (required)
+   - Validators have correct descriptions, weights, gate_mode
+   - Empty/None steps handled correctly
+   - Tests: 13 tests covering creation, linking, validator count, descriptions, types, required flag, weights
+   - 13/13 tests PASS
+
+8. **Verify source_feature_id links AgentSpec back to Feature record** - PASS
+   - source_feature_id set correctly for each compiled feature
+   - Context JSON also contains feature_id
+   - Survives DB round-trip (tested with in-memory SQLite)
+   - Tests: 4 tests covering setting, multiple features, context, DB persistence
+   - 4/4 tests PASS
+
+9. **After multi-feature run, 3+ distinct task_type values in agent_specs table** - PASS
+   - Created 5 features with categories: Database, Security, Testing, Documentation, Refactoring
+   - Compiled all → 5 distinct task_types: audit, coding, documentation, refactoring, testing
+   - SQL DISTINCT query confirmed 5 >= 3 (requirement: at least 3)
+   - GROUP BY distribution confirmed: 1 per task_type
+   - Tests: 2 tests (distinct count + GROUP BY distribution)
+   - 2/2 tests PASS
+
+**Implementation Details:**
+- Test file: tests/test_feature_127_compiler_spec.py (63 tests total)
+- All 63 tests pass with 0 failures
+- No production code changes needed — FeatureCompiler already correctly implemented
+- Existing test suite (46 tests in test_dspy_pipeline_e2e.py) verified with 0 regressions
+- Browser automation unavailable (Chrome launch failure in container)
+
+**Updated Progress:**
+- Feature #127: FeatureCompiler produces AgentSpecs with correct task_type and tool_policy - PASSING
+
+**Session completed successfully.**
+
+---
+
+## Session: 2026-01-30 (Coding Agent - Feature #126)
+
+### Feature #126: Turn executor bridge connects HarnessKernel to Claude SDK - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Description:** A turn_executor callable that bridges HarnessKernel.execute() to the Claude SDK.
+
+**Dependencies:** Feature #125 (CLI --spec flag) — satisfied (passing)
+
+**Verification Summary (All 6 Feature Steps Passed):**
+
+1. **Locate the turn executor implementation** - PASS
+   - Module created at api/turn_executor.py
+   - ClaudeSDKTurnExecutor class, ToolEvent dataclass, TurnResult dataclass
+   - create_turn_executor factory function
+   - 5 existence tests pass
+
+2. **Verify correct signature expected by HarnessKernel.execute(turn_executor=...)** - PASS
+   - __call__(self, run: AgentRun, spec: AgentSpec) -> tuple[bool, dict, list, int, int]
+   - Callable, accepts correct args, returns 5-tuple
+   - Compatible with HarnessKernel.execute() — integration test passes
+   - 6 signature tests pass
+
+3. **Verify creates or reuses a Claude SDK client** - PASS
+   - Client lazily created on first call via _get_or_create_client()
+   - Client reused across subsequent calls (same object)
+   - API key from constructor or ANTHROPIC_API_KEY env var
+   - reset() clears conversation but keeps client
+   - 6 client management tests pass
+
+4. **Verify returns (completed, turn_data, tool_events, tokens_in, tokens_out) tuple** - PASS
+   - completed=True on "end_turn", False on "tool_use"
+   - turn_data has response_text, stop_reason, tool_count, model
+   - tokens_in/tokens_out from API response usage field (0 on missing)
+   - TurnResult.as_tuple() matches expected format
+   - 8 return tuple tests pass
+
+5. **Verify handles Claude SDK errors gracefully** - PASS
+   - Rate limit, network, auth, timeout errors caught — no unhandled exceptions
+   - Returns error turn data with error=True, error_type, error_message
+   - Retry logic with exponential backoff for transient errors
+   - All retries exhausted gracefully returns error
+   - Missing API key caught as error
+   - HarnessKernel handles executor errors without crashing
+   - 10 error handling tests pass
+
+6. **Verify tool_events contain tool_name, arguments, result** - PASS
+   - tool_use blocks extracted as tool events with all three required keys
+   - Multiple tool events from multiple tool_use blocks
+   - Empty arguments default to {} (not None)
+   - Text-only responses produce empty tool_events list
+   - ToolEvent.to_dict() produces correct format
+   - 6 tool event tests pass
+
+**Test Results:**
+- tests/test_turn_executor.py: 60/60 tests PASS
+- tests/test_dspy_pipeline_e2e.py: 46/46 tests PASS (no regressions)
+
+**Files Created:**
+- api/turn_executor.py (560 lines) — ClaudeSDKTurnExecutor implementation
+- tests/test_turn_executor.py (890 lines) — 60 comprehensive tests
+
+**Commit:** 9097f38
+
+**Updated Progress:**
+- Total: 126/133 features passing (approximately 94.7%)
+- Feature #126: Turn executor bridge - PASSING
+
+**Session completed successfully.**
+
+---
+
 ## Session: 2026-01-27 (Coding Agent - Feature #123)
 
 ### Feature #123: Verification: All pytest tests pass for test_dspy_pipeline_e2e.py - COMPLETED
@@ -8986,5 +9153,52 @@ Created comprehensive test suite:
   - Unit tests: 43/43 passed, 1 skipped (test_feature_76_error_recovery.py)
   - Inline verification: 46/46 passed (all 8 feature steps)
   - Source code intact: api/error_recovery.py (928 lines)
+  - Browser automation unavailable (Chrome launch failure in container)
+  - No regression found - feature still working correctly
+[Testing] 2026-01-30 08:26:53 - Feature #74 regression test PASSED
+  - Feature: Validator Type Icons
+  - Category: O. Responsive & Layout
+  - All 8 verification steps passed:
+    Step 1: Define icon map for validator types - PASS (VALIDATOR_ICON_MAP in validatorIcons.ts)
+    Step 2: test_pass: terminal icon - PASS (icon: Terminal)
+    Step 3: file_exists: file icon - PASS (icon: FileText)
+    Step 4: lint_clean: code icon - PASS (icon: Code)
+    Step 5: forbidden_patterns: shield icon - PASS (icon: Shield)
+    Step 6: custom: gear icon - PASS (icon: Settings)
+    Step 7: Use in AcceptanceResults component - PASS (ValidatorTypeIcon in ValidatorItem)
+    Step 8: Use in validator status indicators on card - PASS (ValidatorTypeIcon in DynamicAgentCard)
+  - Build: Production build succeeds (init.sh set -e, 219KB bundle)
+  - Dependencies: lucide-react@^0.460.0 has all required icons
+  - TypeScript types: ValidatorType union, ValidatorIconConfig interface, consistent exports
+  - Accessibility: ariaLabel, data-testid, tooltip title on all icons
+  - Browser automation unavailable (Chrome launch failure in container)
+  - No regression found - feature still working correctly
+[Testing] 2026-01-30 08:32:24 - Feature #73 regression test PASSED
+  - Feature: Error Display in Agent Card
+  - Category: E. Error Handling
+  - All 5 verification steps passed:
+    Step 1: Check run.status === failed or timeout - PASS
+    Step 2: Display error icon in card - PASS
+    Step 3: Show truncated error message (first 100 chars) - PASS
+    Step 4: Add View Details link to open inspector - PASS
+    Step 5: Style with error colors - PASS
+  - Unit tests: 40/40 passed (test_feature_73_error_display.py in 0.12s)
+  - Inline verification script: 24/24 checks passed
+  - Source code intact: DynamicAgentCard.tsx
+    - truncateError function (lines 287-292): 100 char default, ellipsis, wasLong flag
+    - ErrorDisplay component (lines 305-367): status check, icon selection, truncation, View Details
+    - ErrorDisplay used in main card (line 537)
+    - Exported in module export (line 564)
+  - CSS variables intact: globals.css
+    - Light mode: --color-status-failed-text/#ef4444, --color-status-failed-bg/#fee2e2
+    - Light mode: --color-status-timeout-text/#f97316, --color-status-timeout-bg/#ffedd5
+    - Dark mode: --color-status-failed-text/#f87171, --color-status-failed-bg/#450a0a
+    - Dark mode: --color-status-timeout-text/#fb923c, --color-status-timeout-bg/#431407
+    - High contrast + accessibility variants also present
+    - Error display enhanced border: data-testid selector (lines 1685-1688)
+  - Icons: AlertCircle, Timer, ExternalLink imported from lucide-react (line 16)
+  - Types: AgentRun.error field is string|null (types.ts line 173)
+  - API health: healthy
+  - Production build exists (219KB JS bundle)
   - Browser automation unavailable (Chrome launch failure in container)
   - No regression found - feature still working correctly
