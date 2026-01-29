@@ -2131,3 +2131,433 @@ class TestHarnessKernelBudgetEnforcement:
         ).first()
         assert db_run.tokens_in == 300
         assert db_run.tokens_out == 150
+
+
+# =============================================================================
+# Feature #130: Acceptance Gate Evaluates Validators and Determines Final Verdict
+# =============================================================================
+
+class TestAcceptanceGateEvaluatesValidators:
+    """Feature #130: After kernel finishes executing turns, the AcceptanceGate
+    evaluates all validators defined in the AgentSpec's AcceptanceSpec.
+
+    Verification steps:
+    1. AcceptanceGate.evaluate() is called after kernel execution completes
+    2. Each validator in the acceptance_spec is executed independently
+    3. ValidatorResult contains passed (bool), message (str), and score (float)
+    4. gate_mode='all_pass' requires ALL validators to pass for verdict='passed'
+    5. gate_mode='any_pass' requires at least ONE validator to pass for verdict='passed'
+    6. AgentRun.final_verdict is set to the gate's verdict (passed/failed/partial)
+    7. AgentRun.acceptance_results contains per-validator results as JSON array
+    8. An 'acceptance_check' event is recorded in agent_events with the gate results
+    """
+
+    _subdir_counter = 0
+
+    def _create_spec_with_file_validators(
+        self, db_session, tmp_path, gate_mode="all_pass", files_to_create=None
+    ):
+        """Helper: create an AgentSpec with file_exists validators.
+
+        Args:
+            db_session: Database session
+            tmp_path: Pytest tmp_path fixture
+            gate_mode: Gate mode for acceptance spec ("all_pass" or "any_pass")
+            files_to_create: List of filenames to pre-create in tmp_path.
+                            Validators check for file_a.txt and file_b.txt.
+        Returns:
+            Tuple of (spec, acceptance_spec)
+        """
+        # Use a unique subdirectory for each call to avoid file bleeding
+        TestAcceptanceGateEvaluatesValidators._subdir_counter += 1
+        subdir = tmp_path / f"run_{TestAcceptanceGateEvaluatesValidators._subdir_counter}"
+        subdir.mkdir(parents=True, exist_ok=True)
+
+        # Create test files if requested
+        if files_to_create:
+            for fname in files_to_create:
+                (subdir / fname).write_text(f"content of {fname}")
+
+        # Build validator definitions for two file_exists validators
+        validators = [
+            {
+                "type": "file_exists",
+                "config": {
+                    "path": str(subdir / "file_a.txt"),
+                    "should_exist": True,
+                    "description": "Validator A: file_a.txt must exist",
+                },
+                "weight": 1.0,
+                "required": False,
+            },
+            {
+                "type": "file_exists",
+                "config": {
+                    "path": str(subdir / "file_b.txt"),
+                    "should_exist": True,
+                    "description": "Validator B: file_b.txt must exist",
+                },
+                "weight": 1.0,
+                "required": False,
+            },
+        ]
+
+        spec = AgentSpec(
+            id=f"spec-130-{gate_mode}-{generate_uuid()[:8]}",
+            name=f"spec-130-{gate_mode}",
+            display_name=f"Feature 130 Test ({gate_mode})",
+            objective="Test acceptance gate evaluation",
+            task_type="testing",
+            tool_policy={
+                "allowed_tools": ["Read"],
+                "forbidden_patterns": [],
+                "policy_version": "v1",
+            },
+            max_turns=5,
+            timeout_seconds=120,
+        )
+        db_session.add(spec)
+        db_session.commit()
+
+        acceptance_spec = AcceptanceSpec(
+            id=generate_uuid(),
+            agent_spec_id=spec.id,
+            validators=validators,
+            gate_mode=gate_mode,
+            retry_policy="none",
+            max_retries=0,
+        )
+        db_session.add(acceptance_spec)
+        db_session.commit()
+
+        # Refresh to load relationship
+        db_session.refresh(spec)
+
+        return spec, acceptance_spec
+
+    def test_step1_acceptance_gate_called_after_kernel_execution(
+        self, db_session, tmp_path
+    ):
+        """Step 1: Verify that after kernel execution completes,
+        AcceptanceGate.evaluate() is called.
+
+        We do this by executing the kernel with a turn executor that completes
+        immediately, and verifying that the run has acceptance_results set
+        (which can only happen if AcceptanceGate.evaluate() was called).
+        """
+        spec, acceptance_spec = self._create_spec_with_file_validators(
+            db_session, tmp_path, gate_mode="all_pass",
+            files_to_create=["file_a.txt", "file_b.txt"],
+        )
+
+        # Turn executor that completes immediately
+        def completing_executor(run, spec):
+            return (True, {"action": "completed"}, [], 50, 25)
+
+        kernel = HarnessKernel(db=db_session)
+        run = kernel.execute(spec, turn_executor=completing_executor)
+
+        # The run should have acceptance_results populated - this proves
+        # AcceptanceGate.evaluate() was called after kernel execution
+        assert run.acceptance_results is not None, (
+            "AcceptanceGate.evaluate() was not called - acceptance_results is None"
+        )
+        assert isinstance(run.acceptance_results, list), (
+            f"acceptance_results should be a list, got {type(run.acceptance_results)}"
+        )
+        assert len(run.acceptance_results) == 2, (
+            f"Expected 2 validator results, got {len(run.acceptance_results)}"
+        )
+
+    def test_step2_each_validator_executed_independently(
+        self, db_session, tmp_path
+    ):
+        """Step 2: Verify each validator in the acceptance_spec is executed
+        independently.
+
+        Create 2 validators: one for a file that exists, one for a file that
+        doesn't. Both should produce results (i.e., both were executed).
+        """
+        spec, acceptance_spec = self._create_spec_with_file_validators(
+            db_session, tmp_path, gate_mode="all_pass",
+            files_to_create=["file_a.txt"],  # Only create file_a, not file_b
+        )
+
+        def completing_executor(run, spec):
+            return (True, {"action": "completed"}, [], 50, 25)
+
+        kernel = HarnessKernel(db=db_session)
+        run = kernel.execute(spec, turn_executor=completing_executor)
+
+        # Both validators should have been executed independently
+        results = run.acceptance_results
+        assert len(results) == 2, (
+            f"Both validators should run independently; got {len(results)} results"
+        )
+
+        # Validator A (file_a.txt exists): should pass
+        result_a = results[0]
+        assert result_a["passed"] is True, (
+            f"Validator A should pass (file_a.txt exists), got: {result_a}"
+        )
+
+        # Validator B (file_b.txt does not exist): should fail
+        result_b = results[1]
+        assert result_b["passed"] is False, (
+            f"Validator B should fail (file_b.txt missing), got: {result_b}"
+        )
+
+    def test_step3_validator_result_contains_required_fields(
+        self, db_session, tmp_path
+    ):
+        """Step 3: Verify ValidatorResult contains passed (bool), message (str),
+        and score (float).
+        """
+        spec, acceptance_spec = self._create_spec_with_file_validators(
+            db_session, tmp_path, gate_mode="all_pass",
+            files_to_create=["file_a.txt", "file_b.txt"],
+        )
+
+        def completing_executor(run, spec):
+            return (True, {"action": "completed"}, [], 50, 25)
+
+        kernel = HarnessKernel(db=db_session)
+        run = kernel.execute(spec, turn_executor=completing_executor)
+
+        results = run.acceptance_results
+        assert len(results) >= 1, "At least one validator result expected"
+
+        for i, result in enumerate(results):
+            # Check passed is a bool
+            assert isinstance(result["passed"], bool), (
+                f"Validator {i}: 'passed' must be bool, got {type(result['passed'])}"
+            )
+            # Check message is a string
+            assert isinstance(result["message"], str), (
+                f"Validator {i}: 'message' must be str, got {type(result['message'])}"
+            )
+            assert len(result["message"]) > 0, (
+                f"Validator {i}: 'message' must be non-empty"
+            )
+            # Check score is a float (or int that can be float)
+            assert isinstance(result["score"], (int, float)), (
+                f"Validator {i}: 'score' must be float, got {type(result['score'])}"
+            )
+            assert 0.0 <= float(result["score"]) <= 1.0, (
+                f"Validator {i}: 'score' must be in [0.0, 1.0], got {result['score']}"
+            )
+
+    def test_step4_gate_mode_all_pass_requires_all_validators(
+        self, db_session, tmp_path
+    ):
+        """Step 4: Verify gate_mode='all_pass' requires ALL validators to pass
+        for verdict='passed'.
+        """
+        # Case A: All pass -> verdict='passed'
+        spec_a, _ = self._create_spec_with_file_validators(
+            db_session, tmp_path, gate_mode="all_pass",
+            files_to_create=["file_a.txt", "file_b.txt"],
+        )
+
+        def completing_executor(run, spec):
+            return (True, {"action": "completed"}, [], 50, 25)
+
+        kernel_a = HarnessKernel(db=db_session)
+        run_a = kernel_a.execute(spec_a, turn_executor=completing_executor)
+
+        assert run_a.final_verdict == "passed", (
+            f"all_pass with all validators passing: expected 'passed', got '{run_a.final_verdict}'"
+        )
+
+        # Case B: One fails -> verdict != 'passed'
+        spec_b, _ = self._create_spec_with_file_validators(
+            db_session, tmp_path, gate_mode="all_pass",
+            files_to_create=["file_a.txt"],  # Only file_a exists, file_b missing
+        )
+
+        kernel_b = HarnessKernel(db=db_session)
+        run_b = kernel_b.execute(spec_b, turn_executor=completing_executor)
+
+        assert run_b.final_verdict != "passed", (
+            f"all_pass with one failing: expected 'partial' or 'failed', got '{run_b.final_verdict}'"
+        )
+        assert run_b.final_verdict in ("partial", "failed"), (
+            f"Expected 'partial' or 'failed', got '{run_b.final_verdict}'"
+        )
+
+    def test_step5_gate_mode_any_pass_requires_one_validator(
+        self, db_session, tmp_path
+    ):
+        """Step 5: Verify gate_mode='any_pass' requires at least ONE validator
+        to pass for verdict='passed'.
+        """
+        # Case A: One passes, one fails -> verdict='passed' with any_pass
+        spec_a, _ = self._create_spec_with_file_validators(
+            db_session, tmp_path, gate_mode="any_pass",
+            files_to_create=["file_a.txt"],  # Only file_a exists
+        )
+
+        def completing_executor(run, spec):
+            return (True, {"action": "completed"}, [], 50, 25)
+
+        kernel_a = HarnessKernel(db=db_session)
+        run_a = kernel_a.execute(spec_a, turn_executor=completing_executor)
+
+        assert run_a.final_verdict == "passed", (
+            f"any_pass with one passing: expected 'passed', got '{run_a.final_verdict}'"
+        )
+
+        # Case B: None pass -> verdict='failed'
+        spec_b, _ = self._create_spec_with_file_validators(
+            db_session, tmp_path, gate_mode="any_pass",
+            files_to_create=[],  # No files created -> both validators fail
+        )
+
+        kernel_b = HarnessKernel(db=db_session)
+        run_b = kernel_b.execute(spec_b, turn_executor=completing_executor)
+
+        assert run_b.final_verdict == "failed", (
+            f"any_pass with none passing: expected 'failed', got '{run_b.final_verdict}'"
+        )
+
+    def test_step6_agent_run_final_verdict_set(
+        self, db_session, tmp_path
+    ):
+        """Step 6: Verify AgentRun.final_verdict is set to the gate's verdict
+        (passed/failed/partial).
+        """
+        # Test passed verdict
+        spec, _ = self._create_spec_with_file_validators(
+            db_session, tmp_path, gate_mode="all_pass",
+            files_to_create=["file_a.txt", "file_b.txt"],
+        )
+
+        def completing_executor(run, spec):
+            return (True, {"action": "completed"}, [], 50, 25)
+
+        kernel = HarnessKernel(db=db_session)
+        run = kernel.execute(spec, turn_executor=completing_executor)
+
+        # Verify final_verdict is set on the run object
+        assert run.final_verdict is not None, (
+            "AgentRun.final_verdict must be set after acceptance gate evaluation"
+        )
+        assert run.final_verdict in ("passed", "failed", "partial"), (
+            f"final_verdict must be one of passed/failed/partial, got '{run.final_verdict}'"
+        )
+
+        # Verify it's persisted in the database
+        db_run = db_session.query(AgentRun).filter(
+            AgentRun.id == run.id
+        ).first()
+        assert db_run.final_verdict == run.final_verdict, (
+            f"DB final_verdict '{db_run.final_verdict}' doesn't match "
+            f"run final_verdict '{run.final_verdict}'"
+        )
+
+    def test_step7_agent_run_acceptance_results_json_array(
+        self, db_session, tmp_path
+    ):
+        """Step 7: Verify AgentRun.acceptance_results contains per-validator
+        results as JSON array.
+        """
+        spec, _ = self._create_spec_with_file_validators(
+            db_session, tmp_path, gate_mode="all_pass",
+            files_to_create=["file_a.txt"],  # Only create one file
+        )
+
+        def completing_executor(run, spec):
+            return (True, {"action": "completed"}, [], 50, 25)
+
+        kernel = HarnessKernel(db=db_session)
+        run = kernel.execute(spec, turn_executor=completing_executor)
+
+        # acceptance_results should be a JSON-serializable list
+        results = run.acceptance_results
+        assert isinstance(results, list), (
+            f"acceptance_results must be a list, got {type(results)}"
+        )
+        assert len(results) == 2, (
+            f"Expected 2 per-validator results, got {len(results)}"
+        )
+
+        # Each result should be a dict with standard fields
+        for i, r in enumerate(results):
+            assert isinstance(r, dict), (
+                f"Result {i} must be a dict, got {type(r)}"
+            )
+            assert "passed" in r, f"Result {i} missing 'passed' field"
+            assert "message" in r, f"Result {i} missing 'message' field"
+            assert "score" in r, f"Result {i} missing 'score' field"
+            assert "validator_type" in r, f"Result {i} missing 'validator_type' field"
+
+        # Verify results are correct: file_a passes, file_b fails
+        assert results[0]["passed"] is True, "Validator A (file_a.txt) should pass"
+        assert results[1]["passed"] is False, "Validator B (file_b.txt) should fail"
+
+        # Verify persistence in DB
+        db_run = db_session.query(AgentRun).filter(
+            AgentRun.id == run.id
+        ).first()
+        assert db_run.acceptance_results is not None, (
+            "acceptance_results must be persisted in DB"
+        )
+        assert len(db_run.acceptance_results) == 2, (
+            f"DB should have 2 results, got {len(db_run.acceptance_results)}"
+        )
+
+    def test_step8_acceptance_check_event_recorded(
+        self, db_session, tmp_path
+    ):
+        """Step 8: Verify an 'acceptance_check' event is recorded in agent_events
+        with the gate results.
+        """
+        spec, _ = self._create_spec_with_file_validators(
+            db_session, tmp_path, gate_mode="all_pass",
+            files_to_create=["file_a.txt", "file_b.txt"],
+        )
+
+        def completing_executor(run, spec):
+            return (True, {"action": "completed"}, [], 50, 25)
+
+        kernel = HarnessKernel(db=db_session)
+        run = kernel.execute(spec, turn_executor=completing_executor)
+
+        # Query for acceptance_check events
+        acceptance_events = db_session.query(AgentEvent).filter(
+            AgentEvent.run_id == run.id,
+            AgentEvent.event_type == "acceptance_check",
+        ).all()
+
+        assert len(acceptance_events) >= 1, (
+            f"Expected at least 1 'acceptance_check' event, found {len(acceptance_events)}. "
+            f"Events: {[e.event_type for e in db_session.query(AgentEvent).filter(AgentEvent.run_id == run.id).all()]}"
+        )
+
+        # Verify the event payload contains gate results
+        event = acceptance_events[0]
+        payload = event.payload
+        assert payload is not None, "acceptance_check event must have a payload"
+        assert "final_verdict" in payload, (
+            f"acceptance_check payload must contain 'final_verdict', got keys: {list(payload.keys())}"
+        )
+        assert "gate_mode" in payload, (
+            f"acceptance_check payload must contain 'gate_mode', got keys: {list(payload.keys())}"
+        )
+        assert "results" in payload, (
+            f"acceptance_check payload must contain 'results', got keys: {list(payload.keys())}"
+        )
+        assert "validator_count" in payload, (
+            f"acceptance_check payload must contain 'validator_count', got keys: {list(payload.keys())}"
+        )
+
+        # Verify payload values
+        assert payload["final_verdict"] == "passed", (
+            f"Expected final_verdict='passed' in event, got '{payload['final_verdict']}'"
+        )
+        assert payload["gate_mode"] == "all_pass", (
+            f"Expected gate_mode='all_pass' in event, got '{payload['gate_mode']}'"
+        )
+        assert payload["validator_count"] == 2, (
+            f"Expected validator_count=2, got {payload['validator_count']}"
+        )
