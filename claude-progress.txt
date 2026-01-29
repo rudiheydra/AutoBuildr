@@ -1,6 +1,78 @@
 # AutoBuildr Progress Log
 # ======================
 
+## Session: 2026-01-30 (Coding Agent - Feature #140)
+
+### Feature #140: Implement LintCleanValidator class or remove from VALIDATOR_TYPES - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Dependencies:** None
+
+**Description:** The spec lists lint_clean as an optional validator and VALIDATOR_TYPES includes it, but no LintCleanValidator class existed. Implemented the validator class.
+
+**Changes Made:**
+1. `api/validators.py`: Added `LintCleanValidator` class (lines 866-1230)
+   - Follows same pattern as existing TestPassValidator
+   - Accepts linter command in config, runs it via subprocess
+   - Checks exit code (default 0) for clean lint
+   - Supports `error_pattern` regex for counting specific error lines
+   - Supports `timeout_seconds` (default 120), `working_directory`, `description`
+   - Handles timeout, command not found, and OS errors gracefully
+   - Added `_count_lint_issues()` helper for issue counting
+2. `api/validators.py`: Registered `"lint_clean": LintCleanValidator` in `VALIDATOR_REGISTRY`
+3. `api/__init__.py`: Added `LintCleanValidator` to imports and `__all__` exports
+
+**Verification Summary (All 6 Feature Steps Passed):**
+
+1. **Check if 'lint_clean' is listed in VALIDATOR_TYPES** - PASS
+   - Found at line 90 in api/agentspec_models.py: `["test_pass", "file_exists", "lint_clean", "forbidden_output", "custom"]`
+
+2. **Create a LintCleanValidator class following the same pattern** - PASS
+   - Subclass of Validator base class
+   - validator_type = "lint_clean"
+   - Implements evaluate(config, context, run) -> ValidatorResult
+   - Inherits interpolate_path() from Validator base
+
+3. **Validator accepts linter command, runs it, checks for zero errors** - PASS
+   - Clean command (exit 0) passes, dirty command (exit 1) fails
+   - Command output captured in details (stdout, stderr)
+   - Issue count reported in details
+   - Variable interpolation works in command templates
+
+4. **Register in validator registry** - PASS
+   - VALIDATOR_REGISTRY["lint_clean"] = LintCleanValidator
+   - get_validator("lint_clean") returns LintCleanValidator instance
+   - evaluate_validator() works with lint_clean type
+
+5. **Verify with sample linter command** - PASS
+   - Simulated flake8/ruff-style outputs work correctly
+   - Clean lint (exit 0, no output) passes
+   - Lint errors (exit 1, error output) fail correctly
+
+6. **Verify pass/fail reporting** - PASS
+   - Pass result: score=1.0, "Lint clean" message
+   - Fail result: score=0.0, "Lint failed" message with issue count
+   - All expected fields in details dict
+   - to_dict() serialization works correctly
+
+**Test Results:**
+- tests/test_feature_140_lint_clean_validator.py: 52/52 tests PASS
+- Existing validator tests: 172/172 PASS (no regressions)
+- Verification script: 6/6 steps PASS
+
+**Commit:** efd5a54
+
+**Updated Progress:**
+- Feature #140: LintCleanValidator implementation - PASSING
+- Total: 137/150 features passing (approximately 91.3%)
+
+**Session completed successfully.**
+
+---
+
 ## Session: 2026-01-30 (Coding Agent - Feature #137)
 
 ### Feature #137: Add spec_path column to AgentSpec model - COMPLETED
@@ -10092,3 +10164,28 @@ Created comprehensive test suite:
 
 **Verification:** All 9 tests pass. Zero regressions (378 pass, 4 pre-existing failures unrelated to this change).
 
+[Testing] 2026-01-30 09:43:10 - Feature #51 regression test PASSED (2nd verification)
+  - Feature: Skill Template Registry
+  - Category: G. State & Persistence
+  - All 8 verification steps passed:
+    Step 1: Create TemplateRegistry class - PASS
+    Step 2: Scan prompts/ directory for template files - PASS (3 templates: coding_prompt, initializer_prompt, testing_prompt)
+    Step 3: Parse template metadata (task_type, required_tools, etc.) - PASS
+    Step 4: Index templates by task_type - PASS (coding, documentation, testing)
+    Step 5: Implement get_template(task_type) -> Template - PASS
+    Step 6: Implement interpolate(template, variables) -> str - PASS
+    Step 7: Cache compiled templates for performance - PASS (same object returned, cache invalidation works)
+    Step 8: Handle missing template gracefully with fallback - PASS (None return, TemplateNotFoundError exists)
+  - Unit tests: 54/54 passed (test_template_registry.py in 5.05s)
+  - Source code intact: api/template_registry.py (721 lines, no uncommitted changes)
+    - TemplateRegistry class with scan(), get_template(), interpolate(), list_templates()
+    - TemplateMetadata dataclass with task_type, required_tools, defaults
+    - YAML front matter parsing (with PyYAML and fallback parser)
+    - Variable interpolation with {{var}} and {var} syntax
+    - Thread-safe caching with file modification detection
+    - Singleton registry via get_template_registry()
+  - API server healthy on port 8888
+  - Frontend serving on port 5173
+  - Browser automation unavailable (Chrome SIGTRAP in container)
+  - Note: /api/spec-builder/templates endpoint returns 404 (server started before Feature #135 was committed - NOT a Feature #51 regression)
+  - No regression found - feature still working correctly
