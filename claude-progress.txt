@@ -10558,3 +10558,66 @@ Created comprehensive test suite:
   - API server healthy on port 8888
   - Browser automation unavailable (Chrome SIGTRAP in container)
   - No regression found - feature still working correctly
+[Testing] 2026-01-30 10:01:33 - Feature #93 regression test PASSED
+  - Feature: All graph traversal functions have cycle protection
+  - Category: error-handling
+  - All 5 verification steps passed (verify_feature_93.py):
+    Step 1: resolve_dependencies() Kahn's algorithm tracking - PASS
+    Step 2: _detect_cycles() visited/rec_stack sets - PASS
+    Step 3: compute_scheduling_scores() BFS visited set - PASS
+    Step 4: would_create_circular_dependency() DFS visited set - PASS
+    Step 5: Iteration limits in all functions - PASS
+  - Unit tests: 33/33 PASS (test_graph_cycle_protection.py in 5.06s)
+  - Source code intact: api/dependency_resolver.py (all 5 functions verified)
+    - resolve_dependencies(): Kahn's algorithm with in_degree + heap (inherently terminates)
+    - _detect_cycles(): visited + rec_stack + max_iterations limit
+    - _detect_cycles_for_validation(): visited + rec_stack + max_iterations + dedup
+    - compute_scheduling_scores(): visited + max_iterations + _logger.error on exceed
+    - would_create_circular_dependency(): visited + MAX_DEPENDENCY_DEPTH (50) limit
+  - Dependency graph API: /api/projects/AutoBuildr/features/graph - working (150 nodes, edges OK)
+  - API server healthy on port 8888
+  - Browser automation unavailable (Chrome SIGTRAP in container)
+  - No regression found - feature still working correctly
+
+---
+
+## Session: 2026-01-30 (Coding Agent - Feature #147)
+
+### Feature #147: Make artifacts.content_hash and size_bytes NOT NULL - COMPLETED
+
+**Status:** PASSING
+
+**Category:** data
+
+**Dependencies:** None
+
+**Description:** The spec implies content_hash and size_bytes are required fields on artifacts, but they were nullable in the model. Since the CRUD layer always sets these values, made them NOT NULL to enforce data integrity at the database level.
+
+**Changes Made:**
+
+1. api/agentspec_models.py: Changed content_hash and size_bytes from nullable=True to nullable=False
+2. server/schemas/agentspec.py: Changed content_hash and size_bytes from Optional to required in ArtifactListItemResponse and ArtifactResponse
+3. api/database.py: Added _migrate_artifact_not_null_content_hash_size() migration function
+4. server/routers/artifacts.py: Updated content_hash references with defensive fallbacks
+
+**Verification Summary (All 6 Feature Steps Passed):**
+
+1. Locate Artifact model in api/agentspec_models.py - PASS
+2. Change content_hash to nullable=False - PASS
+3. Change size_bytes to nullable=False - PASS
+4. Update Pydantic schemas to mark fields as required - PASS
+5. Verify artifact creation still works with CRUD layer - PASS
+6. Verify database rejects artifacts without these fields - PASS
+
+**Test Results:**
+- tests/test_feature_147_artifact_not_null.py: 21/21 tests PASS
+- Regression tests: 138/138 pass across 7 related test files
+- E2E artifact test: 1/1 pass
+
+**Commit:** 5400297
+
+**Updated Progress:**
+- Feature #147: Make artifacts.content_hash and size_bytes NOT NULL - PASSING
+- Total: 144/150 features passing (96.0%)
+
+**Session completed successfully.**
