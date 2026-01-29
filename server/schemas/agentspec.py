@@ -29,7 +29,8 @@ GATE_MODES = Literal["all_pass", "any_pass", "weighted"]
 RETRY_POLICIES = Literal["none", "fixed", "exponential"]
 EVENT_TYPES = Literal[
     "started", "tool_call", "tool_result", "turn_complete",
-    "acceptance_check", "completed", "failed", "paused", "resumed"
+    "acceptance_check", "completed", "failed", "paused", "resumed",
+    "policy_violation", "timeout"
 ]
 ARTIFACT_TYPES = Literal["file_change", "test_result", "log", "metric", "snapshot"]
 VALIDATOR_TYPES = Literal["test_pass", "file_exists", "lint_clean", "forbidden_output", "custom"]
@@ -134,6 +135,11 @@ class AgentSpecCreate(BaseModel):
         default=None,
         description="Linked Feature ID"
     )
+    spec_path: str | None = Field(
+        default=None,
+        max_length=500,
+        description="File path to the spec definition (for specs loaded from files)"
+    )
     priority: int = Field(
         default=500,
         ge=1,
@@ -164,6 +170,7 @@ class AgentSpecCreate(BaseModel):
                 "max_turns": 50,
                 "timeout_seconds": 1800,
                 "source_feature_id": 5,
+                "spec_path": "/path/to/spec.yaml",
                 "priority": 100,
                 "tags": ["auth", "critical"]
             }
@@ -236,6 +243,11 @@ class AgentSpecUpdate(BaseModel):
         default=None,
         description="Linked Feature ID"
     )
+    spec_path: str | None = Field(
+        default=None,
+        max_length=500,
+        description="File path to the spec definition (for specs loaded from files)"
+    )
     priority: int | None = Field(
         default=None,
         ge=1,
@@ -278,6 +290,7 @@ class AgentSpecResponse(BaseModel):
 
     parent_spec_id: str | None
     source_feature_id: int | None
+    spec_path: str | None = None
     created_at: datetime
     priority: int
     tags: list[str]
@@ -323,6 +336,7 @@ class AgentSpecWithAcceptanceResponse(BaseModel):
 
     parent_spec_id: str | None
     source_feature_id: int | None
+    spec_path: str | None = None
     created_at: datetime
     priority: int
     tags: list[str]
@@ -955,6 +969,8 @@ class AgentEventResponse(BaseModel):
         - failed: Run failed with error
         - paused: Run was paused
         - resumed: Run was resumed from paused state
+        - policy_violation: Tool policy was violated
+        - timeout: Run exceeded time or turn budget
 
     Example:
         {
@@ -974,7 +990,7 @@ class AgentEventResponse(BaseModel):
     run_id: str = Field(..., description="ID of the parent AgentRun")
     event_type: EVENT_TYPES = Field(
         ...,
-        description="Type of event: started, tool_call, tool_result, turn_complete, acceptance_check, completed, failed, paused, or resumed"
+        description="Type of event: started, tool_call, tool_result, turn_complete, acceptance_check, completed, failed, paused, resumed, policy_violation, or timeout"
     )
     timestamp: datetime = Field(..., description="When the event occurred")
     sequence: int = Field(
@@ -1015,7 +1031,8 @@ class AgentEventResponse(BaseModel):
         """
         allowed = [
             "started", "tool_call", "tool_result", "turn_complete",
-            "acceptance_check", "completed", "failed", "paused", "resumed"
+            "acceptance_check", "completed", "failed", "paused", "resumed",
+            "policy_violation", "timeout"
         ]
         if v not in allowed:
             raise ValueError(f"event_type must be one of {allowed}, got '{v}'")

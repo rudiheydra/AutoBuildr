@@ -80,6 +80,7 @@ EVENT_TYPES = [
     "paused",
     "resumed",
     "policy_violation",  # Feature #44: Tool policy violation logging
+    "timeout",  # Feature #134: Kernel timeout event recording
 ]
 
 # Artifact types - outputs from agent runs
@@ -180,7 +181,7 @@ class AgentSpec(Base):
 
     # Identity
     id = Column(String(36), primary_key=True, default=generate_uuid)
-    name = Column(String(100), nullable=False)  # machine-friendly (e.g., "feature-auth-login-impl")
+    name = Column(String(100), nullable=False, unique=True)  # machine-friendly (e.g., "feature-auth-login-impl")
     display_name = Column(String(255), nullable=False)  # human-friendly
     icon = Column(String(50), nullable=True)  # emoji or icon identifier (e.g., "gear", "test-tube")
 
@@ -208,6 +209,9 @@ class AgentSpec(Base):
     # Lineage (flat for v1, fields exist for future parent/child)
     parent_spec_id = Column(String(36), ForeignKey("agent_specs.id"), nullable=True)
     source_feature_id = Column(Integer, ForeignKey("features.id", ondelete="SET NULL"), nullable=True)
+
+    # Spec file path (nullable, for specs loaded from files)
+    spec_path = Column(String(500), nullable=True)
 
     # Metadata
     created_at = Column(DateTime, nullable=False, default=_utc_now)
@@ -241,6 +245,7 @@ class AgentSpec(Base):
             "timeout_seconds": self.timeout_seconds,
             "parent_spec_id": self.parent_spec_id,
             "source_feature_id": self.source_feature_id,
+            "spec_path": self.spec_path,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "priority": self.priority,
             "tags": self.tags or [],
