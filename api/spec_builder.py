@@ -63,7 +63,13 @@ from api.dspy_signatures import (
     VALID_TASK_TYPES,
     validate_spec_output,
 )
+from api.display_derivation import derive_display_name, derive_icon
 from api.spec_name_generator import generate_spec_name
+from api.template_registry import (
+    Template,
+    TemplateRegistry,
+    get_template_registry,
+)
 
 # Module logger
 _logger = logging.getLogger(__name__)
@@ -440,6 +446,7 @@ class SpecBuilder:
         api_key: str | None = None,
         use_chain_of_thought: bool = True,
         auto_initialize: bool = True,
+        registry: TemplateRegistry | None = None,
     ):
         """
         Initialize the SpecBuilder.
@@ -449,6 +456,11 @@ class SpecBuilder:
             api_key: Anthropic API key (default: from environment)
             use_chain_of_thought: If True, use ChainOfThought module
             auto_initialize: If True, initialize DSPy on construction
+            registry: Optional TemplateRegistry instance for template-aware
+                spec generation. If provided, the builder will query the
+                registry for matching templates by task_type and include
+                template content as additional context in the DSPy
+                compilation input (Feature #149).
 
         Raises:
             DSPyInitializationError: If auto_initialize=True and initialization fails
@@ -456,6 +468,9 @@ class SpecBuilder:
         self._model = model or DEFAULT_MODEL
         self._api_key = api_key or os.environ.get(ANTHROPIC_API_KEY_ENV)
         self._use_chain_of_thought = use_chain_of_thought
+
+        # Template registry for task-type-specific context (Feature #149)
+        self._registry = registry
 
         # Thread safety
         self._lock = threading.RLock()
@@ -477,6 +492,16 @@ class SpecBuilder:
     def model(self) -> str:
         """Get the model being used."""
         return self._model
+
+    @property
+    def registry(self) -> TemplateRegistry | None:
+        """Get the TemplateRegistry instance (Feature #149)."""
+        return self._registry
+
+    @registry.setter
+    def registry(self, value: TemplateRegistry | None) -> None:
+        """Set the TemplateRegistry instance (Feature #149)."""
+        self._registry = value
 
     def _initialize_dspy(self) -> None:
         """
@@ -519,6 +544,95 @@ class SpecBuilder:
                     f"Failed to initialize DSPy: {e}",
                     original_error=e
                 ) from e
+
+    def _get_template_context(
+        self,
+        task_type: str,
+        context: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        """
+        Query the TemplateRegistry for a matching template and return
+        template-derived context for the DSPy pipeline (Feature #149).
+
+        If a matching template is found for the given task_type, this method
+        returns a dictionary containing:
+        - template_content: The interpolated template body text
+        - template_task_type: The template's declared task_type
+        - template_tools: Required tools from template metadata
+        - template_defaults: Default budget values from template metadata
+
+        Variable interpolation is applied using the provided context dict,
+        so template variables like {{project_name}} or {{feature_id}} are
+        resolved.
+
+        Args:
+            task_type: The task type to look up (e.g., "coding", "testing")
+            context: Context dictionary whose keys are used for variable
+                interpolation in the template content
+
+        Returns:
+            Dictionary of template-derived context, or None if no template
+            matched or registry is not configured.
+        """
+        if self._registry is None:
+            return None
+
+        try:
+            template = self._registry.get_template(
+                task_type=task_type,
+                use_fallback=False,
+            )
+        except Exception:
+            _logger.debug(
+                "No template found for task_type=%s in registry", task_type
+            )
+            return None
+
+        if template is None:
+            return None
+
+        # Interpolate template variables using the context dict
+        try:
+            interpolated_content = self._registry.interpolate(
+                template,
+                context,
+                strict=False,  # Leave unresolved variables as-is
+            )
+        except Exception as e:
+            _logger.warning(
+                "Template interpolation failed for task_type=%s: %s",
+                task_type,
+                e,
+            )
+            interpolated_content = template.content
+
+        # Build template context dict
+        template_context: dict[str, Any] = {
+            "template_content": interpolated_content,
+            "template_task_type": template.metadata.task_type,
+        }
+
+        # Include required tools from template metadata
+        if template.metadata.required_tools:
+            template_context["template_tools"] = template.metadata.required_tools
+
+        # Include default budgets from template metadata
+        defaults: dict[str, int] = {}
+        if template.metadata.default_max_turns is not None:
+            defaults["max_turns"] = template.metadata.default_max_turns
+        if template.metadata.default_timeout_seconds is not None:
+            defaults["timeout_seconds"] = template.metadata.default_timeout_seconds
+        if defaults:
+            template_context["template_defaults"] = defaults
+
+        _logger.info(
+            "TemplateRegistry provided context for task_type=%s (template=%s, %d chars)",
+            task_type,
+            template.path.name if template.path else "unknown",
+            len(interpolated_content),
+        )
+
+        return template_context
 
     def build(
         self,
@@ -570,6 +684,15 @@ class SpecBuilder:
 
         # Serialize context to JSON
         context = context or {}
+
+        # Step 1b: Enrich context with template content (Feature #149)
+        # Query TemplateRegistry for a matching template by task_type.
+        # If found, include template content as additional context so DSPy
+        # produces richer, template-aware output.
+        template_context = self._get_template_context(task_type, context)
+        if template_context is not None:
+            context["template_context"] = template_context
+
         try:
             context_json = json.dumps(context)
         except (TypeError, ValueError) as e:
@@ -854,35 +977,21 @@ class SpecBuilder:
         return agent_spec, acceptance_spec
 
     def _derive_display_name(self, objective: str, task_description: str) -> str:
-        """Derive a display name from objective or task description."""
-        # Try to use first sentence of objective
+        """Derive a display name from objective or task description.
+
+        Delegates to api.display_derivation.derive_display_name for consistent
+        display name generation across all code paths (Feature #148).
+        """
         text = objective or task_description
-
-        # Extract first sentence
-        match = re.match(r'^([^.!?]+[.!?])', text)
-        if match:
-            display_name = match.group(1).strip()
-        else:
-            display_name = text.strip()
-
-        # Truncate if too long
-        max_length = 100
-        if len(display_name) > max_length:
-            display_name = display_name[:max_length - 3] + "..."
-
-        return display_name
+        return derive_display_name(text)
 
     def _derive_icon(self, task_type: str) -> str:
-        """Derive an icon from task type."""
-        icons = {
-            "coding": "code",
-            "testing": "test-tube",
-            "refactoring": "wrench",
-            "documentation": "book",
-            "audit": "shield",
-            "custom": "gear",
-        }
-        return icons.get(task_type, "gear")
+        """Derive an icon from task type.
+
+        Delegates to api.display_derivation.derive_icon for consistent
+        icon mapping across all code paths (Feature #148).
+        """
+        return derive_icon(task_type)
 
     def _normalize_tool_policy(self, policy: dict[str, Any]) -> dict[str, Any]:
         """Ensure tool_policy has required structure."""
@@ -960,6 +1069,7 @@ def get_spec_builder(
     model: str | None = None,
     api_key: str | None = None,
     force_new: bool = False,
+    registry: TemplateRegistry | None = None,
 ) -> SpecBuilder:
     """
     Get or create the default SpecBuilder.
@@ -968,6 +1078,9 @@ def get_spec_builder(
         model: Optional model override (only used on first call)
         api_key: Optional API key override (only used on first call)
         force_new: If True, create a new builder even if one exists
+        registry: Optional TemplateRegistry for template-aware spec
+            generation (Feature #149). Only used on first call or when
+            force_new=True.
 
     Returns:
         The default SpecBuilder instance
@@ -980,6 +1093,7 @@ def get_spec_builder(
                 model=model,
                 api_key=api_key,
                 auto_initialize=False,  # Lazy initialization
+                registry=registry,
             )
         return _default_builder
 
