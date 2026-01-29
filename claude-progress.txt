@@ -1,6 +1,44 @@
 # AutoBuildr Progress Log
 # ======================
 
+## Session: 2026-01-30 (Coding Agent - Feature #143)
+
+### Feature #143: Add composite index on agent_events(run_id, event_type) - COMPLETED
+
+**Status:** PASSING
+
+**Category:** data
+
+**Dependencies:** None
+
+**Description:** The spec requires a composite index on agent_events(run_id, event_type) for filtering events by type within a run. Added the composite index to the AgentEvent model.
+
+**Changes Made:**
+1. `api/agentspec_models.py`: Added `Index('ix_event_run_event_type', 'run_id', 'event_type')` to AgentEvent.__table_args__ (line 667)
+2. `api/database.py`: Added `_migrate_add_agent_event_run_event_type_index()` migration function for existing databases
+3. `api/database.py`: Wired migration into `create_database()` after Feature #142 migration
+
+**Verification Summary (All 4 Feature Steps Passed):**
+
+1. **Open api/agentspec_models.py and locate the AgentEvent model class** - PASS
+2. **Add a composite Index on (run_id, event_type) using __table_args__** - PASS
+3. **Ensure the existing index on (run_id, sequence) is preserved** - PASS
+4. **Verify the index is created in the database schema** - PASS (8 tests)
+
+**Test Results:**
+- tests/test_feature_143_event_composite_index.py: 8/8 PASS
+- No regressions introduced
+
+**Commit:** 1869fdf
+
+**Updated Progress:**
+- Feature #143: Add composite index on agent_events(run_id, event_type) - PASSING
+- Total: 140/150 features passing (approximately 93.3%)
+
+**Session completed successfully.**
+
+---
+
 ## Session: 2026-01-30 (Coding Agent - Feature #141)
 
 ### Feature #141: Align validator type naming: forbidden_output to forbidden_patterns - COMPLETED
@@ -10461,3 +10499,4 @@ Created comprehensive test suite:
 - Total: 141/150 features passing (94.0%)
 
 **Session completed successfully.**
+[Testing] Feature #17 regression test PASSED - all 30 unit tests pass, no regression found
