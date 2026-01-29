@@ -26,6 +26,7 @@ This module implements:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import uuid
@@ -1358,6 +1359,69 @@ class HarnessKernel:
             )
 
     # =========================================================================
+    # Feature #150: Artifact creation for large payloads
+    # =========================================================================
+
+    def _create_payload_artifact(
+        self,
+        run_id: str,
+        event_type: str,
+        sequence: int,
+        payload_str: str,
+    ) -> "Artifact":
+        """
+        Create an Artifact record for a large event payload.
+
+        Feature #150: When the kernel truncates event payloads exceeding 4KB,
+        create an artifact reference so the full content is not lost.
+
+        The EventRecorder stores artifacts to disk (file-based), but the kernel
+        stores them inline since it doesn't have a project_dir. The content is
+        stored in content_inline for payloads that fit, ensuring the full payload
+        is always retrievable via the artifact.
+
+        Args:
+            run_id: ID of the AgentRun
+            event_type: Type of event (tool_call, tool_result, etc.)
+            sequence: Event sequence number
+            payload_str: Full JSON-serialized payload string
+
+        Returns:
+            The created Artifact record
+        """
+        from api.agentspec_models import Artifact, generate_uuid
+
+        content_bytes = payload_str.encode("utf-8")
+        content_hash = hashlib.sha256(content_bytes).hexdigest()
+        size_bytes = len(content_bytes)
+
+        artifact = Artifact(
+            id=generate_uuid(),
+            run_id=run_id,
+            artifact_type="log",
+            content_hash=content_hash,
+            size_bytes=size_bytes,
+            content_inline=payload_str,
+            artifact_metadata={
+                "event_sequence": sequence,
+                "event_type": event_type,
+                "content_type": "application/json",
+                "source": "kernel_truncation",
+            },
+        )
+
+        self.db.add(artifact)
+        self.db.flush()
+
+        _logger.debug(
+            "Feature #150: Artifact created for truncated payload: "
+            "id=%s, run=%s, event_type=%s, seq=%d, size=%d",
+            artifact.id, run_id, event_type, sequence, size_bytes,
+        )
+
+        return artifact
+
+    # =========================================================================
     # Feature #25: Core execute(spec) Method
     # =========================================================================
 
@@ -1393,10 +1457,26 @@ class HarnessKernel:
         # Serialize to check size
         payload_str = json.dumps(payload, default=str)
         payload_truncated = None
+        artifact_ref = None
         if len(payload_str) > 4096:
             payload_truncated = len(payload_str)
-            # Truncate the arguments
-            payload["arguments"] = {"_truncated": True, "_original_size": len(payload_str)}
+
+            # Feature #150: Create artifact with full payload before truncating
+            artifact = self._create_payload_artifact(
+                run_id=run_id,
+                event_type="tool_call",
+                sequence=self._event_sequence,
+                payload_str=payload_str,
+            )
+            artifact_ref = artifact.id
+
+            # Truncate the arguments, noting artifact reference
+            payload["arguments"] = {
+                "_truncated": True,
+                "_original_size": len(payload_str),
+                "_artifact_ref": artifact_ref,
+                "_note": "Full payload stored in referenced artifact",
+            }
 
         event = AgentEvent(
             run_id=run_id,
@@ -1405,6 +1485,7 @@ class HarnessKernel:
             timestamp=_utc_now(),
             payload=payload,
             payload_truncated=payload_truncated,
+            artifact_ref=artifact_ref,
             tool_name=tool_name,
         )
 
@@ -1453,10 +1534,26 @@ class HarnessKernel:
         # Cap payload size at 4KB
         payload_str = json.dumps(payload, default=str)
         payload_truncated = None
+        artifact_ref = None
         if len(payload_str) > 4096:
             payload_truncated = len(payload_str)
-            # Store reference to artifact instead of truncating inline
-            payload["result"] = {"_truncated": True, "_original_size": len(payload_str)}
+
+            # Feature #150: Create artifact with full payload before truncating
+            artifact = self._create_payload_artifact(
+                run_id=run_id,
+                event_type="tool_result",
+                sequence=self._event_sequence,
+                payload_str=payload_str,
+            )
+            artifact_ref = artifact.id
+
+            # Store truncated result, noting artifact reference
+            payload["result"] = {
+                "_truncated": True,
+                "_original_size": len(payload_str),
+                "_artifact_ref": artifact_ref,
+                "_note": "Full payload stored in referenced artifact",
+            }
 
         event = AgentEvent(
             run_id=run_id,
@@ -1465,6 +1562,7 @@ class HarnessKernel:
             timestamp=_utc_now(),
             payload=payload,
             payload_truncated=payload_truncated,
+            artifact_ref=artifact_ref,
             tool_name=tool_name,
         )
 
