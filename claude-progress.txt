@@ -1,6 +1,80 @@
 # AutoBuildr Progress Log
 # ======================
 
+## Session: 2026-01-30 (Coding Agent - Feature #150)
+
+### Feature #150: Fix kernel payload truncation to create artifact references - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Dependencies:** None
+
+**Description:** The kernel truncated event payloads exceeding 4KB inline without creating artifact references, resulting in data loss. The EventRecorder correctly creates artifacts, but the kernel's own inline truncation path did not. Fixed the kernel to create an Artifact and store an artifact_ref when truncating payloads over 4KB.
+
+**Changes Made:**
+1. `api/harness_kernel.py`: Added `import hashlib` for SHA256 content hashing
+2. `api/harness_kernel.py`: Added `_create_payload_artifact()` helper method to HarnessKernel
+   - Creates Artifact record with content_inline storing the full payload
+   - Computes SHA256 content_hash, sets size_bytes, artifact_type="log"
+   - Includes artifact_metadata: event_sequence, event_type, content_type, source
+   - Uses db.flush() to make artifact.id available before event creation
+3. `api/harness_kernel.py`: Modified `_record_tool_call_event()` to:
+   - Call _create_payload_artifact() before truncating
+   - Set event.artifact_ref = artifact.id
+   - Include _artifact_ref and _note in truncated payload
+4. `api/harness_kernel.py`: Modified `_record_tool_result_event()` with same fix
+
+**Verification Summary (All 7 Feature Steps Passed):**
+
+1. **Locate kernel code handling event payload truncation** - PASS
+   - _record_tool_call_event() at line ~1428, _record_tool_result_event() at line ~1496
+
+2. **Identify where payloads over 4KB are truncated without artifact creation** - PASS
+   - Both methods had payload_truncated set but no artifact creation or artifact_ref
+
+3. **Modify truncation logic to create an Artifact record** - PASS
+   - _create_payload_artifact() creates Artifact with full payload in content_inline
+   - SHA256 hash, size_bytes, metadata all set correctly
+
+4. **Store artifact_ref on AgentEvent** - PASS
+   - event.artifact_ref = artifact.id set in both methods
+   - FK relationship navigable (event.artifact returns the Artifact)
+
+5. **Include note in truncated payload** - PASS
+   - Truncated payloads include _artifact_ref and _note: "Full payload stored in referenced artifact"
+
+6. **Verify events with large payloads have artifact references** - PASS
+   - 31/31 tests pass verifying artifact creation, ref setting, and content retrieval
+
+7. **Verify full content retrievable via artifact** - PASS
+   - artifact.content_inline stores complete JSON payload
+   - Content hash matches SHA256 of stored content
+   - size_bytes matches actual content size
+
+**Test Results:**
+- tests/test_feature_150_kernel_payload_artifact.py: 31/31 PASS
+  - TestKernelTruncationCodeExists: 3/3 (methods exist)
+  - TestPayloadTruncationThreshold: 4/4 (small not truncated, large truncated)
+  - TestArtifactCreationOnTruncation: 6/6 (artifact created, run_id, hash, metadata, no artifact for small)
+  - TestArtifactRefOnEvent: 4/4 (ref set, matches artifact, none for small)
+  - TestTruncatedPayloadNote: 4/4 (note and ref in payload for both event types)
+  - TestArtifactContentRetrieval: 4/4 (full content, hash, size verified)
+  - TestEndToEndIntegration: 6/6 (multiple artifacts, mixed events, relationships)
+- tests/test_harness_kernel.py: 56/56 PASS (zero regressions)
+- tests/test_dspy_pipeline_e2e.py: 86/88 PASS (2 pre-existing failures, unrelated)
+
+**Commit:** a5751eb
+
+**Updated Progress:**
+- Feature #150: Fix kernel payload truncation to create artifact references - PASSING
+- Total: 146/150 features passing (97.3%)
+
+**Session completed successfully.**
+
+---
+
 ## Session: 2026-01-30 (Coding Agent - Feature #146)
 
 ### Feature #146: Handle agent_spec_created WebSocket event in frontend UI - COMPLETED
@@ -10621,3 +10695,31 @@ Created comprehensive test suite:
 - Total: 144/150 features passing (96.0%)
 
 **Session completed successfully.**
+[Testing] 2026-01-30T10:06:55+11:00 - Feature #113 regression test PASSED
+  - Feature: E2E test: SpecBuilder DSPy (TestStep7 — 4 tests)
+  - Category: functional
+  - All 5 verification steps passed:
+    Step 1: TestStep7SpecBuilderDSPy class exists with 4 test methods - PASS
+    Step 2: Mock dspy.LM, dspy.ChainOfThought, dspy.configure used in all tests - PASS
+    Step 3: test_build_success_with_mock verifies BuildResult with agent_spec and acceptance_spec - PASS
+    Step 4: test_build_empty_description_fails returns failed BuildResult - PASS
+    Step 5: All 4 tests pass (pytest 4/4 in 4.66s) - PASS
+  - Source code intact: api/spec_builder.py (SpecBuilder class at line 410, BuildResult class at line 150)
+  - Test file: tests/test_dspy_pipeline_e2e.py (TestStep7SpecBuilderDSPy at line 423)
+  - API status: passes=true via /api/projects/AutoBuildr/features/113
+  - Browser automation unavailable (Chrome SIGTRAP in container)
+  - No regression found - feature still working correctly
+[Testing] 2026-01-30T10:08:36+11:00 - Feature #115 regression test PASSED
+  - Feature: E2E test: Acceptance Gate Evaluation (TestStep9 — 3 tests)
+  - Category: functional
+  - All 5 verification steps passed:
+    Step 1: TestStep9AcceptanceGateEvaluation class exists with 3 test methods - PASS
+    Step 2: AcceptanceGate.evaluate() returns passed for empty validators - PASS
+    Step 3: FileExistsValidator passes when file exists (using tmp_path) - PASS
+    Step 4: FileExistsValidator fails when file is missing - PASS
+    Step 5: All 3 tests pass (pytest 3/3 in 4.92s) - PASS
+  - Source code intact: api/validators.py (AcceptanceGate at line 1400, FileExistsValidator at line 174)
+  - Test file: tests/test_dspy_pipeline_e2e.py (TestStep9AcceptanceGateEvaluation at line 609)
+  - API status: passes=true via /api/projects/AutoBuildr/features/115
+  - Browser automation unavailable (Chrome SIGTRAP in container)
+  - No regression found - feature still working correctly
