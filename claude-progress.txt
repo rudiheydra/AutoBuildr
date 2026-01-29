@@ -1,6 +1,85 @@
 # AutoBuildr Progress Log
 # ======================
 
+## Session: 2026-01-30 (Coding Agent - Feature #133)
+
+### Feature #133: End-to-end integration: --spec flag drives full pipeline for multiple features - COMPLETED
+
+**Status:** PASSING (Feature #133 = FINAL FEATURE — 133/133 = 100%)
+
+**Category:** functional
+
+**Dependencies:** #125, #126, #127, #128, #129, #130, #131, #132 (all passing)
+
+**Description:** Capstone end-to-end integration test proving the --spec flag drives the complete pipeline for multiple features, exercising all components.
+
+**Verification Summary (All 11 Feature Steps Passed):**
+
+1. **Run orchestrator with --spec flag and multiple pending features** - PASS
+   - 4 features created with varied categories, all processed successfully
+   - All runs completed in terminal state
+
+2. **Verify features compiled into AgentSpecs via FeatureCompiler** - PASS
+   - One AgentSpec per feature with correct source_feature_id linking
+   - All required fields (name, task_type, tool_policy, objective, budget) populated
+
+3. **Verify HarnessKernel.execute() called for each compiled spec** - PASS
+   - Each AgentRun has matching agent_spec_id FK to compiled spec
+   - Runs persisted in DB correctly
+
+4. **Verify turn executor bridges to Claude SDK (AI turns executed)** - PASS
+   - turns_used >= 1 for all runs
+   - Token tracking (tokens_in, tokens_out) populated
+   - turn_complete events recorded
+
+5. **Verify tool policy applied during execution** - PASS
+   - Each spec has allowed_tools and forbidden_patterns in tool_policy
+   - tool_call/tool_result events prove policy enforcement path active
+
+6. **Verify acceptance gate runs validators and produces verdict** - PASS
+   - final_verdict set for all runs (passed/failed/partial)
+   - acceptance_check events with verdict in payload
+
+7. **Verify Feature.passes updated based on verdict** - PASS
+   - in_progress cleared to False for all features
+   - passes matches expected value based on verdict
+
+8. **Verify agent_specs, agent_runs, agent_events tables populated** - PASS
+   - >= 4 AgentSpec, >= 4 AgentRun, >= 12 AgentEvent rows
+   - Every run has >= 3 events
+
+9. **Verify at least 3 distinct task_type values** - PASS
+   - 4 distinct types: coding, testing, documentation, audit
+   - One per category as expected
+
+10. **Legacy path (without --spec) still works** - PASS
+    - autonomous_agent_demo.py contains both code paths
+    - --spec flag, AUTOBUILDR_MODE env var, spec_mode branching verified
+    - Legacy path prints "Using legacy execution", spec path prints "Using spec-driven execution"
+
+11. **Low max_turns budget terminates correctly** - PASS
+    - spec.max_turns=2, never-completing executor → status='timeout' (NOT 'failed')
+    - Exactly 2 turns used
+    - timeout event with reason='max_turns_exceeded', turns_used=2
+    - Acceptance validators still run after budget exhaustion (graceful termination)
+
+**Test Results:**
+- TestEndToEndSpecFlagFullPipeline: 11/11 tests PASS
+- Full suite: 88/88 tests pass (no regressions)
+
+**No production code changes needed** — all pipeline infrastructure already existed.
+Tests prove the full end-to-end integration.
+
+**Commit:** 9313f7b
+
+**Updated Progress:**
+- Feature #133: End-to-end integration: --spec flag full pipeline - PASSING
+- Total: 133/133 features passing (100% — ALL FEATURES COMPLETE!)
+
+**Session completed successfully. PROJECT COMPLETE!**
+
+---
+
 ## Session: 2026-01-30 (Coding Agent - Feature #132)
 
 ### Feature #132: Spec-path run persists agent_specs, agent_runs, agent_events, and artifacts - COMPLETED
