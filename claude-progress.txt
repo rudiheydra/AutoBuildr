@@ -1,6 +1,74 @@
 # AutoBuildr Progress Log
 # ======================
 
+## Session: 2026-01-30 (Coding Agent - Feature #149)
+
+### Feature #149: Integrate TemplateRegistry into DSPy SpecBuilder pipeline - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Dependencies:** None
+
+**Description:** The TemplateRegistry module exists and loads skill templates from the prompts/ directory, but it was only used by static_spec_adapter.py. The spec intended for the DSPy SpecBuilder pipeline to use templates for task-specific context. Integrated TemplateRegistry into the SpecBuilder so compiled specs benefit from template context.
+
+**Changes Made:**
+1. `api/spec_builder.py`:
+   - Added `registry` parameter to `SpecBuilder.__init__()` (TemplateRegistry instance)
+   - Added `registry` property (getter/setter) for post-construction config
+   - Added `_get_template_context()` method that:
+     - Queries TemplateRegistry for matching template by task_type
+     - Interpolates template variables using context dict (non-strict mode)
+     - Returns dict with template_content, template_task_type, template_tools, template_defaults
+     - Gracefully handles missing templates and interpolation errors
+   - Modified `build()` to enrich project_context with template_context before DSPy execution
+   - Updated `get_spec_builder()` singleton to accept registry parameter
+
+**Verification Summary (All 6 Feature Steps Passed):**
+
+1. **Locate the SpecBuilder/DSPy pipeline module** - PASS
+   - SpecBuilder importable, has build() method, accepts registry parameter
+
+2. **Locate the TemplateRegistry module** - PASS
+   - TemplateRegistry importable, loads 3 templates from prompts/ (coding, testing, documentation)
+
+3. **SpecBuilder queries TemplateRegistry by task_type during build()** - PASS
+   - Build with task_type='coding' includes template_context in DSPy input
+   - Build with task_type='testing' includes testing template
+   - Build with unknown task_type succeeds without template_context
+
+4. **Template content included as additional context in DSPy input** - PASS
+   - Template content (10,391 chars for coding), tools, defaults all present
+   - Original context preserved alongside template_context
+
+5. **Template variable interpolation works correctly** - PASS
+   - Variables like {{project_name}} resolved from context dict
+   - Missing variables left as-is (non-strict mode)
+   - Interpolation errors fallback to raw content
+
+6. **Compiling with template produces richer output than without** - PASS
+   - Without template: 23 chars context
+   - With template: 10,891 chars context (+10,868 chars, 47,252% richer)
+   - Backward compatibility maintained (builds without registry succeed)
+
+**Test Results:**
+- tests/test_feature_149_template_registry_integration.py: 36/36 PASS
+- tests/verify_feature_149.py: 6/6 steps PASS
+- tests/test_feature_54_spec_builder.py: 69/69 PASS (zero regressions)
+- tests/test_template_registry.py: 54/54 PASS (zero regressions)
+- Total related: 159/159 tests pass
+
+**Commit:** c349813
+
+**Updated Progress:**
+- Feature #149: Integrate TemplateRegistry into DSPy SpecBuilder pipeline - PASSING
+- Browser automation unavailable (Chrome SIGTRAP in container)
+
+**Session completed successfully.**
+
+---
+
 ## Session: 2026-01-30 (Coding Agent - Feature #150)
 
 ### Feature #150: Fix kernel payload truncation to create artifact references - COMPLETED
@@ -10721,5 +10789,23 @@ Created comprehensive test suite:
   - Source code intact: api/validators.py (AcceptanceGate at line 1400, FileExistsValidator at line 174)
   - Test file: tests/test_dspy_pipeline_e2e.py (TestStep9AcceptanceGateEvaluation at line 609)
   - API status: passes=true via /api/projects/AutoBuildr/features/115
+  - Browser automation unavailable (Chrome SIGTRAP in container)
+  - No regression found - feature still working correctly
+[Testing] 2026-01-30T10:09:50+11:00 - Feature #79 regression test PASSED
+  - Feature: Orphaned Run Cleanup on Startup
+  - Category: J. Data Cleanup & Cascade
+  - All 6 verification steps passed:
+    Step 1: Query runs where status in (running, pending) - PASS (8 unit tests)
+    Step 2: Check if started_at older than max timeout - PASS (7 unit tests)
+    Step 3: For stale runs, set status to failed - PASS (6 unit tests)
+    Step 4: Set error to orphaned_on_restart - PASS (constant verified)
+    Step 5: Record failed event - PASS (2 unit tests)
+    Step 6: Log cleanup actions - PASS (2 unit tests)
+  - Unit tests: 45/45 PASS (test_feature_79_orphaned_run_cleanup.py in 5.55s)
+  - Integration tests: 3/3 PASS (test_feature_79_integration.py in 4.64s)
+  - Server startup: cleanup_orphaned_runs called in server/main.py lifespan (lines 82-97)
+  - API exports: 9 symbols in api/__init__.py (verified)
+  - Live server: 0 orphaned runs in database (cleanup working)
+  - Source code intact: api/orphaned_run_cleanup.py (459 lines, all functions verified)
   - Browser automation unavailable (Chrome SIGTRAP in container)
   - No regression found - feature still working correctly
