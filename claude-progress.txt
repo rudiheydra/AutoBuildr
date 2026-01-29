@@ -1,6 +1,72 @@
 # AutoBuildr Progress Log
 # ======================
 
+## Session: 2026-01-30 (Coding Agent - Feature #131)
+
+### Feature #131: Verdict syncs back to Feature.passes after kernel run - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Dependencies:** #130 (Acceptance gate evaluates validators) - passing
+
+**Description:** After HarnessKernel returns an AgentRun with a final_verdict, the --spec orchestrator syncs the result back to the originating Feature record. If final_verdict is 'passed', Feature.passes is set to True. If final_verdict is 'failed' or 'error', Feature.passes is set to False. In all cases, Feature.in_progress is cleared to False.
+
+**Verification Summary (All 6 Feature Steps Passed):**
+
+1. **Verify the orchestrator reads AgentRun.final_verdict after kernel execution** - PASS
+   - test_step1_orchestrator_reads_final_verdict: Creates feature, compiles to spec, executes via kernel
+   - Verifies AgentRun.final_verdict is set (passed/failed/partial)
+   - SpecOrchestrator.sync_verdict() reads and syncs verdict to Feature.passes
+
+2. **Verify that when final_verdict='passed', Feature.passes is set to True in the database** - PASS
+   - test_step2_passed_verdict_sets_feature_passes_true: Both file_exists validators pass
+   - Pre-condition: Feature.passes=False
+   - Post-sync: Feature.passes=True (verified both via refresh and DB query)
+
+3. **Verify that when final_verdict='failed', Feature.passes is not set to True** - PASS
+   - test_step3_failed_verdict_does_not_set_passes_true: No files exist -> both validators fail
+   - verdict='failed' -> Feature.passes remains False
+   - Verified via refresh and direct DB query
+
+4. **Verify that Feature.in_progress is set to False regardless of verdict** - PASS
+   - test_step4_in_progress_cleared_regardless_of_verdict: Tests both 'passed' and 'failed' cases
+   - Case A: passed verdict -> in_progress=False
+   - Case B: failed verdict -> in_progress=False
+
+5. **Verify the feature update uses the source_feature_id from the AgentSpec** - PASS
+   - test_step5_uses_source_feature_id_from_agentspec: Compiles Feature #3105
+   - Verifies AgentSpec.source_feature_id == 3105
+   - Looks up Feature via source_feature_id, syncs verdict to correct Feature
+
+6. **Verify this works correctly for multiple features processed in sequence** - PASS
+   - test_step6_multiple_features_processed_in_sequence: Processes 3 features
+   - Feature A: passed -> passes=True, in_progress=False
+   - Feature B: failed -> passes=False, in_progress=False
+   - Feature C: passed -> passes=True, in_progress=False
+   - DB counts verified: >=2 passing, 0 in_progress
+
+**Test Results:**
+- tests/test_dspy_pipeline_e2e.py::TestVerdictSyncsBackToFeature: 6/6 tests PASS
+- Full suite: 68/68 tests pass (no regressions)
+
+**Production Code (already existed):**
+- api/spec_orchestrator.py: SpecOrchestrator.sync_verdict() (lines 415-432)
+- api/spec_orchestrator.py: SpecOrchestrator.run_one_feature() (lines 438-475) - calls sync_verdict
+- api/harness_kernel.py: HarnessKernel.execute() returns AgentRun with final_verdict
+- api/agentspec_models.py: AgentSpec.source_feature_id FK to Feature
+
+**No code changes needed** - tests and implementation already existed and passed.
+
+**Updated Progress:**
+- Feature #131: Verdict syncs back to Feature.passes - PASSING
+- Total: 131/133 features passing (approximately 98.5%)
+
+**Session completed successfully.**
+
+---
+
 ## Session: 2026-01-30 (Coding Agent - Feature #129)
 
 ### Feature #129: Tool policy enforcement filters tools and blocks forbidden patterns - COMPLETED
@@ -9441,5 +9507,89 @@ Created comprehensive test suite:
 **Updated Progress:**
 - Feature #130: Acceptance gate evaluates validators and determines final verdict - PASSING
 - Total: 129/133 features passing (approximately 96.99 percent)
+
+**Session completed successfully.**
+[Testing] 2026-01-30 08:42:20 - Feature #110 regression test PASSED
+  - Feature: E2E test: Spec Name Generation (TestStep4 — 4 tests)
+  - Category: functional
+  - All 5 verification steps passed:
+    Step 1: Create test class TestStep4NameGeneration with 4 test methods - PASS
+    Step 2: Test generate_spec_name() returns URL-safe string - PASS
+    Step 3: Test name does not exceed 100 characters - PASS
+    Step 4: Test name starts with task_type prefix - PASS
+    Step 5: All 4 tests pass: pytest TestStep4NameGeneration -v (4/4 in 3.56s) - PASS
+  - Source code intact: api/spec_name_generator.py (516 lines)
+    - generate_spec_name() function (lines 261-317)
+    - SPEC_NAME_MAX_LENGTH = 100 constant
+    - SPEC_NAME_PATTERN regex validates URL-safe format
+    - extract_keywords(), generate_slug(), normalize_slug() helpers present
+  - Test file: tests/test_dspy_pipeline_e2e.py
+    - TestStep4NameGeneration class (lines 300-322)
+    - 4 test methods: url_safe, length_limit, task_type_prefix, lowercase
+    - Imports generate_spec_name from api.spec_name_generator (line 49)
+  - Full suite: 62/62 tests pass (no regressions, 1 warning)
+  - Browser automation unavailable (Chrome launch failure in container)
+  - No regression found - feature still working correctly
+
+---
+
+## Session: 2026-01-30 (Coding Agent - Feature #131)
+
+### Feature #131: Verdict syncs back to Feature.passes after kernel run - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Dependencies:** #130 (Acceptance gate evaluates validators) - passing
+
+**Description:** After HarnessKernel returns an AgentRun with a final_verdict, the --spec orchestrator syncs the result back to the originating Feature record. If final_verdict='passed', Feature.passes is set to True. If final_verdict='failed' or 'error', Feature.passes remains unchanged. In all cases, Feature.in_progress is cleared to False.
+
+**Verification Summary (All 6 Feature Steps Passed):**
+
+1. **Verify the orchestrator reads AgentRun.final_verdict after kernel execution** - PASS
+   - test_step1_orchestrator_reads_final_verdict: Creates feature, compiles to spec, executes kernel
+   - Verifies run.final_verdict is set and sync_verdict() correctly reads it
+   - Feature.passes updated to True after 'passed' verdict
+
+2. **Verify that when final_verdict='passed', Feature.passes is set to True in DB** - PASS
+   - test_step2_passed_verdict_sets_feature_passes_true: Both validators pass
+   - Pre-condition: passes=False, Post-condition: passes=True
+   - Double-checked via direct DB query
+
+3. **Verify that when final_verdict='failed', Feature.passes is not set to True** - PASS
+   - test_step3_failed_verdict_does_not_set_passes_true: No files → both validators fail
+   - verdict='failed' → Feature.passes remains False
+   - Double-checked via direct DB query
+
+4. **Verify that Feature.in_progress is set to False regardless of verdict** - PASS
+   - test_step4_in_progress_cleared_regardless_of_verdict: Tests both cases
+   - Case A: 'passed' verdict → in_progress=False
+   - Case B: 'failed' verdict → in_progress=False
+
+5. **Verify the feature update uses source_feature_id from AgentSpec** - PASS
+   - test_step5_uses_source_feature_id_from_agentspec
+   - Verified spec.source_feature_id == feature.id (3105)
+   - Used source_feature_id to find correct Feature in DB
+   - Synced verdict to correct feature
+
+6. **Verify this works for multiple features processed in sequence** - PASS
+   - test_step6_multiple_features_processed_in_sequence
+   - Feature A: both pass → passes=True, in_progress=False
+   - Feature B: both fail → passes=False, in_progress=False
+   - Feature C: both pass → passes=True, in_progress=False
+   - All 3 features correctly isolated, no state bleeding
+
+**Test Results:**
+- tests/test_dspy_pipeline_e2e.py::TestVerdictSyncsBackToFeature: 6/6 tests PASS
+- Full suite: 68/68 tests pass (no regressions)
+
+**No production code changes needed** — sync_verdict() already existed in api/spec_orchestrator.py. Tests prove the behavior end-to-end.
+
+**Commit:** 055787b
+
+**Updated Progress:**
+- Feature #131: Verdict syncs back to Feature.passes after kernel run - PASSING
+- Total: 130/133 features passing (approximately 97.7%)
 
 **Session completed successfully.**
