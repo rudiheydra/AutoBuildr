@@ -9683,3 +9683,62 @@ Created comprehensive test suite:
   - API server healthy on port 8888
   - Browser automation unavailable (Chrome launch failure in container)
   - No regression found - feature still working correctly
+
+---
+
+## Session: 2026-01-30 (Coding Agent - Feature #132)
+
+### Feature #132: Spec-path run persists agent_specs, agent_runs, agent_events, and artifacts - COMPLETED
+
+**Status:** PASSING
+
+**Category:** data
+
+**Dependencies:** #128 (HarnessKernel budget enforcement), #130 (Acceptance gate), #131 (Verdict sync) - all passing
+
+**Description:** After a --spec orchestrator run completes (even partially), the database contains fully populated records across all kernel tables.
+
+**Verification Summary (All 9 Feature Steps Passed):**
+
+1. **agent_specs one row per processed feature** - PASS
+   - Created 4 features with different categories, compiled to AgentSpecs, executed via HarnessKernel
+   - Verified one AgentSpec row per feature with correct source_feature_id linking
+
+2. **agent_spec has all required fields** - PASS
+   - Verified name, display_name, objective, task_type (in TASK_TYPES), tool_policy (JSON with allowed_tools), max_turns >= 1, timeout_seconds >= 60, source_feature_id
+
+3. **agent_runs one row per execution with terminal status** - PASS
+   - Each run has status in (completed/failed/timeout), started_at not null, completed_at not null, turns_used > 0
+
+4. **agent_runs.tokens_in and tokens_out populated** - PASS
+   - All runs have tokens_in > 0 and tokens_out > 0 (from mock executor providing 200/100 per turn)
+
+5. **agent_events sequentially ordered** - PASS
+   - Events within each run_id have strictly ascending sequence numbers
+
+6. **Required event_types present** - PASS
+   - Each run has: 'started', 'tool_call' or 'tool_result', 'acceptance_check', and one of 'completed'/'failed'/'timeout'
+
+7. **Events have correct run_id FK references** - PASS
+   - All events for a run have matching run_id foreign key
+
+8. **At least 3 distinct task_type values** - PASS
+   - 4 distinct task_types: coding, testing, documentation, audit
+   - From categories: A. Database → coding, testing → testing, documentation → documentation, Security → audit
+
+9. **Artifacts with content_hash (SHA256)** - PASS
+   - Small artifact (inline): content_hash is 64 hex chars, content_inline populated, content_ref is None
+   - Large artifact (file-based): content_hash is 64 hex chars, content_ref populated, content_inline is None
+   - Both have size_bytes set correctly
+
+**Test Results:**
+- tests/test_dspy_pipeline_e2e.py::TestSpecPathPersistence: 9/9 tests PASS
+- Full suite: 77/77 tests pass (no regressions)
+
+**No production code changes** — the test purely proves existing infrastructure works end-to-end.
+
+**Updated Progress:**
+- Feature #132: Spec-path run persists agent_specs, agent_runs, agent_events, and artifacts - PASSING
+- Total: 132/133 features passing (approximately 99.2%)
+
+**Session completed successfully.**
