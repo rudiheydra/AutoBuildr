@@ -589,7 +589,7 @@ class StaticSpecAdapter:
             ),
             # No console errors during verification
             create_validator(
-                validator_type="forbidden_output",
+                validator_type="forbidden_patterns",
                 config={
                     "patterns": [
                         r"ERROR",

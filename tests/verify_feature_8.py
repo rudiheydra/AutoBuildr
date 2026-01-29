@@ -92,7 +92,7 @@ def verify_step_1_validator_config():
         print("  [PASS] Rejects invalid validator type")
 
     # Test all valid validator types
-    for vtype in ["test_pass", "file_exists", "lint_clean", "forbidden_output", "custom"]:
+    for vtype in ["test_pass", "file_exists", "lint_clean", "forbidden_patterns", "custom"]:
         v = Validator(type=vtype, config={})
         assert v.type == vtype
     print(f"  [PASS] All validator types work: {list(VALIDATOR_TYPES.__args__)}")

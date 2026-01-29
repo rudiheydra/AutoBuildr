@@ -90,7 +90,7 @@ class SpecGenerationSignature(dspy.Signature):
         validators_json: JSON string containing acceptance validators.
             Array of validator objects, each with:
             {
-                "type": "test_pass|file_exists|lint_clean|forbidden_output|custom",
+                "type": "test_pass|file_exists|lint_clean|forbidden_patterns|custom",
                 "config": {...},
                 "weight": 1.0,
                 "required": false
@@ -205,7 +205,7 @@ class SpecGenerationSignature(dspy.Signature):
     validators_json: str = dspy.OutputField(
         desc=(
             "JSON array of acceptance validators. Each validator: "
-            "{\"type\": \"test_pass|file_exists|lint_clean|forbidden_output|custom\", "
+            "{\"type\": \"test_pass|file_exists|lint_clean|forbidden_patterns|custom\", "
             "\"config\": {...}, \"weight\": 1.0, \"required\": false}. "
             "Include at least one validator. test_pass is common for coding tasks."
         )
