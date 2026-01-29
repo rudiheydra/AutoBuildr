@@ -1,6 +1,43 @@
 # AutoBuildr Progress Log
 # ======================
 
+## Session: 2026-01-30 (Coding Agent - Feature #141)
+
+### Feature #141: Align validator type naming: forbidden_output to forbidden_patterns - COMPLETED
+
+**Status:** PASSING
+
+**Category:** data
+
+**Description:** Fixed naming mismatch where VALIDATOR_TYPES in agentspec_models.py used 'forbidden_output' while validators.py registered the class as 'forbidden_patterns'. Aligned all references to use 'forbidden_patterns' consistently.
+
+**Files Changed:**
+1. `api/agentspec_models.py` - VALIDATOR_TYPES constant, AcceptanceSpec docstring, validator comment (already committed by another agent)
+2. `server/schemas/agentspec.py` - Pydantic VALIDATOR_TYPES Literal (already committed by another agent)
+3. `api/dspy_signatures.py` - Two DSPy signature field descriptions updated
+4. `api/static_spec_adapter.py` - create_validator() call updated
+5. `tests/verify_feature_8.py` - Test validator type list updated
+
+**Verification:**
+- All 7 verification steps passed (comprehensive Python script)
+- VALIDATOR_TYPES constant: forbidden_patterns present, forbidden_output removed
+- VALIDATOR_REGISTRY: forbidden_patterns present, forbidden_output absent
+- Pydantic Literal type: forbidden_patterns present, forbidden_output absent
+- create_validator('forbidden_patterns', ...) works correctly
+- create_validator('forbidden_output', ...) correctly rejected with ValueError
+- ForbiddenPatternsValidator.validator_type == 'forbidden_patterns'
+- All registry types are subset of VALIDATOR_TYPES
+- No remaining 'forbidden_output' references in source code (only docs/PROJECT_STATUS.md history)
+- 3597+ tests pass, no regressions introduced (pre-existing failures unrelated)
+
+**Commit:** ff7d414
+
+**Updated Progress:**
+- Feature #141: Align validator type naming: forbidden_output to forbidden_patterns - PASSING
+- Total: ~138/150 features passing
+
+---
+
 ## Session: 2026-01-30 (Coding Agent - Feature #139)
 
 ### Feature #139: Fix final_verdict enum to use 'error' instead of 'partial' - COMPLETED
@@ -10367,3 +10404,60 @@ Created comprehensive test suite:
   - API server healthy on port 8888
   - Browser automation unavailable (Chrome SIGTRAP in container)
   - No regression found - feature still working correctly
+
+---
+
+## Session: 2026-01-30 (Coding Agent - Feature #145)
+
+### Feature #145: Add GET /api/artifacts/:id metadata endpoint - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Dependencies:** None
+
+**Description:** The spec requires both GET /api/artifacts/:id (metadata) and GET /api/artifacts/:id/content (download). Previously only the /content endpoint existed. Added the metadata endpoint that returns artifact metadata without the content body.
+
+**Changes Made:**
+1. `server/routers/artifacts.py`: Added `get_artifact_metadata` endpoint at `GET /api/artifacts/{artifact_id}`
+   - Returns `ArtifactListItemResponse` with fields: id, run_id, artifact_type, path, content_ref, content_hash, size_bytes, created_at, metadata, has_inline_content
+   - Does NOT include content_inline (metadata only)
+   - Returns 404 for non-existent artifacts
+   - Maps SQLAlchemy `artifact_metadata` column to schema `metadata` field
+   - Computes `has_inline_content` boolean flag
+
+2. No schema changes needed — reused existing `ArtifactListItemResponse` from `server/schemas/agentspec.py`
+
+**Verification Summary (All 5 Feature Steps Passed):**
+
+1. **Open server/routers/artifacts.py** - PASS
+   - Located existing /content endpoint, added metadata endpoint before it
+
+2. **Add GET /api/artifacts/{artifact_id} endpoint returning metadata** - PASS
+   - Returns id, run_id, artifact_type, content_hash, size_bytes, metadata, created_at
+   - Uses ArtifactListItemResponse which excludes content_inline
+
+3. **Ensure response schema includes all metadata fields** - PASS
+   - Schema verified via OpenAPI generation: 10 fields, no content_inline
+
+4. **Verify 404 for non-existent artifacts** - PASS
+   - HTTP test confirms 404 with "not found" detail message
+
+5. **Verify for both inline and file-based artifacts** - PASS
+   - Inline artifact: has_inline_content=True, metadata correct
+   - File artifact: has_inline_content=False, content_ref populated, metadata correct
+
+**Test Results:**
+- tests/test_feature_145_artifact_metadata.py: 9/9 tests PASS
+  - TestArtifactMetadataEndpointLogic: 5/5 (route exists, inline metadata, file metadata, 404, schema fields)
+  - TestArtifactMetadataEndpointHTTP: 4/4 (inline HTTP, file HTTP, 404 HTTP, both endpoints coexist)
+- No regressions: 41 total tests pass with feature #14 tests included
+
+**Commit:** 462c957
+
+**Updated Progress:**
+- Feature #145: Add GET /api/artifacts/:id metadata endpoint - PASSING
+- Total: 141/150 features passing (94.0%)
+
+**Session completed successfully.**
