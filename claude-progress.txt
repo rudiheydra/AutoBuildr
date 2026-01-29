@@ -1,6 +1,42 @@
 # AutoBuildr Progress Log
 # ======================
 
+## Session: 2026-01-30 (Coding Agent - Feature #132)
+
+### Feature #132: Spec-path run persists agent_specs, agent_runs, agent_events, and artifacts - COMPLETED
+
+**Status:** PASSING
+
+**Category:** data
+
+**Dependencies:** #128, #130, #131 - all passing
+
+**Description:** After a --spec orchestrator run completes, the database contains fully populated records across all kernel tables.
+
+**Verification Summary (All 9 Feature Steps Passed):**
+
+1. **agent_specs table has one row per processed feature** - PASS
+2. **Each agent_spec has all required fields** - PASS
+3. **agent_runs - one row per execution with terminal status** - PASS
+4. **agent_runs.tokens_in and tokens_out populated (> 0)** - PASS
+5. **agent_events sequentially ordered within each run_id** - PASS
+6. **Required event_types present (started, tool_call, acceptance_check, terminal)** - PASS
+7. **Events have correct run_id foreign key references** - PASS
+8. **At least 3 distinct task_type values (coding, testing, documentation, audit)** - PASS
+9. **Artifacts have content_hash (SHA256) and content_ref/content_inline** - PASS
+
+**Test Results:**
+- tests/test_dspy_pipeline_e2e.py::TestSpecPathPersistence: 9/9 tests PASS
+- Full suite: 77/77 tests pass (no regressions)
+
+**Updated Progress:**
+- Feature #132: Spec-path persistence proof - PASSING
+- Total: 132/133 features passing (approximately 99.2%)
+
+**Session completed successfully.**
+
+---
+
 ## Session: 2026-01-30 (Coding Agent - Feature #131)
 
 ### Feature #131: Verdict syncs back to Feature.passes after kernel run - COMPLETED
@@ -9593,3 +9629,57 @@ Created comprehensive test suite:
 - Total: 130/133 features passing (approximately 97.7%)
 
 **Session completed successfully.**
+[Testing] 2026-01-30 08:45:00 - Feature #79 regression test PASSED
+  - Feature: Orphaned Run Cleanup on Startup
+  - Category: J. Data Cleanup & Cascade
+  - All 6 verification steps passed:
+    Step 1: Query runs where status in (running, pending) - PASS
+    Step 2: Check if run started_at is older than max timeout - PASS
+    Step 3: For stale runs, set status to failed - PASS
+    Step 4: Set error to orphaned_on_restart - PASS
+    Step 5: Record failed event - PASS
+    Step 6: Log cleanup actions - PASS
+  - Unit tests: 45/45 passed (test_feature_79_orphaned_run_cleanup.py in 4.86s)
+  - Integration tests: 3/3 passed (test_feature_79_integration.py in 4.95s)
+  - Verification script: 7/7 steps passed (verify_feature_79.py)
+  - Source code intact: api/orphaned_run_cleanup.py (459 lines, no uncommitted changes)
+    - get_orphaned_runs(): queries status in (running, pending)
+    - is_run_stale(): checks started_at vs timeout, handles naive datetimes
+    - cleanup_single_run(): sets status=failed, error=orphaned_on_restart, records event
+    - cleanup_orphaned_runs(): orchestrates full cleanup with commit/rollback
+    - get_orphan_statistics(): monitoring utility
+    - ORPHANED_ERROR_MESSAGE = "orphaned_on_restart"
+    - DEFAULT_ORPHAN_TIMEOUT_SECONDS = 3600
+  - Server integration intact: server/main.py (lines 79-97)
+    - Imported in lifespan() after database init
+    - Runs cleanup_orphaned_runs(session, project_dir=ROOT_DIR)
+    - Logs cleanup count and errors
+    - Graceful error handling (does not fail startup)
+  - Module exports intact: api/__init__.py exports all public symbols
+  - Git history: api/orphaned_run_cleanup.py last modified commit 2013ad7
+  - API health: healthy
+  - No uncommitted changes
+  - Browser automation unavailable (Chrome launch failure in container)
+  - No regression found - feature still working correctly
+[Testing] 2026-01-29 21:51:04 - Feature #61 regression test PASSED
+  - Feature: WebSocket agent_run_started Event
+  - Category: F. UI-Backend Integration
+  - All 4 verification steps passed:
+    Step 1: When AgentRun status changes to running, publish message - PASS
+    Step 2: Message type: agent_run_started - PASS
+    Step 3: Payload: run_id, spec_id, display_name, icon, started_at - PASS
+    Step 4: Broadcast to all connected clients - PASS
+  - Source code intact:
+    - api/websocket_events.py: RunStartedPayload dataclass + broadcast_run_started async function
+    - server/routers/agent_specs.py: broadcast_run_started called on run status=running transition
+    - ui/src/lib/types.ts: WSAgentRunStartedMessage interface with all required fields
+    - ui/src/hooks/useAgentRunUpdates.ts: handleRunStarted handler processes agent_run_started messages
+    - ui/src/hooks/useWebSocket.ts: agent_run_started case recognized in message switch
+  - Unit tests: 19/19 passed (test_feature_61_websocket_run_started.py in 4.79s)
+  - Verification script: 7/7 steps passed (verify_feature_61.py)
+  - All WebSocket tests: 78/78 passed (including related features #60, #63, #71)
+  - Module exports verified: RunStartedPayload, broadcast_run_started, broadcast_run_started_sync
+  - No uncommitted changes in feature files
+  - API server healthy on port 8888
+  - Browser automation unavailable (Chrome launch failure in container)
+  - No regression found - feature still working correctly

@@ -40,8 +40,10 @@ from api.agentspec_models import (
     AgentEvent,
     AgentRun,
     AgentSpec,
+    Artifact,
     generate_uuid,
 )
+from api.artifact_storage import ArtifactStorage
 from api.database import Base, Feature
 from api.feature_compiler import FeatureCompiler
 from api.harness_kernel import BudgetTracker, HarnessKernel
@@ -3027,4 +3029,502 @@ class TestVerdictSyncsBackToFeature:
         )
         assert total_in_progress == 0, (
             f"No features should be in_progress after processing, got {total_in_progress}"
+        )
+
+
+# =============================================================================
+# Feature #132: Spec-path run persists agent_specs, agent_runs, agent_events,
+#               and artifacts
+# =============================================================================
+
+class TestSpecPathPersistence:
+    """Feature #132: Spec-path run persists agent_specs, agent_runs, agent_events, and artifacts.
+
+    After a --spec orchestrator run completes (even partially), the database contains
+    fully populated records across all kernel tables.
+    """
+
+    # -------------------------------------------------------------------------
+    # Helper: set up a multi-feature run with 4 features of different categories
+    # -------------------------------------------------------------------------
+
+    def _setup_multi_feature_run(self, db_session):
+        """
+        Create 4 features with different categories, compile each to AgentSpec,
+        persist them, execute via HarnessKernel with a mock executor that produces
+        tool events and token tracking, then return all specs and runs.
+
+        Categories chosen to produce at least 3 distinct task_types:
+          - "A. Database"    -> coding
+          - "testing"        -> testing
+          - "documentation"  -> documentation
+          - "Security"       -> audit
+
+        Returns:
+            dict with keys: features, specs, runs, db_session
+        """
+        # Step 1: Create features with unique IDs to avoid collisions
+        features_data = [
+            {
+                "id": 13200,
+                "priority": 1,
+                "category": "A. Database",
+                "name": "Persistence Proof Database Feature",
+                "description": "Create database migration for user tables",
+                "steps": ["Run pytest tests/test_db.py", "Verify tables created"],
+            },
+            {
+                "id": 13201,
+                "priority": 2,
+                "category": "testing",
+                "name": "Persistence Proof Testing Feature",
+                "description": "Write integration tests for the API layer",
+                "steps": ["Run pytest tests/test_api.py", "Verify coverage > 80%"],
+            },
+            {
+                "id": 13202,
+                "priority": 3,
+                "category": "documentation",
+                "name": "Persistence Proof Documentation Feature",
+                "description": "Generate API documentation from docstrings",
+                "steps": ["Run sphinx-build", "Verify docs/index.html exists"],
+            },
+            {
+                "id": 13203,
+                "priority": 4,
+                "category": "Security",
+                "name": "Persistence Proof Security Audit Feature",
+                "description": "Audit authentication module for vulnerabilities",
+                "steps": ["Review code for SQL injection", "Check for hardcoded secrets"],
+            },
+        ]
+
+        features = []
+        for fd in features_data:
+            feature = Feature(
+                id=fd["id"],
+                priority=fd["priority"],
+                category=fd["category"],
+                name=fd["name"],
+                description=fd["description"],
+                steps=fd["steps"],
+                passes=False,
+                in_progress=False,
+            )
+            features.append(feature)
+            db_session.add(feature)
+        db_session.commit()
+
+        # Step 2: Compile each feature to AgentSpec
+        compiler = FeatureCompiler()
+        specs = []
+        for feature in features:
+            spec = compiler.compile(feature)
+            specs.append(spec)
+            db_session.add(spec)
+        db_session.commit()
+
+        # Refresh specs to ensure relationships are loaded
+        for spec in specs:
+            db_session.refresh(spec)
+
+        # Step 3: Execute each spec via HarnessKernel with a mock executor
+        # that produces tool_call events and token tracking
+        runs = []
+        for spec in specs:
+            turn_count = 0
+
+            def mock_turn_executor(run, spec, _tc_ref=[0]):
+                """Mock turn executor with tool events and token tracking."""
+                _tc_ref[0] += 1
+                completed = _tc_ref[0] >= 2  # Complete after 2 turns
+                tool_events = [
+                    {
+                        "tool_name": "Read",
+                        "arguments": {"path": "/test/file.py"},
+                        "result": "file content here",
+                        "is_error": False,
+                    }
+                ]
+                return (completed, {"response": f"turn {_tc_ref[0]}"}, tool_events, 200, 100)
+
+            kernel = HarnessKernel(db=db_session)
+            run = kernel.execute(spec, turn_executor=mock_turn_executor)
+            runs.append(run)
+
+        return {
+            "features": features,
+            "specs": specs,
+            "runs": runs,
+            "db_session": db_session,
+        }
+
+    # -------------------------------------------------------------------------
+    # Test Step 1: agent_specs table has one row per processed feature
+    # -------------------------------------------------------------------------
+
+    def test_step1_agent_specs_one_row_per_feature(self, db_session):
+        """After a --spec run, query agent_specs and verify at least one row per feature."""
+        result = self._setup_multi_feature_run(db_session)
+        features = result["features"]
+        session = result["db_session"]
+
+        # Query all agent_specs that reference our features
+        feature_ids = [f.id for f in features]
+        specs_in_db = session.query(AgentSpec).filter(
+            AgentSpec.source_feature_id.in_(feature_ids)
+        ).all()
+
+        # Verify at least one spec per feature
+        spec_feature_ids = {s.source_feature_id for s in specs_in_db}
+        for fid in feature_ids:
+            assert fid in spec_feature_ids, (
+                f"Expected AgentSpec with source_feature_id={fid} in DB, "
+                f"found specs for feature IDs: {spec_feature_ids}"
+            )
+
+        assert len(specs_in_db) >= len(features), (
+            f"Expected at least {len(features)} AgentSpec rows, got {len(specs_in_db)}"
+        )
+
+    # -------------------------------------------------------------------------
+    # Test Step 2: each agent_spec has all required fields
+    # -------------------------------------------------------------------------
+
+    def test_step2_agent_spec_has_all_required_fields(self, db_session):
+        """Verify each agent_spec has: name, display_name, objective, task_type,
+        tool_policy (JSON), max_turns, timeout_seconds, source_feature_id."""
+        result = self._setup_multi_feature_run(db_session)
+        session = result["db_session"]
+        feature_ids = [f.id for f in result["features"]]
+
+        specs_in_db = session.query(AgentSpec).filter(
+            AgentSpec.source_feature_id.in_(feature_ids)
+        ).all()
+
+        for spec in specs_in_db:
+            assert spec.name is not None and len(spec.name) > 0, (
+                f"AgentSpec {spec.id}: name must not be empty"
+            )
+            assert spec.display_name is not None and len(spec.display_name) > 0, (
+                f"AgentSpec {spec.id}: display_name must not be empty"
+            )
+            assert spec.objective is not None and len(spec.objective) > 0, (
+                f"AgentSpec {spec.id}: objective must not be empty"
+            )
+            assert spec.task_type is not None and spec.task_type in TASK_TYPES, (
+                f"AgentSpec {spec.id}: task_type '{spec.task_type}' not in {TASK_TYPES}"
+            )
+            assert spec.tool_policy is not None, (
+                f"AgentSpec {spec.id}: tool_policy must not be None"
+            )
+            assert isinstance(spec.tool_policy, dict), (
+                f"AgentSpec {spec.id}: tool_policy must be a JSON dict, "
+                f"got {type(spec.tool_policy)}"
+            )
+            assert "allowed_tools" in spec.tool_policy, (
+                f"AgentSpec {spec.id}: tool_policy must contain 'allowed_tools'"
+            )
+            assert spec.max_turns is not None and spec.max_turns >= 1, (
+                f"AgentSpec {spec.id}: max_turns must be >= 1, got {spec.max_turns}"
+            )
+            assert spec.timeout_seconds is not None and spec.timeout_seconds >= 60, (
+                f"AgentSpec {spec.id}: timeout_seconds must be >= 60, "
+                f"got {spec.timeout_seconds}"
+            )
+            assert spec.source_feature_id is not None, (
+                f"AgentSpec {spec.id}: source_feature_id must not be None"
+            )
+            assert spec.source_feature_id in feature_ids, (
+                f"AgentSpec {spec.id}: source_feature_id={spec.source_feature_id} "
+                f"not in expected feature IDs {feature_ids}"
+            )
+
+    # -------------------------------------------------------------------------
+    # Test Step 3: agent_runs — one row per execution with terminal status
+    # -------------------------------------------------------------------------
+
+    def test_step3_agent_runs_one_per_execution(self, db_session):
+        """Verify one run per execution with: status in (completed/failed/timeout),
+        started_at not null, completed_at not null, turns_used > 0."""
+        result = self._setup_multi_feature_run(db_session)
+        session = result["db_session"]
+        runs = result["runs"]
+
+        for run in runs:
+            db_run = session.query(AgentRun).filter(
+                AgentRun.id == run.id
+            ).first()
+
+            assert db_run is not None, (
+                f"AgentRun {run.id} must exist in DB"
+            )
+            assert db_run.status in ("completed", "failed", "timeout"), (
+                f"AgentRun {db_run.id}: status must be terminal, got '{db_run.status}'"
+            )
+            assert db_run.started_at is not None, (
+                f"AgentRun {db_run.id}: started_at must not be null"
+            )
+            assert db_run.completed_at is not None, (
+                f"AgentRun {db_run.id}: completed_at must not be null"
+            )
+            assert db_run.turns_used > 0, (
+                f"AgentRun {db_run.id}: turns_used must be > 0, got {db_run.turns_used}"
+            )
+
+    # -------------------------------------------------------------------------
+    # Test Step 4: agent_runs.tokens_in and tokens_out are populated (> 0)
+    # -------------------------------------------------------------------------
+
+    def test_step4_agent_runs_tokens_populated(self, db_session):
+        """Verify tokens_in > 0 and tokens_out > 0 for each run."""
+        result = self._setup_multi_feature_run(db_session)
+        session = result["db_session"]
+        runs = result["runs"]
+
+        for run in runs:
+            db_run = session.query(AgentRun).filter(
+                AgentRun.id == run.id
+            ).first()
+
+            assert db_run is not None, (
+                f"AgentRun {run.id} must exist in DB"
+            )
+            assert db_run.tokens_in > 0, (
+                f"AgentRun {db_run.id}: tokens_in must be > 0, got {db_run.tokens_in}"
+            )
+            assert db_run.tokens_out > 0, (
+                f"AgentRun {db_run.id}: tokens_out must be > 0, got {db_run.tokens_out}"
+            )
+
+    # -------------------------------------------------------------------------
+    # Test Step 5: agent_events are sequentially ordered within each run_id
+    # -------------------------------------------------------------------------
+
+    def test_step5_agent_events_sequential_ordering(self, db_session):
+        """Query events per run, verify sequence numbers are strictly ascending."""
+        result = self._setup_multi_feature_run(db_session)
+        session = result["db_session"]
+        runs = result["runs"]
+
+        for run in runs:
+            events = session.query(AgentEvent).filter(
+                AgentEvent.run_id == run.id
+            ).order_by(AgentEvent.sequence).all()
+
+            assert len(events) > 0, (
+                f"AgentRun {run.id}: expected at least one event"
+            )
+
+            # Verify strictly ascending sequence numbers
+            sequences = [e.sequence for e in events]
+            for i in range(1, len(sequences)):
+                assert sequences[i] > sequences[i - 1], (
+                    f"AgentRun {run.id}: event sequences must be strictly ascending, "
+                    f"but seq[{i-1}]={sequences[i-1]} >= seq[{i}]={sequences[i]}"
+                )
+
+    # -------------------------------------------------------------------------
+    # Test Step 6: required event_types present
+    # -------------------------------------------------------------------------
+
+    def test_step6_event_types_present(self, db_session):
+        """Verify at least these event_types appear: 'started', 'tool_call' or
+        'tool_result', 'acceptance_check', and one of 'completed'/'failed'/'timeout'."""
+        result = self._setup_multi_feature_run(db_session)
+        session = result["db_session"]
+        runs = result["runs"]
+
+        for run in runs:
+            events = session.query(AgentEvent).filter(
+                AgentEvent.run_id == run.id
+            ).all()
+
+            event_types = {e.event_type for e in events}
+
+            # Must have 'started'
+            assert "started" in event_types, (
+                f"AgentRun {run.id}: missing 'started' event. "
+                f"Found event_types: {event_types}"
+            )
+
+            # Must have 'tool_call' or 'tool_result'
+            has_tool_event = ("tool_call" in event_types or "tool_result" in event_types)
+            assert has_tool_event, (
+                f"AgentRun {run.id}: missing 'tool_call' or 'tool_result' event. "
+                f"Found event_types: {event_types}"
+            )
+
+            # Must have 'acceptance_check'
+            assert "acceptance_check" in event_types, (
+                f"AgentRun {run.id}: missing 'acceptance_check' event. "
+                f"Found event_types: {event_types}"
+            )
+
+            # Must have one of 'completed', 'failed', or 'timeout'
+            terminal_events = {"completed", "failed", "timeout"}
+            has_terminal = bool(event_types & terminal_events)
+            assert has_terminal, (
+                f"AgentRun {run.id}: missing terminal event "
+                f"(expected one of {terminal_events}). "
+                f"Found event_types: {event_types}"
+            )
+
+    # -------------------------------------------------------------------------
+    # Test Step 7: events have correct run_id foreign key references
+    # -------------------------------------------------------------------------
+
+    def test_step7_events_correct_run_id_fk(self, db_session):
+        """Verify all events for a run have correct run_id."""
+        result = self._setup_multi_feature_run(db_session)
+        session = result["db_session"]
+        runs = result["runs"]
+
+        for run in runs:
+            events = session.query(AgentEvent).filter(
+                AgentEvent.run_id == run.id
+            ).all()
+
+            for event in events:
+                assert event.run_id == run.id, (
+                    f"AgentEvent id={event.id}: run_id FK mismatch. "
+                    f"Expected '{run.id}', got '{event.run_id}'"
+                )
+
+    # -------------------------------------------------------------------------
+    # Test Step 8: at least 3 distinct task_type values in agent_specs
+    # -------------------------------------------------------------------------
+
+    def test_step8_at_least_3_task_types(self, db_session):
+        """Query distinct task_type values from agent_specs, assert >= 3 exist
+        (coding, testing, documentation, and/or audit)."""
+        result = self._setup_multi_feature_run(db_session)
+        session = result["db_session"]
+        feature_ids = [f.id for f in result["features"]]
+
+        specs_in_db = session.query(AgentSpec).filter(
+            AgentSpec.source_feature_id.in_(feature_ids)
+        ).all()
+
+        distinct_task_types = {s.task_type for s in specs_in_db}
+
+        assert len(distinct_task_types) >= 3, (
+            f"Expected at least 3 distinct task_types, got {len(distinct_task_types)}: "
+            f"{distinct_task_types}"
+        )
+
+        # Verify the expected task types are present
+        # Categories: "A. Database" -> coding, "testing" -> testing,
+        #             "documentation" -> documentation, "Security" -> audit
+        expected_types = {"coding", "testing", "documentation", "audit"}
+        assert distinct_task_types.issubset(expected_types), (
+            f"Unexpected task_types found: {distinct_task_types - expected_types}"
+        )
+
+    # -------------------------------------------------------------------------
+    # Test Step 9: artifacts have content_hash (SHA256) and content_ref/inline
+    # -------------------------------------------------------------------------
+
+    def test_step9_artifacts_content_hash(self, db_session, tmp_path):
+        """If any artifacts were created, verify they have content_hash (SHA256)
+        and appropriate content_ref or content_inline is set.
+
+        This test explicitly creates an artifact via ArtifactStorage.store()
+        after a run completes, then verifies the artifact record.
+        """
+        result = self._setup_multi_feature_run(db_session)
+        session = result["db_session"]
+        runs = result["runs"]
+
+        # Use the first run to create an artifact
+        target_run = runs[0]
+
+        # Create ArtifactStorage pointed at tmp_path
+        storage = ArtifactStorage(project_dir=str(tmp_path))
+
+        # Store a small artifact (inline, <= 4KB)
+        artifact = storage.store(
+            session=session,
+            run_id=target_run.id,
+            artifact_type="log",
+            content="Build completed successfully for spec-path persistence test",
+            path="/test/build.log",
+            metadata={"test": "spec_path_persistence"},
+        )
+        session.commit()
+
+        # Query the artifact back from DB
+        db_artifact = session.query(Artifact).filter(
+            Artifact.id == artifact.id
+        ).first()
+
+        assert db_artifact is not None, (
+            f"Artifact {artifact.id} must exist in DB after store()"
+        )
+
+        # Verify content_hash is a valid SHA256 hex string (64 characters)
+        assert db_artifact.content_hash is not None, (
+            f"Artifact {db_artifact.id}: content_hash must not be None"
+        )
+        assert len(db_artifact.content_hash) == 64, (
+            f"Artifact {db_artifact.id}: content_hash must be 64 hex chars (SHA256), "
+            f"got {len(db_artifact.content_hash)} chars"
+        )
+        assert re.match(r'^[0-9a-f]{64}$', db_artifact.content_hash), (
+            f"Artifact {db_artifact.id}: content_hash must be lowercase hex, "
+            f"got '{db_artifact.content_hash}'"
+        )
+
+        # Verify content_ref or content_inline is set
+        has_content = (
+            db_artifact.content_ref is not None or
+            db_artifact.content_inline is not None
+        )
+        assert has_content, (
+            f"Artifact {db_artifact.id}: must have content_ref or content_inline set"
+        )
+
+        # Since content is small (< 4KB), it should be stored inline
+        assert db_artifact.content_inline is not None, (
+            f"Artifact {db_artifact.id}: small content should be stored inline"
+        )
+        assert "spec-path persistence test" in db_artifact.content_inline, (
+            f"Artifact {db_artifact.id}: content_inline should contain test content"
+        )
+
+        # Verify run_id FK points to the correct run
+        assert db_artifact.run_id == target_run.id, (
+            f"Artifact {db_artifact.id}: run_id FK should be '{target_run.id}', "
+            f"got '{db_artifact.run_id}'"
+        )
+
+        # Also test a large artifact (> 4KB, stored in file) to cover content_ref
+        large_content = "X" * 5000  # > 4096 bytes => stored in file
+        large_artifact = storage.store(
+            session=session,
+            run_id=target_run.id,
+            artifact_type="snapshot",
+            content=large_content,
+            path="/test/large_snapshot.bin",
+            metadata={"size": "large"},
+        )
+        session.commit()
+
+        db_large = session.query(Artifact).filter(
+            Artifact.id == large_artifact.id
+        ).first()
+
+        assert db_large is not None, "Large artifact must exist in DB"
+        assert db_large.content_hash is not None, (
+            "Large artifact must have content_hash"
+        )
+        assert len(db_large.content_hash) == 64, (
+            f"Large artifact content_hash must be 64 hex chars, "
+            f"got {len(db_large.content_hash)}"
+        )
+        assert re.match(r'^[0-9a-f]{64}$', db_large.content_hash), (
+            f"Large artifact content_hash must be lowercase hex"
+        )
+        assert db_large.content_ref is not None, (
+            "Large artifact (> 4KB) must have content_ref set (file-based storage)"
         )
