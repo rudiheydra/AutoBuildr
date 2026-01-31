@@ -1,6 +1,60 @@
 # AutoBuildr Progress Log
 # ======================
 
+## Session: 2026-01-31 (Coding Agent - Feature #151)
+
+### Feature #151: WebSocket feature_update invalidates React Query cache - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Dependencies:** None
+
+**Description:** When a feature_update WebSocket message is received, the handler in hooks/useWebSocket.ts must call queryClient.invalidateQueries with the correct feature list query key. This ensures the UI refreshes within 1 second of a server-side feature status change, instead of waiting for the 5-second polling fallback.
+
+**Changes Made:**
+1. `ui/src/hooks/useWebSocket.ts`:
+   - Added `import { useQueryClient } from '@tanstack/react-query'`
+   - Added `const queryClient = useQueryClient()` inside `useProjectWebSocket` hook
+   - Updated `feature_update` case handler to call:
+     - `queryClient.invalidateQueries({ queryKey: ['features', projectName] })` — canonical feature list query
+     - `queryClient.invalidateQueries({ queryKey: ['dependencyGraph', projectName] })` — dependency graph refresh
+     - `queryClient.invalidateQueries({ queryKey: ['feature', projectName, message.feature_id] })` — specific feature detail
+   - Added `queryClient` to `connect` callback dependency array
+
+**Verification Summary (All 5 Feature Steps Passed):**
+
+1. **Locate the feature_update handler in hooks/useWebSocket.ts** - PASS
+   - Located at line 165 inside ws.onmessage switch statement
+
+2. **On receipt of feature_update message, call queryClient.invalidateQueries(['features', projectName])** - PASS
+   - Line 169: queryClient.invalidateQueries({ queryKey: ['features', projectName] })
+   - Uses exact canonical query key from useFeatures hook (useProjects.ts line 57)
+
+3. **If a feature detail query exists, also invalidate it** - PASS
+   - Lines 174-175: queryClient.invalidateQueries({ queryKey: ['feature', projectName, message.feature_id] })
+   - Only invalidates if message.feature_id is present
+
+4. **Verify that the React Query cache is invalidated and components re-render with fresh data** - PASS
+   - invalidateQueries marks all matching queries as stale and triggers immediate background refetch
+   - Compiled bundle verified: case"feature_update":t&&(n.invalidateQueries({queryKey:["features",t]})...)
+
+5. **Confirm polling fallback remains active but is no longer required for correctness** - PASS
+   - useFeatures still has refetchInterval: 5000 (useProjects.ts line 61)
+   - Polling fallback retained as defense-in-depth, but WebSocket invalidation provides sub-second updates
+
+**Build Status:** Frontend builds successfully (2165 modules, 0 new TS errors)
+
+**Commit:** 5873313
+
+**Updated Progress:**
+- Feature #151: WebSocket feature_update invalidates React Query cache - PASSING
+- Browser automation unavailable (Chrome SIGTRAP in container)
+- Verification done via code analysis, TS compilation, and production build bundle inspection
+
+---
+
 ## Session: 2026-01-31 (Coding Agent - Feature #166)
 
 ### Feature #166: Implement make verify-spec-path target - COMPLETED
@@ -11074,5 +11128,27 @@ Created comprehensive test suite:
     - Migration function _migrate_add_agentrun_spec_status_index exists in api/database.py (line 464)
     - SQLite EXPLAIN QUERY PLAN confirms index IS used for composite queries
     - API endpoint /api/projects/AutoBuildr/features/142 returns passes=true
+  - Browser automation unavailable (Chrome SIGTRAP in container)
+  - No regression found - feature still working correctly
+[Testing] 2026-01-31T12:20:15+00:00 - Feature #8 regression test PASSED
+  - Feature: AcceptanceSpec Pydantic Schemas
+  - Category: M. Form Validation
+  - All 6 verification steps passed:
+    Step 1: ValidatorConfig model with type, config dict, weight, required fields - PASS (6 checks)
+    Step 2: AcceptanceSpecCreate with validators array, gate_mode, min_score, retry_policy, max_retries - PASS (4 checks)
+    Step 3: Field validator for gate_mode in [all_pass, any_pass, weighted] - PASS (4 checks)
+    Step 4: Field validator for retry_policy in [none, fixed, exponential] - PASS (4 checks)
+    Step 5: Field validator for min_score range 0.0-1.0 when gate_mode is weighted - PASS (9 checks)
+    Step 6: AcceptanceSpecResponse matching database model output - PASS (4 checks)
+  - Additional comprehensive regression tests: 13/13 PASS
+  - Existing verify_feature_8.py: ALL 27 CHECKS PASS
+  - Live API test: AgentSpec create/get/delete working, AcceptanceSpecResponse serialization OK
+  - Source code intact: server/schemas/agentspec.py
+    - Validator class: line 62 (type, config, weight, required fields)
+    - AcceptanceSpecCreate class: line 413 (validators, gate_mode, min_score, retry_policy, max_retries, fallback_spec_id)
+    - AcceptanceSpecResponse class: line 553 (id, agent_spec_id, validators, gate_mode, min_score, retry_policy, max_retries, fallback_spec_id)
+    - gate_mode validator: line 469 (validates all_pass, any_pass, weighted)
+    - retry_policy validator: line 488 (validates none, fixed, exponential)
+    - min_score model validator: line 507 (requires min_score for weighted mode, range 0.0-1.0)
   - Browser automation unavailable (Chrome SIGTRAP in container)
   - No regression found - feature still working correctly
