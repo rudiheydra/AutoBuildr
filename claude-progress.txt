@@ -1,6 +1,49 @@
 # AutoBuildr Progress Log
 # ======================
 
+## Session: 2026-02-01 (Coding Agent - Feature #173)
+
+### Feature #173: Virtualized list handles WebSocket update bursts without jank - COMPLETED
+
+**Status:** PASSING
+
+**Category:** style
+
+**Dependencies:** Feature #172 (Virtualize feature list for large datasets) - was already PASSING
+
+**Description:** When multiple feature_update WebSocket messages arrive in rapid succession (burst updates), the virtualized feature list should handle them smoothly without UI jank or dropped frames.
+
+**Changes Made:**
+
+1. **ui/src/hooks/useWebSocket.ts**: Added debounced invalidation for WebSocket `feature_update` messages
+   - `featureUpdateTimerRef` + `pendingFeatureIdsRef` refs for debounce state
+   - `flushFeatureUpdates()` callback: fires once per burst with all accumulated feature IDs
+   - `scheduleFeatureInvalidation()` callback: accumulates IDs and resets 150ms debounce timer
+   - Proper cleanup on unmount/project change (clears timer and pending set)
+
+2. **ui/src/__tests__/useWebSocket.feature_update_burst.test.ts**: 5 unit tests
+   - Coalesces 25 rapid feature_update messages into single invalidation batch
+   - Deduplicates repeated feature_id values during burst
+   - Does not fire invalidation before debounce window completes
+   - Handles feature_update messages without feature_id gracefully
+   - Allows second burst after first flush completes
+
+**Verification:**
+- All 78 UI tests pass (6 test files) including both new and existing tests
+- TypeScript compiles successfully
+- Production build succeeds
+- No regressions in existing feature_update tests
+
+**Commit:** f1e60f7
+
+**Updated Progress:**
+- Feature #173: Virtualized list handles WebSocket update bursts without jank - PASSING
+- Total: 170/173 features passing (98.3%)
+
+**Session completed successfully.**
+
+---
+
 ## Session: 2026-02-01 (Coding Agent - Feature #171)
 
 ### Feature #171: Lazy-loaded components have no functional regressions - COMPLETED
