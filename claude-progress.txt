@@ -11986,6 +11986,81 @@ Created comprehensive test suite:
   - Browser automation unavailable (Chrome SIGTRAP in container)
   - No regression found - feature still working correctly
 
+---
+
+## Session: 2026-01-31 (Coding Agent - Feature #155)
+
+### Feature #155: Backend emits turn_complete events for accurate turn tracking - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Dependencies:** Feature #154 (Replace turn-count heuristic with event-based counting) - PASSING
+
+**Description:** Ensure the backend (HarnessKernel) emits a turn_complete event at the end of each agent turn. This is the source of truth for the UI's turn counting. Added WebSocket broadcast of turn_complete events for real-time UI updates.
+
+**Changes Made:**
+
+1. `api/harness_kernel.py`: Added WebSocket broadcast call in `record_turn_complete()` method
+   - Calls `broadcast_agent_event_sync()` after DB commit for each turn_complete event
+   - Broadcast is non-blocking: wrapped in try/except so failures don't interrupt execution
+   - Uses existing `broadcast_agent_event_sync` from `server.event_broadcaster`
+   - Passes project_name, run_id, event_type="turn_complete", sequence, tool_name=None
+
+2. `tests/test_feature_155_turn_complete_events.py`: 33 comprehensive tests
+   - TestStep1 (6 tests): turn_complete event emission in HarnessKernel execution loop
+   - TestStep2 (5 tests): Events include run_id and correct sequence numbers
+   - TestStep3 (5 tests): Events persisted in agent_events table after runs
+   - TestStep4 (7 tests): WebSocket broadcast with correct params, failure tolerance
+   - TestStep5 (8 tests): Multi-turn runs produce correct turn_complete counts
+   - TestIntegration (2 tests): Full lifecycle and standalone function tests
+
+**Verification Summary (All 5 Feature Steps Passed):**
+
+1. **Verify turn_complete event emission in HarnessKernel** - PASS
+   - record_turn_complete() creates AgentEvent with event_type="turn_complete"
+   - Called in execute() loop after each turn (line 2317 and 1280)
+   - record_turn_complete_event() helper creates event with budget payload
+
+2. **Confirm each turn_complete event includes run_id and sequence number** - PASS
+   - event.run_id matches the AgentRun's ID
+   - Sequence numbers increment for each event within a run
+   - Payload includes turn_number, turns_used, max_turns, remaining_turns, tokens
+
+3. **Verify turn_complete events appear in agent_events table** - PASS
+   - Events committed to DB via commit_with_retry()
+   - Queryable by run_id + event_type (composite index ix_event_run_event_type)
+   - Events have timestamps and correct event_type string
+
+4. **Confirm WebSocket broadcast for real-time UI updates** - PASS
+   - Added broadcast_agent_event_sync call after DB commit (Feature #155)
+   - turn_complete is in SIGNIFICANT_EVENT_TYPES (server/event_broadcaster.py)
+   - Frontend hook (useAgentRunUpdates.ts) increments turnsUsed on turn_complete
+   - Broadcast failure does not interrupt execution (non-fatal, logged at DEBUG)
+
+5. **Test with multi-turn run and verify correct turn_complete count** - PASS
+   - 1-turn run: 1 event, 3-turn run: 3 events, 5-turn run: 5 events
+   - Budget exhaustion (max_turns=3): exactly 3 events before timeout
+   - No executor: 0 events (correct)
+   - Token accumulation correct across turns
+
+**Test Results:**
+- tests/test_feature_155_turn_complete_events.py: 33/33 tests PASS (7.69s)
+- Regression: tests/test_feature_150_kernel_payload_artifact.py: 42/42 PASS
+- Regression: tests/test_feature_62_event_broadcaster.py: 40/40 PASS
+- Regression: tests/test_dspy_pipeline_e2e.py: 86/88 PASS (2 pre-existing failures)
+
+**Commit:** f32c6f7
+
+**Updated Progress:**
+- Feature #155: Backend emits turn_complete events for accurate turn tracking - PASSING
+- Total: 162/173 features passing (93.6%)
+
+**Session completed successfully.**
+
+---
+
 ## Feature #162: Acceptance results contract test (API and WS schema match)
 **Status: COMPLETED**
 **Date: 2026-01-31**
@@ -12012,3 +12087,33 @@ Created comprehensive test suite:
 - All 22 feature #160 tests pass (no regression)
 - All 32 feature #161 tests pass (no regression)
 - All 28 feature #63 tests pass (no regression)
+[Testing] 2026-01-31T12:49:26+00:00 - Feature #61 regression test PASSED
+  - Feature: WebSocket agent_run_started Event
+  - Category: F. UI-Backend Integration
+  - All 4 verification steps passed:
+    Step 1: When AgentRun status changes to running, publish message - PASS
+    Step 2: Message type: agent_run_started - PASS
+    Step 3: Payload: run_id, spec_id, display_name, icon, started_at - PASS
+    Step 4: Broadcast to all connected clients - PASS
+  - Verification script: 7/7 sections PASS (verify_feature_61.py)
+  - Unit tests: 19/19 PASS (test_feature_61_websocket_run_started.py in 6.26s)
+  - Integration checks: 10/10 PASS (custom comprehensive test)
+    - RunStartedPayload message format correct
+    - broadcast_run_started routes to correct project
+    - Returns False when manager unavailable
+    - Exception handled gracefully
+    - broadcast_run_started_sync exists and callable
+    - Execute endpoint imports and calls broadcast_run_started
+    - UI WSAgentRunStartedMessage type correct
+    - useAgentRunUpdates hook handles agent_run_started
+  - Live WebSocket: Connection verified on port 8888
+    - Bidirectional communication working
+    - Ping/pong and message broadcast infrastructure operational
+  - Source code intact:
+    - api/websocket_events.py: RunStartedPayload (line 81), broadcast_run_started (line 276), broadcast_run_started_sync (line 347)
+    - server/routers/agent_specs.py: broadcast_run_started called at line 675 after run transitions to running
+    - ui/src/lib/types.ts: WSAgentRunStartedMessage interface (line 404)
+    - ui/src/hooks/useAgentRunUpdates.ts: handleRunStarted sets status to 'running'
+    - ui/src/hooks/useWebSocket.ts: agent_run_started case handled (line 355)
+  - Browser automation unavailable (Chrome SIGTRAP in container)
+  - No regression found - feature still working correctly
