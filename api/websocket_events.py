@@ -141,6 +141,8 @@ class ValidatorResultPayload:
         message: Human-readable result message
         score: Optional numeric score (0.0-1.0) for weighted gates
         details: Optional additional details
+        required: Whether this validator is required to pass (Feature #162)
+        weight: Weight for weighted gate mode (Feature #162)
     """
     index: int
     type: str
@@ -148,6 +150,8 @@ class ValidatorResultPayload:
     message: str
     score: float = 1.0
     details: dict[str, Any] = field(default_factory=dict)
+    required: bool = False
+    weight: float = 1.0
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -158,6 +162,8 @@ class ValidatorResultPayload:
             "message": self.message,
             "score": self.score,
             "details": self.details,
+            "required": self.required,
+            "weight": self.weight,
         }
 
 
@@ -209,8 +215,8 @@ class AcceptanceUpdatePayload:
                 "score": r.score,
                 "details": r.details,
                 "index": r.index,
-                "required": False,  # Not available in ValidatorResultPayload
-                "weight": 1.0,     # Not available in ValidatorResultPayload
+                "required": r.required,
+                "weight": r.weight,
             }
         return record
 
@@ -452,6 +458,8 @@ async def broadcast_acceptance_update(
                 message=result.get("message", ""),
                 score=result.get("score", 1.0 if result.get("passed", False) else 0.0),
                 details=result.get("details", {}),
+                required=result.get("required", False),
+                weight=result.get("weight", 1.0),
             ))
         else:
             # Assume it's a ValidatorResult from api.validators
