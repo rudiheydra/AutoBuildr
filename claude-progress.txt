@@ -1,6 +1,38 @@
 # AutoBuildr Progress Log
 # ======================
 
+## Session: 2026-01-31 (Coding Agent - Feature #165)
+
+### Feature #165: Mutation errors show clear user-facing messages - COMPLETED
+
+**Status:** PASSING
+
+**Category:** error-handling
+
+**Dependencies:** Feature #163 (All React Query mutations have onError handlers) - PASSING, Feature #164 (Create useHandledMutation helper) - PASSING
+
+**Description:** When a mutation fails, users see clear, actionable error messages. Modals show inline error states, toast notifications include enough context to understand what went wrong, and the UI remains interactive so users can retry.
+
+**Implementation Summary:**
+
+Modified 6 existing files and created 1 test file:
+
+1. **ui/src/lib/api.ts** — Added `httpStatusMessage()` function providing user-friendly fallbacks for HTTP status codes (400, 401, 403, 404, 409, 422, 429, 500, 502, 503). Enhanced `fetchJSON` to extract `detail` or `message` from API error responses, falling back to friendly status messages instead of bare "HTTP {status}".
+
+2. **ui/src/components/ConfirmDialog.tsx** — Added `error?: string | null` prop with inline error display (AlertCircle icon, neobrutalism-styled error box). Changed loading text to generic "Processing..." for reusability.
+
+3. **ui/src/components/ProjectSelector.tsx** — Added `deleteError` state. On delete failure, keeps dialog open with inline error message including context prefix ("Failed to delete project: ..."). Clears error on retry/cancel.
+
+4. **ui/src/components/ConversationHistory.tsx** — Migrated to use ConfirmDialog's new `error` prop instead of embedding error text in the `message` prop. Improved error message with context prefix.
+
+5. **ui/src/components/SettingsModal.tsx** — Replaced generic "Failed to save settings. Please try again." with actual error message: "Failed to save settings: {error.message}". Added AlertCircle icon.
+
+6. **ui/src/components/ScheduleModal.tsx** — Added context prefixes to all error messages ("Failed to create schedule:", "Failed to toggle schedule:", "Failed to delete schedule:"). Upgraded error display to neobrutalism design with AlertCircle icon and dismiss button.
+
+7. **ui/src/__tests__/mutationErrors.test.ts** — 16 comprehensive tests covering: fetchJSON error extraction (5 tests), useHandledMutation toast wiring (2 tests), toast system (2 tests), ConfirmDialog error prop (1 test), modal inline error handling (5 tests), API httpStatusMessage fallbacks (1 test). All passing.
+
+**Testing:** 16/16 tests pass. Production build succeeds. No regressions in existing tests.
+
 ## Session: 2026-01-31 (Coding Agent - Feature #156)
 
 ### Feature #156: Turn count unit test with deterministic event stream - COMPLETED
@@ -12236,3 +12268,21 @@ What was done:
   - Source code intact: api/static_spec_adapter.py (831 lines)
   - Browser automation unavailable (Chrome SIGTRAP in container)
   - No regression found - feature still working correctly
+
+## Session: 2026-01-31 - Feature #169
+**Feature:** verify-spec-path succeeds when spec path is used
+**Status:** PASSING ✅
+
+**What was done:**
+- Created comprehensive test suite: tests/test_feature_169_spec_path_succeeds.py (31 tests)
+- Tests cover all 5 verification steps from the feature description:
+  1. AUTOBUILDR_USE_KERNEL=true enables kernel/spec path (tested via migration_flag module)
+  2. Kernel build populates spec tables (tested with simulated and real features.db)
+  3. verify-spec-path script runs without crashes
+  4. Script exits zero when spec tables are populated
+  5. Output shows non-zero counts for agent_specs, agent_runs, and agent_events
+- Verified against real features.db: 2179 specs, 2238 runs, 2301 events, 9 artifacts
+- All related tests pass: features 166 (75 tests), 167, 168 - zero regressions
+- Committed: edc9694
+
+**Current progress:** 168/173 features passing (97.1%)
