@@ -9,6 +9,7 @@ import asyncio
 import json
 import logging
 import re
+import sqlite3
 from datetime import datetime
 from pathlib import Path
 from typing import Set
@@ -574,18 +575,47 @@ def validate_project_name(name: str) -> bool:
     return bool(re.match(r'^[a-zA-Z0-9_-]{1,50}$', name))
 
 
+def _get_feature_statuses(project_dir: Path) -> dict[int, bool]:
+    """
+    Get a snapshot of all feature pass/fail statuses from the database.
+
+    Returns a dict mapping feature_id -> passes (bool).
+    Uses direct SQLite access for performance (no ORM overhead).
+    """
+    db_file = project_dir / "features.db"
+    if not db_file.exists():
+        return {}
+
+    try:
+        conn = sqlite3.connect(db_file, timeout=2)
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, passes FROM features")
+        statuses = {row[0]: bool(row[1]) for row in cursor.fetchall()}
+        conn.close()
+        return statuses
+    except Exception:
+        return {}
+
+
 async def poll_progress(websocket: WebSocket, project_name: str, project_dir: Path):
-    """Poll database for progress changes and send updates."""
+    """Poll database for progress changes and send updates.
+
+    Also tracks individual feature status changes and emits feature_update
+    WebSocket messages when a feature's passes status changes. This ensures
+    the UI refreshes within ~1 second of a feature status change (Feature #152).
+    """
     count_passing_tests = _get_count_passing_tests()
     last_passing = -1
     last_in_progress = -1
     last_total = -1
+    # Track per-feature statuses for feature_update messages (Feature #152)
+    last_feature_statuses: dict[int, bool] = {}
 
     while True:
         try:
             passing, in_progress, total = count_passing_tests(project_dir)
 
-            # Only send if changed
+            # Only send progress if changed
             if passing != last_passing or in_progress != last_in_progress or total != last_total:
                 last_passing = passing
                 last_in_progress = in_progress
@@ -600,7 +630,24 @@ async def poll_progress(websocket: WebSocket, project_name: str, project_dir: Pa
                     "percentage": round(percentage, 1),
                 })
 
-            await asyncio.sleep(2)  # Poll every 2 seconds
+            # Feature #152: Detect individual feature status changes and emit
+            # feature_update messages so the UI can invalidate React Query caches
+            # and refresh within ~1 second without waiting for the 5s polling fallback.
+            current_statuses = _get_feature_statuses(project_dir)
+            if last_feature_statuses:
+                for feature_id, passes in current_statuses.items():
+                    old_passes = last_feature_statuses.get(feature_id)
+                    # Emit feature_update when status changes (pass/fail toggle)
+                    # or when a new feature appears
+                    if old_passes is None or old_passes != passes:
+                        await websocket.send_json({
+                            "type": "feature_update",
+                            "feature_id": feature_id,
+                            "passes": passes,
+                        })
+            last_feature_statuses = current_statuses
+
+            await asyncio.sleep(1)  # Poll every 1 second for sub-second UI updates
         except asyncio.CancelledError:
             raise
         except Exception as e:
