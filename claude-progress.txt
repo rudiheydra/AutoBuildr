@@ -11940,3 +11940,75 @@ Created comprehensive test suite:
   - Source code intact: api/spec_validator.py (all functions verified)
   - Browser automation unavailable (Chrome SIGTRAP in container)
   - No regression found - feature still working correctly
+[Testing] 2026-01-31T12:44:28+00:00 - Feature #59 regression test PASSED
+  - Feature: Unique Spec Name Generation
+  - Category: M. Form Validation
+  - All 8 verification steps passed:
+    Step 1: Extract keywords from objective - PASS (basic extraction, stop word filtering, special chars, empty input)
+    Step 2: Generate slug from keywords - PASS (basic slug, empty default, max length truncation)
+    Step 3: Prepend task_type prefix - PASS (coding, testing, audit, refactoring, special chars, empty)
+    Step 4: Add timestamp or sequence for uniqueness - PASS (explicit, auto, timestamp function)
+    Step 5: Validate against existing spec names - PASS (existence check, prefix search)
+    Step 6: If collision, append numeric suffix - PASS (collision detected, suffix appended, sequence calc)
+    Step 7: Limit to 100 chars - PASS (truncation, max constant, validation)
+    Step 8: Return unique spec name - PASS (valid, URL-safe, unique across 5 generated names)
+  - Verification script: 8/8 steps PASS (verify_feature_59.py)
+  - Unit tests: 63/63 PASS (test_feature_59_spec_name_generator.py in 8.71s)
+  - Integration checks:
+    - SpecBuilder._create_specs uses generate_spec_name - PASS
+    - FeatureCompiler._generate_spec_name exists - PASS
+    - All name generator functions exported from api package - PASS
+  - Live API tests:
+    - Create spec with valid URL-safe name: 201 CREATED - PASS
+    - Duplicate name rejection: 400 BAD_REQUEST with constraint violation - PASS
+    - Invalid name format (uppercase): 422 VALIDATION_ERROR with pattern mismatch - PASS
+  - Source code intact: api/spec_name_generator.py (516 lines)
+    - extract_keywords: line 84 (keyword extraction with stop words)
+    - generate_slug: line 135 (URL-safe slug from keywords)
+    - generate_spec_name: line 261 (full name with prefix + timestamp)
+    - generate_unique_spec_name: line 386 (collision handling with DB check)
+    - validate_spec_name: line 320 (regex pattern validation)
+    - SPEC_NAME_MAX_LENGTH = 100 at line 49
+  - Browser automation unavailable (Chrome SIGTRAP in container)
+  - No regression found - feature still working correctly
+[Testing] 2026-01-31T12:46:16+00:00 - Feature #110 regression test PASSED
+  - Feature: E2E test: Spec Name Generation (TestStep4 — 4 tests)
+  - Category: functional
+  - All 5 verification steps passed:
+    Step 1: TestStep4NameGeneration class exists at line 303 with 4 test methods - PASS
+    Step 2: test_name_is_url_safe generates URL-safe strings (regex validated) - PASS
+    Step 3: test_name_has_length_limit enforces <= 100 chars - PASS
+    Step 4: test_name_has_task_type_prefix verifies prefix (e.g., 'testing-') - PASS
+    Step 5: All 4 tests pass: pytest TestStep4NameGeneration -v (4/4 in 4.91s) - PASS
+  - Manual verification: generate_spec_name() tested directly (4 assertions passed)
+  - Source code intact: api/spec_name_generator.py (generate_spec_name at line 261)
+  - Import verified: tests/test_dspy_pipeline_e2e.py line 51 imports generate_spec_name
+  - Browser automation unavailable (Chrome SIGTRAP in container)
+  - No regression found - feature still working correctly
+
+## Feature #162: Acceptance results contract test (API and WS schema match)
+**Status: COMPLETED**
+**Date: 2026-01-31**
+
+### What was done:
+1. Created `tests/test_feature_162_contract_test.py` with 41 tests across 6 test classes:
+   - TestAPIConformsToCanonicalSchema (9 tests): Verifies API output matches canonical schema
+   - TestWSConformsToCanonicalSchema (7 tests): Verifies WS output matches canonical schema
+   - TestCrossTransportSchemaIdentity (9 tests): Verifies API and WS produce identical results
+   - TestSchemaSnapshotRegression (5 tests): Frozen schema snapshot for regression detection
+   - TestDriftDetection (5 tests): Verifies tests catch deviations from canonical format
+   - TestEdgeCases (5 tests): Duplicate types, single/many validators, complex details
+
+2. Fixed actual schema drift discovered during testing:
+   - ValidatorResultPayload was missing `required` and `weight` fields
+   - `_build_acceptance_results_record()` hardcoded `required: False` and `weight: 1.0`
+   - Added `required` and `weight` to ValidatorResultPayload dataclass (with backward-compatible defaults)
+   - Updated `broadcast_acceptance_update()` dict conversion to pass through required/weight
+
+3. Canonical schema snapshot: 7 fields (passed, message, score, details, index, required, weight)
+
+### Regression verification:
+- All 41 feature #162 tests pass
+- All 22 feature #160 tests pass (no regression)
+- All 32 feature #161 tests pass (no regression)
+- All 28 feature #63 tests pass (no regression)
