@@ -1055,6 +1055,24 @@ class HarnessKernel:
             rollback_and_record_error(self.db, run.id, e)
             raise
 
+        # Feature #155: Broadcast turn_complete event via WebSocket for real-time UI updates
+        # This is called after DB commit so the event is persisted before broadcast.
+        # Broadcasting is optional - failure should not interrupt execution.
+        try:
+            from server.event_broadcaster import broadcast_agent_event_sync
+            broadcast_agent_event_sync(
+                project_name="AutoBuildr",
+                run_id=run.id,
+                event_type="turn_complete",
+                sequence=self._event_sequence,
+                tool_name=None,
+            )
+        except Exception as e:
+            _logger.debug(
+                "Failed to broadcast turn_complete for run %s (non-fatal): %s",
+                run.id, e
+            )
+
         _logger.debug(
             "Turn complete for run %s: turns=%d/%d, tokens_in=%d, tokens_out=%d",
             run.id, run.turns_used, self._budget_tracker.max_turns,
