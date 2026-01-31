@@ -1,6 +1,58 @@
 # AutoBuildr Progress Log
 # ======================
 
+## Session: 2026-01-31 (Coding Agent - Feature #156)
+
+### Feature #156: Turn count unit test with deterministic event stream - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Dependencies:** Feature #154 (Replace turn-count heuristic with event-based counting) - PASSING
+
+**Description:** A test that feeds a deterministic event stream (with known turn_complete events) into the useAgentRunUpdates hook and asserts correct derived turn counts. Validates that the heuristic is fully replaced.
+
+**Implementation Summary:**
+
+Created `ui/src/hooks/useAgentRunUpdates.test.ts` with 20 vitest tests across 3 test suites:
+
+1. **Turn counting logic (pure state machine) — 9 tests:**
+   - Counts 5 turn_complete events correctly (turns_used = 5)
+   - Increments turns_used by 1 for each turn_complete event
+   - Stays at 0 when no turn_complete events are received
+   - Counts only turn_complete events in a mixed event stream
+   - Ignores events for a different run_id
+   - Increments turnsUsed on top of an initial value
+   - Does not use sequence-based heuristic (high seq numbers don't inflate count)
+   - Handles a large stream of 100 turn_complete events
+   - Returns 0 for an empty event stream
+
+2. **Source code verification — 6 tests:**
+   - Confirms prev.turnsUsed + 1 present in useAgentRunUpdates
+   - Confirms currentState.turnsUsed + 1 present in useMultipleAgentRunUpdates
+   - Confirms turn_complete event type checks in both hooks
+   - Confirms old Math.ceil heuristic is NOT present
+   - Confirms no sequence-division patterns remain
+
+3. **WebSocket handler integration — 5 tests:**
+   - Handler increments turn count for turn_complete events only
+   - Handler ignores pong and other message types
+   - Handler correctly processes 5 turn_complete in deterministic stream
+   - Handler returns 0 for stream with zero turn_complete events
+   - Handler counts only turn_complete in interleaved stream
+
+**Verification:** All 20/20 tests pass (vitest run, 1.64s)
+
+**Commit:** 6acf70b
+
+**Updated Progress:**
+- Feature #156: Turn count unit test with deterministic event stream - PASSING
+
+**Session completed successfully.**
+
+---
+
 ## Session: 2026-01-31 (Coding Agent - Feature #159)
 
 ### Feature #159: App shell remains usable when child component throws
@@ -12149,5 +12201,38 @@ Created comprehensive test suite:
     - ui/src/lib/types.ts: WSAgentRunStartedMessage interface (line 404)
     - ui/src/hooks/useAgentRunUpdates.ts: handleRunStarted sets status to 'running'
     - ui/src/hooks/useWebSocket.ts: agent_run_started case handled (line 355)
+  - Browser automation unavailable (Chrome SIGTRAP in container)
+  - No regression found - feature still working correctly
+
+=== Session: Feature #168 - 2026-01-31 ===
+
+Feature #168: verify-spec-path fails when legacy path is used
+Status: PASSING
+
+What was done:
+- Created test_feature_168_legacy_path_fails.py with 25 tests
+- Tests verify that when AUTOBUILDR_USE_KERNEL=false or unset,
+  verify-spec-path exits non-zero with correct error message
+- All 75 tests across features 166, 167, 168 pass with no regressions
+- Commit: a5e2346
+[Testing] 2026-01-31T12:53:22+00:00 - Feature #36 regression test PASSED
+  - Feature: StaticSpecAdapter for Legacy Initializer
+  - Category: K. Default & Reset
+  - All 10 verification steps passed:
+    Step 1: Create StaticSpecAdapter class - PASS (class exists, instantiable, module api.static_spec_adapter)
+    Step 2: Define create_initializer_spec() method - PASS (method exists, callable)
+    Step 3: Load initializer prompt from prompts/ directory - PASS (prompts dir exists, initializer_prompt.md found)
+    Step 4: Set objective from prompt template - PASS (12,077 chars loaded from template)
+    Step 5: Set task_type to custom - PASS (task_type='custom')
+    Step 6: Configure tool_policy with feature creation tools only - PASS (11 tools including feature_create, feature_create_bulk, etc.)
+    Step 7: Set max_turns appropriate for initialization - PASS (max_turns=100)
+    Step 8: Set timeout_seconds for long spec parsing - PASS (timeout_seconds=3600, 1 hour)
+    Step 9: Create AcceptanceSpec with feature_count validator - PASS (2 validators: feature_count required, file_exists optional)
+    Step 10: Return static AgentSpec - PASS (returns AgentSpec with correct name, display_name, icon, tags)
+  - Unit tests: 45/45 PASS (test_static_spec_adapter.py in 4.21s)
+  - Module-level functions verified: get_static_spec_adapter singleton, reset_static_spec_adapter
+  - Cross-spec verification: all 3 agent types (initializer/coding/testing) create unique specs
+  - API endpoints operational: /api/projects and /api/projects/{name}/agent-specs accessible
+  - Source code intact: api/static_spec_adapter.py (831 lines)
   - Browser automation unavailable (Chrome SIGTRAP in container)
   - No regression found - feature still working correctly
