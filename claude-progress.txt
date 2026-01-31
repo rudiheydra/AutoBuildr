@@ -1,6 +1,27 @@
 # AutoBuildr Progress Log
 # ======================
 
+## Session: 2026-01-31 (Coding Agent - Feature #153)
+
+### Feature #153: WebSocket feature_update unit test with mock WS message
+- **Status**: PASSED
+- **Category**: functional
+- **What was done**:
+  - Set up Vitest unit testing framework in the UI project (vitest, @testing-library/react, @testing-library/jest-dom, jsdom)
+  - Added Vitest configuration to vite.config.ts with jsdom environment
+  - Created test setup file (ui/src/__tests__/setup.ts)
+  - Created comprehensive test file (ui/src/__tests__/useWebSocket.feature_update.test.ts) with 6 tests:
+    1. Validates ['features', projectName] cache invalidation on feature_update
+    2. Validates ['dependencyGraph', projectName] cache invalidation on feature_update
+    3. Validates ['feature', projectName, featureId] invalidation when feature_id present
+    4. Verifies exactly 3 invalidateQueries calls when feature_id is present
+    5. Verifies exactly 2 invalidateQueries calls when feature_id is falsy (0)
+    6. Verifies no invalidation occurs for non-feature_update messages
+  - MockWebSocket class simulates WS messages without backend
+  - vi.spyOn on queryClient.invalidateQueries verifies correct cache invalidation wiring
+- **Test results**: 6/6 PASS (all in ~178ms)
+- **Commit**: dee9c5d
+
 ## Session: 2026-01-31 (Coding Agent - Feature #161)
 
 ### Feature #161: UI uses strict acceptance results parser with dev-mode warnings - COMPLETED
@@ -11823,4 +11844,25 @@ Created comprehensive test suite:
     - Error handling with user-facing error message
   - Browser automation unavailable (Chrome SIGTRAP in container)
   - Tests were compatible with Feature #75 standardized error responses
+  - No regression found - feature still working correctly
+[Testing] 2026-01-31T12:38:53+00:00 - Feature #78 regression test PASSED
+  - Feature: Invalid AgentSpec Graceful Handling
+  - Category: E. Error Handling
+  - All 6 verification steps passed:
+    Step 1: Validate AgentSpec before kernel execution - PASS (validate_spec called at line 879 in agent_specs.py)
+    Step 2: Check required fields are present - PASS (5 required fields: name, display_name, objective, task_type, tool_policy)
+    Step 3: Validate tool_policy structure - PASS (empty allowed_tools, missing allowed_tools both rejected)
+    Step 4: Validate budget values within constraints - PASS (max_turns [1-500], timeout [60-7200] enforced)
+    Step 5: If invalid, return error without creating run - PASS (422 returned, run count unchanged)
+    Step 6: Include validation error details in response - PASS (error_code, message, details.errors with field/message/type)
+  - Unit tests: 85/85 PASS (test_feature_78_spec_validation.py in 4.81s)
+  - Integration tests: 12/12 PASS (test_feature_78_api_integration.py in 5.30s)
+  - Live API tests: 15/15 relevant tests PASS
+    - Valid spec created (201), required field rejections (5x 422), tool_policy rejections (2x 422)
+    - Budget constraint rejections (4x 422), invalid task_type (422)
+    - No run created for invalid specs, error details include field/message/type
+  - spec_validator.py direct testing: all validations work (required fields, budget, tool_policy)
+  - Execute endpoint: validation at lines 874-911, before AgentRun creation at line 917
+  - Source code intact: api/spec_validator.py (all functions verified)
+  - Browser automation unavailable (Chrome SIGTRAP in container)
   - No regression found - feature still working correctly
