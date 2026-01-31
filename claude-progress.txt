@@ -1,6 +1,40 @@
 # AutoBuildr Progress Log
 # ======================
 
+## Session: 2026-01-31 (Coding Agent - Feature #159)
+
+### Feature #159: App shell remains usable when child component throws
+**Status: PASSING** ✅
+
+**What was done:**
+- Analyzed ErrorBoundary architecture in App.tsx to confirm header (lines 268-343) is OUTSIDE
+  the ErrorBoundary (lines 348-554), ensuring app shell survives child component errors
+- Wrote 12 comprehensive vitest unit tests in `ui/src/__tests__/ErrorBoundary.isolation.test.tsx`
+- Tests verify all 5 feature steps:
+  1. Child component throwing error is caught by ErrorBoundary
+  2. Only the ErrorBoundary subtree shows fallback UI, sibling elements remain visible
+  3. App shell (header, navigation) remains fully interactive (click handlers work, state updates)
+  4. User can navigate to other pages/sections without reloading while error is displayed
+  5. Boundary reset restores normal rendering when error condition is removed
+- Also tested nested ErrorBoundary behavior and recovery action buttons
+- All 19 tests in full UI test suite pass (3 test files, 0 failures)
+
+**Architecture confirmed:**
+```
+<div> (root)
+  <header> ... </header>         ← OUTSIDE ErrorBoundary (always usable)
+  <ErrorBoundary>
+    <main> ... </main>           ← INSIDE (replaced by fallback on error)
+    {modals, debug, panels}      ← INSIDE
+  </ErrorBoundary>
+  <ToastContainer />             ← OUTSIDE ErrorBoundary
+</div>
+```
+
+**Current stats: 163/173 features passing (94.2%)**
+
+---
+
 ## Session: 2026-01-31 (Coding Agent - Feature #152)
 
 ### Feature #152: Feature UI updates within 1 second of WS message - COMPLETED
