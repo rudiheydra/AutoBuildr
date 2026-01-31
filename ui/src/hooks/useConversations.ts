@@ -4,6 +4,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import * as api from '../lib/api'
+import { toast } from './useToast'
 
 /**
  * List all conversations for a project
@@ -43,6 +44,9 @@ export function useDeleteConversation(projectName: string) {
       queryClient.invalidateQueries({ queryKey: ['conversations', projectName] })
       // Remove the specific conversation from cache
       queryClient.removeQueries({ queryKey: ['conversation', projectName, deletedId] })
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to delete conversation', error.message)
     },
   })
 }

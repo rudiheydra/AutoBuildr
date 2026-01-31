@@ -4,6 +4,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import * as api from '../lib/api'
+import { toast } from './useToast'
 import type { FeatureCreate, FeatureUpdate, ModelsResponse, Settings, SettingsUpdate } from '../lib/types'
 
 // ============================================================================
@@ -34,6 +35,9 @@ export function useCreateProject() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['projects'] })
     },
+    onError: (error: Error) => {
+      toast.error('Failed to create project', error.message)
+    },
   })
 }
 
@@ -44,6 +48,9 @@ export function useDeleteProject() {
     mutationFn: (name: string) => api.deleteProject(name),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['projects'] })
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to delete project', error.message)
     },
   })
 }
@@ -69,6 +76,9 @@ export function useCreateFeature(projectName: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['features', projectName] })
     },
+    onError: (error: Error) => {
+      toast.error('Failed to create feature', error.message)
+    },
   })
 }
 
@@ -79,6 +89,9 @@ export function useDeleteFeature(projectName: string) {
     mutationFn: (featureId: number) => api.deleteFeature(projectName, featureId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['features', projectName] })
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to delete feature', error.message)
     },
   })
 }
@@ -91,6 +104,9 @@ export function useSkipFeature(projectName: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['features', projectName] })
     },
+    onError: (error: Error) => {
+      toast.error('Failed to skip feature', error.message)
+    },
   })
 }
 
@@ -102,6 +118,9 @@ export function useUpdateFeature(projectName: string) {
       api.updateFeature(projectName, featureId, update),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['features', projectName] })
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to update feature', error.message)
     },
   })
 }
@@ -132,6 +151,9 @@ export function useStartAgent(projectName: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['agent-status', projectName] })
     },
+    onError: (error: Error) => {
+      toast.error('Failed to start agent', error.message)
+    },
   })
 }
 
@@ -145,6 +167,9 @@ export function useStopAgent(projectName: string) {
       // Invalidate schedule status to reflect manual stop override
       queryClient.invalidateQueries({ queryKey: ['nextRun', projectName] })
     },
+    onError: (error: Error) => {
+      toast.error('Failed to stop agent', error.message)
+    },
   })
 }
 
@@ -156,6 +181,9 @@ export function usePauseAgent(projectName: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['agent-status', projectName] })
     },
+    onError: (error: Error) => {
+      toast.error('Failed to pause agent', error.message)
+    },
   })
 }
 
@@ -166,6 +194,9 @@ export function useResumeAgent(projectName: string) {
     mutationFn: () => api.resumeAgent(projectName),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['agent-status', projectName] })
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to resume agent', error.message)
     },
   })
 }
@@ -211,12 +242,18 @@ export function useCreateDirectory() {
       const parentPath = path.split('/').slice(0, -1).join('/') || undefined
       queryClient.invalidateQueries({ queryKey: ['filesystem', 'list', parentPath] })
     },
+    onError: (error: Error) => {
+      toast.error('Failed to create directory', error.message)
+    },
   })
 }
 
 export function useValidatePath() {
   return useMutation({
     mutationFn: (path: string) => api.validatePath(path),
+    onError: (error: Error) => {
+      toast.error('Path validation failed', error.message)
+    },
   })
 }
 
@@ -282,11 +319,12 @@ export function useUpdateSettings() {
 
       return { previous }
     },
-    onError: (_err, _newSettings, context) => {
+    onError: (error: Error, _newSettings, context) => {
       // Rollback on error
       if (context?.previous) {
         queryClient.setQueryData(['settings'], context.previous)
       }
+      toast.error('Failed to update settings', error.message)
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['settings'] })

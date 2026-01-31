@@ -46,7 +46,7 @@ async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: 'Unknown error' }))
-    throw new Error(error.detail || `HTTP ${response.status}`)
+    throw new Error(error.detail || error.message || `HTTP ${response.status}`)
   }
 
   // Handle 204 No Content responses

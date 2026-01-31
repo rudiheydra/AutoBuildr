@@ -4,6 +4,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import * as api from '../lib/api'
+import { toast } from './useToast'
 import type { ScheduleCreate, ScheduleUpdate } from '../lib/types'
 
 // ============================================================================
@@ -44,6 +45,9 @@ export function useCreateSchedule(projectName: string) {
       queryClient.invalidateQueries({ queryKey: ['schedules', projectName] })
       queryClient.invalidateQueries({ queryKey: ['nextRun', projectName] })
     },
+    onError: (error: Error) => {
+      toast.error('Failed to create schedule', error.message)
+    },
   })
 }
 
@@ -60,6 +64,9 @@ export function useUpdateSchedule(projectName: string) {
       queryClient.invalidateQueries({ queryKey: ['schedules', projectName] })
       queryClient.invalidateQueries({ queryKey: ['nextRun', projectName] })
     },
+    onError: (error: Error) => {
+      toast.error('Failed to update schedule', error.message)
+    },
   })
 }
 
@@ -74,6 +81,9 @@ export function useDeleteSchedule(projectName: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['schedules', projectName] })
       queryClient.invalidateQueries({ queryKey: ['nextRun', projectName] })
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to delete schedule', error.message)
     },
   })
 }
@@ -90,6 +100,9 @@ export function useToggleSchedule(projectName: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['schedules', projectName] })
       queryClient.invalidateQueries({ queryKey: ['nextRun', projectName] })
+    },
+    onError: (error: Error) => {
+      toast.error('Failed to toggle schedule', error.message)
     },
   })
 }
