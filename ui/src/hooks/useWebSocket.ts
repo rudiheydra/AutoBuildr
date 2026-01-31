@@ -62,6 +62,38 @@ const MAX_AGENT_LOGS = 500 // Keep last 500 log lines per agent
 export function useProjectWebSocket(projectName: string | null) {
   const queryClient = useQueryClient()
 
+  // --- Feature #173: Debounced invalidation for WebSocket burst handling ---
+  // When multiple feature_update messages arrive in rapid succession,
+  // we batch them into a single invalidateQueries call to avoid UI jank.
+  const featureUpdateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pendingFeatureIdsRef = useRef<Set<number>>(new Set())
+  const FEATURE_UPDATE_DEBOUNCE_MS = 150 // Debounce window for burst coalescing
+
+  const flushFeatureUpdates = useCallback(() => {
+    if (!projectName) return
+    // Invalidate the main feature list + dependency graph once for the whole burst
+    queryClient.invalidateQueries({ queryKey: ['features', projectName] })
+    queryClient.invalidateQueries({ queryKey: ['dependencyGraph', projectName] })
+    // Invalidate each specific feature that was updated during the burst
+    for (const fid of pendingFeatureIdsRef.current) {
+      queryClient.invalidateQueries({ queryKey: ['feature', projectName, fid] })
+    }
+    pendingFeatureIdsRef.current.clear()
+  }, [projectName, queryClient])
+
+  const scheduleFeatureInvalidation = useCallback((featureId?: number) => {
+    // Accumulate feature IDs for targeted invalidation
+    if (featureId) {
+      pendingFeatureIdsRef.current.add(featureId)
+    }
+    // Reset the debounce timer – the flush fires only after the burst settles
+    if (featureUpdateTimerRef.current) {
+      clearTimeout(featureUpdateTimerRef.current)
+    }
+    featureUpdateTimerRef.current = setTimeout(flushFeatureUpdates, FEATURE_UPDATE_DEBOUNCE_MS)
+  }, [flushFeatureUpdates])
+  // --- End Feature #173 ---
+
   const [state, setState] = useState<WebSocketState>({
     progress: { passing: 0, in_progress: 0, total: 0, percentage: 0 },
     agentStatus: 'loading',
@@ -163,16 +195,12 @@ export function useProjectWebSocket(projectName: string | null) {
               break
 
             case 'feature_update':
-              // Invalidate the feature list cache so components re-render with fresh data
-              // This ensures the UI refreshes within ~1 second instead of waiting for the 5s polling fallback
+              // Feature #173: Debounce invalidation to handle WebSocket bursts gracefully.
+              // When 20+ feature_update messages arrive in rapid succession, we coalesce
+              // them into a single invalidateQueries call after the burst settles (150ms window).
+              // This prevents redundant API fetches and eliminates UI jank in the virtualized list.
               if (projectName) {
-                queryClient.invalidateQueries({ queryKey: ['features', projectName] })
-                // Also invalidate the dependency graph if it's being viewed
-                queryClient.invalidateQueries({ queryKey: ['dependencyGraph', projectName] })
-              }
-              // If a specific feature detail query exists, invalidate it too
-              if (message.feature_id) {
-                queryClient.invalidateQueries({ queryKey: ['feature', projectName, message.feature_id] })
+                scheduleFeatureInvalidation(message.feature_id || undefined)
               }
               break
 
@@ -444,6 +472,12 @@ export function useProjectWebSocket(projectName: string | null) {
       clearInterval(pingInterval)
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current)
+      }
+      // Feature #173: Clear debounce timer on cleanup to prevent stale invalidations
+      if (featureUpdateTimerRef.current) {
+        clearTimeout(featureUpdateTimerRef.current)
+        featureUpdateTimerRef.current = null
+        pendingFeatureIdsRef.current.clear()
       }
       if (wsRef.current) {
         wsRef.current.close()
