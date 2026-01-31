@@ -206,7 +206,9 @@ class TestCancelNotFound:
         response = test_client.post(f"/api/agent-runs/{fake_id}/cancel")
 
         assert response.status_code == 404
-        assert "not found" in response.json()["detail"].lower()
+        # Feature #75 standardized error responses: "detail" -> "message"
+        error_msg = response.json().get("message", response.json().get("detail", ""))
+        assert "not found" in error_msg.lower()
 
     def test_cancel_404_includes_run_id_in_message(self, test_client, db_session):
         """Verify the 404 error message includes the requested run ID."""
@@ -214,7 +216,9 @@ class TestCancelNotFound:
         response = test_client.post(f"/api/agent-runs/{fake_id}/cancel")
 
         assert response.status_code == 404
-        assert fake_id in response.json()["detail"]
+        # Feature #75 standardized error responses: "detail" -> "message"
+        error_msg = response.json().get("message", response.json().get("detail", ""))
+        assert fake_id in error_msg
 
 
 # =============================================================================
@@ -229,24 +233,30 @@ class TestCancelConflict:
         response = test_client.post(f"/api/agent-runs/{sample_completed_run.id}/cancel")
 
         assert response.status_code == 409
-        assert "completed" in response.json()["detail"].lower()
-        assert "terminal" in response.json()["detail"].lower()
+        # Feature #75 standardized error responses: "detail" -> "message"
+        error_msg = response.json().get("message", response.json().get("detail", "")).lower()
+        assert "completed" in error_msg
+        assert "terminal" in error_msg
 
     def test_cancel_returns_409_for_failed_run(self, test_client, sample_failed_run):
         """Verify 409 is returned for already failed runs."""
         response = test_client.post(f"/api/agent-runs/{sample_failed_run.id}/cancel")
 
         assert response.status_code == 409
-        assert "failed" in response.json()["detail"].lower()
-        assert "terminal" in response.json()["detail"].lower()
+        # Feature #75 standardized error responses: "detail" -> "message"
+        error_msg = response.json().get("message", response.json().get("detail", "")).lower()
+        assert "failed" in error_msg
+        assert "terminal" in error_msg
 
     def test_cancel_returns_409_for_timeout_run(self, test_client, sample_timeout_run):
         """Verify 409 is returned for timed out runs."""
         response = test_client.post(f"/api/agent-runs/{sample_timeout_run.id}/cancel")
 
         assert response.status_code == 409
-        assert "timeout" in response.json()["detail"].lower()
-        assert "terminal" in response.json()["detail"].lower()
+        # Feature #75 standardized error responses: "detail" -> "message"
+        error_msg = response.json().get("message", response.json().get("detail", "")).lower()
+        assert "timeout" in error_msg
+        assert "terminal" in error_msg
 
 
 # =============================================================================
@@ -498,7 +508,9 @@ class TestCancelIntegration:
         # Second call should return 409 (already in terminal state)
         response2 = test_client.post(f"/api/agent-runs/{sample_running_run.id}/cancel")
         assert response2.status_code == 409
-        assert "terminal" in response2.json()["detail"].lower()
+        # Feature #75 standardized error responses: "detail" -> "message"
+        error_msg = response2.json().get("message", response2.json().get("detail", "")).lower()
+        assert "terminal" in error_msg
 
     def test_cancel_all_cancellable_statuses(self, test_client, db_session, sample_agent_spec):
         """Verify all cancellable statuses can be cancelled."""

@@ -1,6 +1,82 @@
 # AutoBuildr Progress Log
 # ======================
 
+## Session: 2026-01-31 (Coding Agent - Feature #163)
+
+### Feature #163: All React Query mutations have onError handlers - COMPLETED
+
+**Status:** PASSING
+
+**Category:** error-handling
+
+**Dependencies:** None
+
+**Description:** Audited all React Query useMutation calls across the codebase and ensured every one has an onError callback. No mutation fails silently — errors are surfaced to the user via toast notifications.
+
+**Implementation Summary:**
+
+1. **Toast System** (new): Created lightweight toast notification system
+   - `ui/src/hooks/useToast.ts`: Global event emitter pattern (no React context needed)
+     - `toast.error(title, message)` callable from anywhere (hooks, callbacks)
+     - `useToastState()` hook for ToastContainer component subscription
+     - Auto-dismiss: 6s for errors, 4s for success/info/warning
+   - `ui/src/components/ToastContainer.tsx`: Neobrutalism-styled toast UI
+     - Fixed bottom-right positioning, z-index 9999
+     - Animated slide-in/slide-out transitions
+     - Color-coded by type (error=red, success=green, warning=amber, info=blue)
+     - Bold borders + shadow per design system
+     - Accessible: role="alert", aria-live="assertive"
+     - Manual dismiss button on each toast
+
+2. **Toast Integration**: Added ToastContainer to App.tsx
+   - `useToastState()` in App component
+   - `<ToastContainer>` rendered outside ErrorBoundary (always visible)
+
+3. **onError Handlers Added** (17 mutations total, all now covered):
+   - `ui/src/hooks/useProjects.ts` (13 mutations):
+     - useCreateProject → "Failed to create project"
+     - useDeleteProject → "Failed to delete project"
+     - useCreateFeature → "Failed to create feature"
+     - useDeleteFeature → "Failed to delete feature"
+     - useSkipFeature → "Failed to skip feature"
+     - useUpdateFeature → "Failed to update feature"
+     - useStartAgent → "Failed to start agent"
+     - useStopAgent → "Failed to stop agent"
+     - usePauseAgent → "Failed to pause agent"
+     - useResumeAgent → "Failed to resume agent"
+     - useCreateDirectory → "Failed to create directory"
+     - useValidatePath → "Path validation failed"
+     - useUpdateSettings → "Failed to update settings" (added toast alongside existing rollback)
+   - `ui/src/hooks/useSchedules.ts` (4 mutations):
+     - useCreateSchedule → "Failed to create schedule"
+     - useUpdateSchedule → "Failed to update schedule"
+     - useDeleteSchedule → "Failed to delete schedule"
+     - useToggleSchedule → "Failed to toggle schedule"
+   - `ui/src/hooks/useConversations.ts` (1 mutation):
+     - useDeleteConversation → "Failed to delete conversation"
+   - `ui/src/components/DevServerControl.tsx` (2 mutations):
+     - useStartDevServer → "Failed to start dev server"
+     - useStopDevServer → "Failed to stop dev server"
+
+4. **API Error Message Fix**: Updated `ui/src/lib/api.ts` fetchJSON
+   - Added `error.message` fallback: `error.detail || error.message || HTTP ${status}`
+   - Handles both FastAPI HTTPException (`detail`) and custom error handler (`message`) formats
+
+**Verification Summary:**
+- TypeScript: Zero type errors (tsc --noEmit passes)
+- Build: Production build succeeds (vite build, 2171 modules, 8.44s)
+- Static Analysis: 17/17 useMutation calls have onError handlers (100% coverage)
+- No mock data, no TODO/STUB in new files
+- API error responses verified via curl: proper error messages propagated
+- Browser automation unavailable (Chrome SIGTRAP in container - consistent with all prior sessions)
+
+**Commit:** cb4e8d3 (auto-committed with progress notes)
+
+**Updated Progress:**
+- Feature #163: All React Query mutations have onError handlers - PASSING
+
+**Session completed successfully.**
+
 ## Session: 2026-01-31 (Coding Agent - Feature #172)
 
 ### Feature #172: Virtualize feature list for large datasets (100+ features) - COMPLETED
