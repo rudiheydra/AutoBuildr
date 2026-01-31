@@ -1,6 +1,37 @@
 # AutoBuildr Progress Log
 # ======================
 
+## Session: 2026-01-31 (Coding Agent - Feature #170)
+
+**Feature:** #170 - Lazy-load heavy UI components with React.lazy and Suspense
+**Category:** style
+**Status:** PASSING
+
+**Changes Made:**
+1. Added `export default` to Terminal.tsx, SpecCreationChat.tsx, DependencyGraph.tsx
+2. Converted static imports to `React.lazy(() => import(...))` in:
+   - App.tsx (SpecCreationChat, DependencyGraph)
+   - NewProjectModal.tsx (SpecCreationChat)
+   - DebugLogViewer.tsx (Terminal)
+3. Wrapped each lazy component with `<Suspense>` boundary and loading fallback spinner
+
+**Bundle Size Improvements:**
+- Main JS bundle: 220KB → 212KB (-3.5%)
+- Main CSS: 105KB → 86KB (-18%)
+- vendor-xterm (334KB) and vendor-flow (270KB) no longer preloaded on initial page load
+- New lazy chunks: Terminal (5.7KB), DependencyGraph (8KB), SpecCreationChat (19KB)
+- Total initial load savings: ~604KB+ of vendor JS no longer in critical path
+
+**Verification:**
+- TypeScript compilation: PASS
+- Vite production build: PASS (all 2171 modules transformed, 13 output chunks)
+- All lazy chunk files accessible via HTTP (200 status)
+- Lazy chunks contain correct default exports
+- HTML no longer includes modulepreload for vendor-xterm and vendor-flow
+- Browser automation unavailable (Chrome SIGTRAP in container)
+
+**Commit:** 9a8a37e
+
 ## Session: 2026-01-31 (Coding Agent - Feature #160)
 
 ### Feature #160: Standardize acceptance results to canonical format in backend - COMPLETED
