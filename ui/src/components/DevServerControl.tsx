@@ -1,8 +1,8 @@
 import { Globe, Square, Loader2, ExternalLink, AlertTriangle } from 'lucide-react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import type { DevServerStatus } from '../lib/types'
 import { startDevServer, stopDevServer } from '../lib/api'
-import { toast } from '../hooks/useToast'
+import { useHandledMutation } from '../hooks/useHandledMutation'
 
 // Re-export DevServerStatus from lib/types for consumers that import from here
 export type { DevServerStatus }
@@ -18,14 +18,12 @@ export type { DevServerStatus }
 function useStartDevServer(projectName: string) {
   const queryClient = useQueryClient()
 
-  return useMutation({
+  return useHandledMutation({
     mutationFn: () => startDevServer(projectName),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['dev-server-status', projectName] })
     },
-    onError: (error: Error) => {
-      toast.error('Failed to start dev server', error.message)
-    },
+    errorTitle: 'Failed to start dev server',
   })
 }
 
@@ -36,14 +34,12 @@ function useStartDevServer(projectName: string) {
 function useStopDevServer(projectName: string) {
   const queryClient = useQueryClient()
 
-  return useMutation({
+  return useHandledMutation({
     mutationFn: () => stopDevServer(projectName),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['dev-server-status', projectName] })
     },
-    onError: (error: Error) => {
-      toast.error('Failed to stop dev server', error.message)
-    },
+    errorTitle: 'Failed to stop dev server',
   })
 }
 

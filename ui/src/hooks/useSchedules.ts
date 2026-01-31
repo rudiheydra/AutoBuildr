@@ -2,9 +2,9 @@
  * React Query hooks for schedule data
  */
 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as api from '../lib/api'
-import { toast } from './useToast'
+import { useHandledMutation } from './useHandledMutation'
 import type { ScheduleCreate, ScheduleUpdate } from '../lib/types'
 
 // ============================================================================
@@ -39,15 +39,13 @@ export function useSchedule(projectName: string | null, scheduleId: number | nul
 export function useCreateSchedule(projectName: string) {
   const queryClient = useQueryClient()
 
-  return useMutation({
+  return useHandledMutation({
     mutationFn: (schedule: ScheduleCreate) => api.createSchedule(projectName, schedule),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['schedules', projectName] })
       queryClient.invalidateQueries({ queryKey: ['nextRun', projectName] })
     },
-    onError: (error: Error) => {
-      toast.error('Failed to create schedule', error.message)
-    },
+    errorTitle: 'Failed to create schedule',
   })
 }
 
@@ -57,16 +55,14 @@ export function useCreateSchedule(projectName: string) {
 export function useUpdateSchedule(projectName: string) {
   const queryClient = useQueryClient()
 
-  return useMutation({
+  return useHandledMutation({
     mutationFn: ({ scheduleId, update }: { scheduleId: number; update: ScheduleUpdate }) =>
       api.updateSchedule(projectName, scheduleId, update),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['schedules', projectName] })
       queryClient.invalidateQueries({ queryKey: ['nextRun', projectName] })
     },
-    onError: (error: Error) => {
-      toast.error('Failed to update schedule', error.message)
-    },
+    errorTitle: 'Failed to update schedule',
   })
 }
 
@@ -76,15 +72,13 @@ export function useUpdateSchedule(projectName: string) {
 export function useDeleteSchedule(projectName: string) {
   const queryClient = useQueryClient()
 
-  return useMutation({
+  return useHandledMutation({
     mutationFn: (scheduleId: number) => api.deleteSchedule(projectName, scheduleId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['schedules', projectName] })
       queryClient.invalidateQueries({ queryKey: ['nextRun', projectName] })
     },
-    onError: (error: Error) => {
-      toast.error('Failed to delete schedule', error.message)
-    },
+    errorTitle: 'Failed to delete schedule',
   })
 }
 
@@ -94,16 +88,14 @@ export function useDeleteSchedule(projectName: string) {
 export function useToggleSchedule(projectName: string) {
   const queryClient = useQueryClient()
 
-  return useMutation({
+  return useHandledMutation({
     mutationFn: ({ scheduleId, enabled }: { scheduleId: number; enabled: boolean }) =>
       api.updateSchedule(projectName, scheduleId, { enabled }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['schedules', projectName] })
       queryClient.invalidateQueries({ queryKey: ['nextRun', projectName] })
     },
-    onError: (error: Error) => {
-      toast.error('Failed to toggle schedule', error.message)
-    },
+    errorTitle: 'Failed to toggle schedule',
   })
 }
 

@@ -2,9 +2,9 @@
  * React Query hooks for assistant conversation management
  */
 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as api from '../lib/api'
-import { toast } from './useToast'
+import { useHandledMutation } from './useHandledMutation'
 
 /**
  * List all conversations for a project
@@ -36,7 +36,7 @@ export function useConversation(projectName: string | null, conversationId: numb
 export function useDeleteConversation(projectName: string) {
   const queryClient = useQueryClient()
 
-  return useMutation({
+  return useHandledMutation({
     mutationFn: (conversationId: number) =>
       api.deleteAssistantConversation(projectName, conversationId),
     onSuccess: (_, deletedId) => {
@@ -45,8 +45,6 @@ export function useDeleteConversation(projectName: string) {
       // Remove the specific conversation from cache
       queryClient.removeQueries({ queryKey: ['conversation', projectName, deletedId] })
     },
-    onError: (error: Error) => {
-      toast.error('Failed to delete conversation', error.message)
-    },
+    errorTitle: 'Failed to delete conversation',
   })
 }

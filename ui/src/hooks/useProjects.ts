@@ -2,9 +2,10 @@
  * React Query hooks for project data
  */
 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as api from '../lib/api'
 import { toast } from './useToast'
+import { useHandledMutation } from './useHandledMutation'
 import type { FeatureCreate, FeatureUpdate, ModelsResponse, Settings, SettingsUpdate } from '../lib/types'
 
 // ============================================================================
@@ -29,29 +30,25 @@ export function useProject(name: string | null) {
 export function useCreateProject() {
   const queryClient = useQueryClient()
 
-  return useMutation({
+  return useHandledMutation({
     mutationFn: ({ name, path, specMethod }: { name: string; path: string; specMethod?: 'claude' | 'manual' }) =>
       api.createProject(name, path, specMethod),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['projects'] })
     },
-    onError: (error: Error) => {
-      toast.error('Failed to create project', error.message)
-    },
+    errorTitle: 'Failed to create project',
   })
 }
 
 export function useDeleteProject() {
   const queryClient = useQueryClient()
 
-  return useMutation({
+  return useHandledMutation({
     mutationFn: (name: string) => api.deleteProject(name),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['projects'] })
     },
-    onError: (error: Error) => {
-      toast.error('Failed to delete project', error.message)
-    },
+    errorTitle: 'Failed to delete project',
   })
 }
 
@@ -71,57 +68,49 @@ export function useFeatures(projectName: string | null) {
 export function useCreateFeature(projectName: string) {
   const queryClient = useQueryClient()
 
-  return useMutation({
+  return useHandledMutation({
     mutationFn: (feature: FeatureCreate) => api.createFeature(projectName, feature),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['features', projectName] })
     },
-    onError: (error: Error) => {
-      toast.error('Failed to create feature', error.message)
-    },
+    errorTitle: 'Failed to create feature',
   })
 }
 
 export function useDeleteFeature(projectName: string) {
   const queryClient = useQueryClient()
 
-  return useMutation({
+  return useHandledMutation({
     mutationFn: (featureId: number) => api.deleteFeature(projectName, featureId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['features', projectName] })
     },
-    onError: (error: Error) => {
-      toast.error('Failed to delete feature', error.message)
-    },
+    errorTitle: 'Failed to delete feature',
   })
 }
 
 export function useSkipFeature(projectName: string) {
   const queryClient = useQueryClient()
 
-  return useMutation({
+  return useHandledMutation({
     mutationFn: (featureId: number) => api.skipFeature(projectName, featureId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['features', projectName] })
     },
-    onError: (error: Error) => {
-      toast.error('Failed to skip feature', error.message)
-    },
+    errorTitle: 'Failed to skip feature',
   })
 }
 
 export function useUpdateFeature(projectName: string) {
   const queryClient = useQueryClient()
 
-  return useMutation({
+  return useHandledMutation({
     mutationFn: ({ featureId, update }: { featureId: number; update: FeatureUpdate }) =>
       api.updateFeature(projectName, featureId, update),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['features', projectName] })
     },
-    onError: (error: Error) => {
-      toast.error('Failed to update feature', error.message)
-    },
+    errorTitle: 'Failed to update feature',
   })
 }
 
@@ -141,7 +130,7 @@ export function useAgentStatus(projectName: string | null) {
 export function useStartAgent(projectName: string) {
   const queryClient = useQueryClient()
 
-  return useMutation({
+  return useHandledMutation({
     mutationFn: (options: {
       yoloMode?: boolean
       parallelMode?: boolean
@@ -151,53 +140,45 @@ export function useStartAgent(projectName: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['agent-status', projectName] })
     },
-    onError: (error: Error) => {
-      toast.error('Failed to start agent', error.message)
-    },
+    errorTitle: 'Failed to start agent',
   })
 }
 
 export function useStopAgent(projectName: string) {
   const queryClient = useQueryClient()
 
-  return useMutation({
+  return useHandledMutation({
     mutationFn: () => api.stopAgent(projectName),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['agent-status', projectName] })
       // Invalidate schedule status to reflect manual stop override
       queryClient.invalidateQueries({ queryKey: ['nextRun', projectName] })
     },
-    onError: (error: Error) => {
-      toast.error('Failed to stop agent', error.message)
-    },
+    errorTitle: 'Failed to stop agent',
   })
 }
 
 export function usePauseAgent(projectName: string) {
   const queryClient = useQueryClient()
 
-  return useMutation({
+  return useHandledMutation({
     mutationFn: () => api.pauseAgent(projectName),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['agent-status', projectName] })
     },
-    onError: (error: Error) => {
-      toast.error('Failed to pause agent', error.message)
-    },
+    errorTitle: 'Failed to pause agent',
   })
 }
 
 export function useResumeAgent(projectName: string) {
   const queryClient = useQueryClient()
 
-  return useMutation({
+  return useHandledMutation({
     mutationFn: () => api.resumeAgent(projectName),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['agent-status', projectName] })
     },
-    onError: (error: Error) => {
-      toast.error('Failed to resume agent', error.message)
-    },
+    errorTitle: 'Failed to resume agent',
   })
 }
 
@@ -235,25 +216,21 @@ export function useListDirectory(path?: string) {
 export function useCreateDirectory() {
   const queryClient = useQueryClient()
 
-  return useMutation({
+  return useHandledMutation({
     mutationFn: (path: string) => api.createDirectory(path),
     onSuccess: (_, path) => {
       // Invalidate parent directory listing
       const parentPath = path.split('/').slice(0, -1).join('/') || undefined
       queryClient.invalidateQueries({ queryKey: ['filesystem', 'list', parentPath] })
     },
-    onError: (error: Error) => {
-      toast.error('Failed to create directory', error.message)
-    },
+    errorTitle: 'Failed to create directory',
   })
 }
 
 export function useValidatePath() {
-  return useMutation({
+  return useHandledMutation({
     mutationFn: (path: string) => api.validatePath(path),
-    onError: (error: Error) => {
-      toast.error('Path validation failed', error.message)
-    },
+    errorTitle: 'Path validation failed',
   })
 }
 
@@ -301,7 +278,7 @@ export function useSettings() {
 export function useUpdateSettings() {
   const queryClient = useQueryClient()
 
-  return useMutation({
+  return useHandledMutation({
     mutationFn: (settings: SettingsUpdate) => api.updateSettings(settings),
     onMutate: async (newSettings) => {
       // Cancel outgoing refetches
@@ -319,6 +296,7 @@ export function useUpdateSettings() {
 
       return { previous }
     },
+    // Custom onError: rollback optimistic update + show toast
     onError: (error: Error, _newSettings, context) => {
       // Rollback on error
       if (context?.previous) {
