@@ -1,6 +1,57 @@
 # AutoBuildr Progress Log
 # ======================
 
+## Session: 2026-01-31 (Coding Agent - Feature #158)
+
+### Feature #158: ErrorBoundary shows fallback UI with reload and error details - COMPLETED
+
+**Status:** PASSING
+
+**Category:** error-handling
+
+**Dependencies:** Feature #157 (Top-level React ErrorBoundary wraps main content area) - already passing
+
+**Description:** Enhanced the ErrorBoundary component with a 'Copy error details' button, improved error details display, and full stack trace console logging.
+
+**Changes Made:**
+
+1. `ui/src/components/ErrorBoundary.tsx`: Enhanced ErrorBoundary fallback UI
+   - Added `handleCopyError` async method that copies error name, message, stack trace, and component stack to clipboard via `navigator.clipboard.writeText`
+   - Added `copied` state with auto-reset after 2 seconds for user feedback
+   - Added Copy and Check icons from lucide-react
+   - Enhanced error details display: now shows both JS stack trace AND React component stack separately
+   - Added `console.error` for full `error.stack` in `componentDidCatch`
+   - Made button layout responsive with `flex-wrap`
+   - Added RefreshCw icon to Reload button for visual consistency
+   - Graceful fallback when clipboard API is unavailable (try/catch)
+
+2. `tests/test_feature_158_error_boundary_fallback.py`: 49 verification tests
+   - TestFallbackUI (5 tests): heading, h2 element, hasError check, descriptive message, alert icon
+   - TestReloadButton (6 tests): reload button, window.location.reload, handleReset, state clearing, try again, onclick
+   - TestCopyErrorDetails (12 tests): button text, method, clipboard API, error name/message, stack trace, component stack, icons, copied state, feedback, conditional rendering, fallback handling
+   - TestConsoleErrorLogging (6 tests): componentDidCatch, console.error, error object, stack trace, component stack, getDerivedStateFromError
+   - TestDesignSystemConsistency (10 tests): neo-card, neo-btn, text colors, dark mode, centered layout, display font, error colors, borders, responsive
+   - TestErrorDetailsDisplay (4 tests): details section, error stack, component stack, monospace font
+   - TestComponentStructure (6 tests): class component, export, children, optional fallback, custom fallback, children rendering
+
+**Verification:**
+- All 49 tests pass (pytest 49/49 in 0.19s)
+- Frontend build succeeds (vite build, 2172 modules transformed)
+- Built bundle contains all expected strings: 'Copy error details', 'Something went wrong', 'clipboard.writeText'
+- No TypeScript errors in ErrorBoundary.tsx (pre-existing errors in unrelated files)
+- ErrorBoundary correctly imported and used in App.tsx (lines 26, 348, 554)
+- Browser automation unavailable (Chrome SIGTRAP in container)
+
+**Commit:** 27caeb3
+
+**Updated Progress:**
+- Feature #158: ErrorBoundary shows fallback UI with reload and error details - PASSING
+- Total: 160/173 features passing (92.5%)
+
+**Session completed successfully.**
+
+---
+
 ## Session: 2026-01-31 (Coding Agent - Feature #24)
 
 ### Feature #24: POST /api/agent-runs/:id/cancel Cancel Agent - COMPLETED
