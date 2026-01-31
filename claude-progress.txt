@@ -1,6 +1,33 @@
 # AutoBuildr Progress Log
 # ======================
 
+## Session: 2026-02-01 (Coding Agent - Feature #171)
+
+### Feature #171: Lazy-loaded components have no functional regressions - COMPLETED
+
+**Status:** PASSING
+
+**Category:** style
+
+**What was done:**
+- Created comprehensive Vitest test suite (19 tests) in `ui/src/__tests__/lazy-loading.regression.test.tsx`
+- Verified all three lazy-loaded components (Terminal, SpecCreationChat, DependencyGraph) have correct `export default function` patterns required by React.lazy()
+- Tested Suspense fallback lifecycle: fallback shows during pending import, disappears after resolution
+- Verified multiple independent Suspense boundaries work correctly (App.tsx, DebugLogViewer.tsx, NewProjectModal.tsx patterns)
+- Confirmed no Suspense-related console errors during component resolution
+- Validated production build produces separate code-split chunks: DependencyGraph-B4iaLBfq.js, SpecCreationChat-CZQsbXRL.js, Terminal-B_JXVGDj.js
+- Verified all lazy chunks served with HTTP 200 from backend at localhost:8888
+- Confirmed main bundle references all three lazy chunks for dynamic loading
+- All 78 existing tests pass with zero regressions
+
+**Note:** Browser automation unavailable (Chrome SIGTRAP in container). Verification done via Vitest unit tests, source code analysis, production build inspection, and HTTP endpoint checks.
+
+**Updated Progress:**
+- Feature #171: Lazy-loaded components have no functional regressions - PASSING
+- Total: 168/173 features passing (97.1%)
+
+---
+
 ## Session: 2026-01-31 (Coding Agent - Feature #165)
 
 ### Feature #165: Mutation errors show clear user-facing messages - COMPLETED
@@ -12286,3 +12313,55 @@ What was done:
 - Committed: edc9694
 
 **Current progress:** 168/173 features passing (97.1%)
+[Testing] 2026-01-31T23:55:00+00:00 - Feature #25 regression test PASSED
+  - Feature: HarnessKernel.execute() Core Execution Loop
+  - Category: D. Workflow Completeness
+  - All 18 verification steps verified:
+    Step 1: HarnessKernel class exists (line 819) with execute(spec) -> AgentRun (line 2156) - PASS
+    Step 2: AgentRun record created with status=running via _create_run_for_spec() (line 2225) + initialize_run() (line 883) - PASS
+    Step 3: Started AgentEvent recorded with sequence via _record_started_event() (line 950) - PASS
+    Step 4: System prompt built from spec.objective and spec.context (execute docstring step 3) - PASS
+    Step 5: Claude SDK client initialized (turn_executor callback pattern) - PASS
+    Step 6: Tools configured based on spec.tool_policy via _initialize_tool_policy_enforcer() (line 2241) - PASS
+    Step 7: Execution loop (while True at line 2291) calling turn_executor - PASS
+    Step 8: tool_call events recorded via _record_tool_call_event() (line 1446) - PASS
+    Step 9: tool_result events recorded via _record_tool_result_event() (line 1514) - PASS
+    Step 10: turn_complete events recorded via record_turn_complete() (line 996) - PASS
+    Step 11: max_turns budget checked via check_budget_before_turn() (line 975) - PASS
+    Step 12: timeout_seconds wall-clock limit checked (line 2338-2342) - PASS
+    Step 13: Graceful termination on budget exhaustion via handle_budget_exceeded() (line 1084) - PASS
+    Step 14: AcceptanceSpec validators run via _run_acceptance_validators() (line 1922) - PASS
+    Step 15: acceptance_check event recorded via _record_acceptance_check_event() (line 1591) - PASS
+    Step 16: final_verdict determined from validator results (line 1978-1984) - PASS
+    Step 17: AgentRun updated with completed status and verdict (line 2360-2366) - PASS
+    Step 18: Finalized AgentRun returned (line 2381) - PASS
+  - Unit tests: 56/56 PASS (test_harness_kernel.py in 5.25s)
+    - TestBudgetTracker: 15/15 PASS
+    - TestExceptions: 2/2 PASS
+    - TestEventRecording: 3/3 PASS
+    - TestHarnessKernel: 9/9 PASS
+    - TestHarnessKernelIntegration: 5/5 PASS
+    - TestPersistenceVerification: 2/2 PASS
+    - TestExecutionResult: 5/5 PASS
+    - TestHarnessKernelExecute: 15/15 PASS (covers all 18 feature steps)
+  - API endpoint verification:
+    - POST /api/projects/{name}/agent-specs/{id}/execute: 404 for non-existent spec - PASS
+    - Error body contains proper NOT_FOUND error code - PASS
+    - API health check: healthy - PASS
+  - Source code intact: api/harness_kernel.py (2400+ lines)
+    - HarnessKernel class: line 819
+    - execute(): line 2156 (full lifecycle implementation)
+    - initialize_run(): line 883 (status=running, budget tracker setup)
+    - _record_started_event(): line 950 (sequence=1)
+    - check_budget_before_turn(): line 975 (max_turns + timeout)
+    - record_turn_complete(): line 996 (increment + persist + broadcast)
+    - handle_budget_exceeded(): line 1084 (graceful termination)
+    - handle_timeout_exceeded(): line 1163 (graceful termination)
+    - _record_tool_call_event(): line 1446 (with payload truncation)
+    - _record_tool_result_event(): line 1514 (with payload truncation)
+    - _record_acceptance_check_event(): line 1591 (verdict + results)
+    - _record_completed_event(): line 1638 (final status)
+    - _run_acceptance_validators(): line 1922 (evaluate + determine verdict)
+    - _create_run_for_spec(): line 2112 (AgentRun creation)
+  - Browser automation unavailable (Chrome SIGTRAP in container)
+  - No regression found - feature still working correctly
