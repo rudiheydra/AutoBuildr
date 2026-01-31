@@ -1,6 +1,90 @@
 # AutoBuildr Progress Log
 # ======================
 
+## Session: 2026-01-31 (Coding Agent - Feature #160)
+
+### Feature #160: Standardize acceptance results to canonical format in backend - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Dependencies:** None
+
+**Description:** Align the acceptance results format between the API (Record<string, AcceptanceValidatorResult>) and WebSocket (WSValidatorResult[]). The backend now emits the same canonical format (Record<string, AcceptanceValidatorResult>) on both transports, eliminating the need for UI normalization.
+
+**Implementation Summary:**
+
+1. **Backend utility function**: Added `normalize_acceptance_results_to_record()` in `api/validators.py`
+   - Converts list-format acceptance_results (from DB) to Record<string, AcceptanceValidatorResult>
+   - Handles multiple input formats: list with "type", list with "validator_type", already-canonical record
+   - Handles duplicate types by appending index suffix
+   - Provides sensible defaults for missing fields (score=1.0, details={}, required=False, weight=1.0)
+
+2. **API normalization**: Updated `server/routers/agent_runs.py`
+   - Added `_build_run_response()` helper that normalizes acceptance_results before building response
+   - All 5 endpoints (list, get, pause, resume, cancel) now use canonical format
+   - Also updated `server/routers/agent_specs.py` execute endpoint
+
+3. **WebSocket canonical format**: Updated `api/websocket_events.py`
+   - `AcceptanceUpdatePayload.to_message()` now emits `acceptance_results` as Record
+   - Added `_build_acceptance_results_record()` method for conversion
+   - Added `format_version=2` field for future extensibility
+   - Kept `validator_results` array for backward compatibility
+
+4. **Frontend alignment**: Updated `ui/src/lib/types.ts` and `ui/src/hooks/useAgentRunUpdates.ts`
+   - `WSAgentAcceptanceUpdateMessage` now includes `acceptance_results` Record and `format_version`
+   - `handleAcceptanceUpdate` in both hooks now uses canonical format directly
+   - Removed manual `validator_results` array-to-record conversion from frontend
+   - AcceptanceResults component's normalizeResults() still handles all formats as safety net
+
+5. **Exports**: Added `normalize_acceptance_results_to_record` to `api/__init__.py` and `__all__`
+
+**Verification Summary (All 5 Feature Steps Passed):**
+
+1. **Identify API acceptance results location** - PASS
+   - Located in `server/routers/agent_runs.py` (all 5 endpoints)
+   - Also in `server/routers/agent_specs.py` (execute endpoint)
+
+2. **Identify WebSocket acceptance results emission** - PASS
+   - Located in `api/websocket_events.py` (`AcceptanceUpdatePayload.to_message()`)
+   - Broadcasts via `broadcast_acceptance_update()` and sync wrapper
+
+3. **Align both to Record<string, AcceptanceValidatorResult>** - PASS
+   - API normalizes via `_build_run_response()` using `normalize_acceptance_results_to_record()`
+   - WS builds Record via `_build_acceptance_results_record()` method
+   - Both emit identical key structure with matching core fields
+
+4. **Add format_version field to WS payload** - PASS
+   - `format_version=2` added to WS message
+
+5. **Verify both API and WS return identical structures** - PASS
+   - Same keys (validator type strings)
+   - Same core field values (passed, message, score, index)
+
+**Test Results:**
+- tests/test_feature_160_canonical_format.py: 22/22 tests PASS
+  - TestNormalizeAcceptanceResultsToRecord: 10/10 PASS
+  - TestWebSocketCanonicalFormat: 6/6 PASS
+  - TestAPICanonicalFormat: 3/3 PASS
+  - TestExports: 2/2 PASS
+  - TestStructureIdentity: 1/1 PASS
+- tests/test_feature_63_websocket_acceptance_update.py: 28/28 PASS (zero regressions)
+- tests/test_dspy_pipeline_e2e.py: 86/88 PASS (2 pre-existing failures, no regressions)
+- TypeScript: Zero errors (npx tsc --noEmit)
+- Browser automation: Unavailable (Chrome SIGTRAP in container)
+- API server: Healthy on port 8888
+
+**Commit:** 2ff55ee
+
+**Updated Progress:**
+- Feature #160: Standardize acceptance results to canonical format - PASSING
+- Total: 151/173 features passing (87.3%)
+
+**Session completed successfully.**
+
+---
+
 ## Session: 2026-01-31 (Coding Agent - Feature #157)
 
 ### Feature #157: Top-level React ErrorBoundary wraps main content area - COMPLETED
@@ -11215,5 +11299,25 @@ Created comprehensive test suite:
     - gate_mode validator: line 469 (validates all_pass, any_pass, weighted)
     - retry_policy validator: line 488 (validates none, fixed, exponential)
     - min_score model validator: line 507 (requires min_score for weighted mode, range 0.0-1.0)
+  - Browser automation unavailable (Chrome SIGTRAP in container)
+  - No regression found - feature still working correctly
+[Testing] 2026-01-31T12:23:06+00:00 - Feature #103 regression test PASSED
+  - Feature: Optional UI banner shows when dependency issues detected at startup
+  - Category: style
+  - All 5 verification steps passed:
+    Step 1: dependency_health endpoint exists in API router - PASS
+    Step 2: Returns {has_issues: bool, count: N} response format (7 fields verified) - PASS
+    Step 3: DependencyHealthBanner.tsx displays Warning message with count - PASS
+    Step 4: Banner is dismissible (sessionStorage, isDismissed state, handleDismiss) - PASS
+    Step 5: Banner uses amber warning colors, AlertTriangle icon, not blocking UI - PASS
+  - Integration: Banner imported and used in App.tsx with projectName prop - PASS
+  - Unit tests: 27/27 PASS (test_feature_103_dependency_health_banner.py in 8.29s)
+  - Verification script: 23/23 checks PASS (verify_feature_103.py)
+  - Live API: /api/projects/repo-concierge/features/dependency-health returns correct JSON
+  - Source code intact:
+    - server/routers/features.py: get_dependency_health endpoint (line 386)
+    - ui/src/components/DependencyHealthBanner.tsx: Banner component (71 lines)
+    - ui/src/lib/api.ts: getDependencyHealth function + DependencyHealthResponse type
+    - ui/src/App.tsx: Banner integrated with projectName prop
   - Browser automation unavailable (Chrome SIGTRAP in container)
   - No regression found - feature still working correctly
