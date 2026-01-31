@@ -1,6 +1,93 @@
 # AutoBuildr Progress Log
 # ======================
 
+## Session: 2026-01-31 (Coding Agent - Feature #24)
+
+### Feature #24: POST /api/agent-runs/:id/cancel Cancel Agent - COMPLETED
+
+**Status:** PASSING
+
+**Category:** D. Workflow Completeness
+
+**Dependencies:** Features #3, #5, #9
+
+**Description:** POST /api/agent-runs/:id/cancel endpoint to cancel a running or paused agent. Transitions the run to failed status with error='user_cancelled'.
+
+**Verification Summary (All 10 Feature Steps Passed):**
+
+1. **Define FastAPI route POST /api/agent-runs/{run_id}/cancel** - PASS
+   - Route registered at line 748 of server/routers/agent_runs.py
+   - POST method, path /{run_id}/cancel, returns AgentRunResponse
+
+2. **Query AgentRun by id** - PASS
+   - Uses get_agent_run(db, run_id) from api/agentspec_crud
+
+3. **Return 404 if not found** - PASS
+   - Returns HTTPException 404 with "AgentRun {run_id} not found"
+   - Live API test: curl -> {"error_code":"NOT_FOUND","message":"AgentRun ... not found"}
+
+4. **Return 409 if status is already completed, failed, or timeout** - PASS
+   - Checks terminal_statuses = {"completed", "failed", "timeout"}
+   - Live API test: curl -> {"error_code":"CONFLICT","message":"...already in terminal state"}
+
+5. **Update status to failed** - PASS
+   - Handles pending (direct update) and running/paused (via fail() state machine method)
+   - Database verified via db_session.refresh
+
+6. **Set error to user_cancelled** - PASS
+   - run.error = "user_cancelled" for all cancellable statuses
+   - Verified via API response and database
+
+7. **Set completed_at to current timestamp** - PASS
+   - Set via datetime.now(timezone.utc) for pending, or via transition_to() for running/paused
+   - API response includes completed_at and computed duration_seconds
+
+8. **Record failed event with cancellation reason** - PASS
+   - Event recorded with payload: reason=user_cancelled, previous_status, new_status, turns_used, tokens_in, tokens_out
+   - Verified via /api/agent-runs/{id}/events endpoint
+
+9. **Signal kernel to abort** - PASS
+   - Uses broadcast_agent_event_sync with event_type="failed"
+   - Gracefully handles broadcaster failures (try/except)
+   - Verified with mock patching in tests
+
+10. **Return updated AgentRunResponse** - PASS
+    - Returns full AgentRunResponse with status="failed", error="user_cancelled", completed_at set
+    - Preserves existing metrics (turns_used, tokens_in, tokens_out)
+    - Feature #160 canonical acceptance_results format applied
+
+**Test Results:**
+- tests/test_feature_24_cancel_agent.py: 35/35 tests PASS (12.23s)
+  - TestCancelRouteExists: 2/2 (route exists, accepts POST only)
+  - TestCancelNotFound: 2/2 (404 response, includes run_id)
+  - TestCancelConflict: 3/3 (completed, failed, timeout all return 409)
+  - TestCancelStatusUpdate: 5/5 (running, paused, pending cancel; error set; completed_at set)
+  - TestCancelEventRecording: 5/5 (event recorded; reason, previous_status, metrics in payload)
+  - TestCancelKernelSignal: 2/2 (broadcaster called; works without broadcaster)
+  - TestCancelResponse: 3/3 (valid response; updated values; preserved metrics)
+  - TestCancelIntegration: 3/3 (idempotent 409; all cancellable statuses; no terminal cancels)
+  - TestFeature24VerificationSteps: 10/10 (all 10 steps verified)
+- tests/test_agentrun_state_machine.py: 64/64 tests PASS (including pause_cancel_lifecycle)
+- Live API tests: All scenarios verified (404, 409, 200 with running run, event recording)
+
+**Live API Verification:**
+- Created running AgentRun (id=9ef08d47-...), cancelled successfully
+- Response: status=failed, error=user_cancelled, completed_at set, metrics preserved
+- Events endpoint: failed event with reason=user_cancelled, previous_status=running
+- Second cancel: 409 "already in terminal state"
+- Non-existent run: 404 "not found"
+
+**Browser Automation:** Unavailable (Chrome SIGTRAP in container - pre-existing environment issue)
+
+**No regressions introduced** - Feature #24 cancel endpoint was already fully implemented.
+
+**Updated Progress:**
+- Feature #24: POST /api/agent-runs/:id/cancel Cancel Agent - PASSING
+
+**Session completed successfully.**
+
+---
+
 ## Session: 2026-01-31 (Coding Agent - Feature #163)
 
 ### Feature #163: All React Query mutations have onError handlers - COMPLETED
@@ -11521,4 +11608,32 @@ Created comprehensive test suite:
     - ui/src/lib/api.ts: getDependencyHealth function + DependencyHealthResponse type
     - ui/src/App.tsx: Banner integrated with projectName prop
   - Browser automation unavailable (Chrome SIGTRAP in container)
+  - No regression found - feature still working correctly
+[Testing] 2026-01-31T12:31:58+00:00 - Feature #24 regression test PASSED
+  - Feature: POST /api/agent-runs/:id/cancel Cancel Agent
+  - Category: D. Workflow Completeness
+  - All 10 verification steps passed:
+    Step 1: FastAPI route POST /api/agent-runs/{run_id}/cancel defined - PASS
+    Step 2: Query AgentRun by id - PASS
+    Step 3: Return 404 if not found (verified via API: HTTP 404 with error message) - PASS
+    Step 4: Return 409 if terminal status (verified completed/failed/timeout) - PASS
+    Step 5: Update status to failed (verified via API and test suite) - PASS
+    Step 6: Set error to user_cancelled (verified in response and DB) - PASS
+    Step 7: Set completed_at to current timestamp (verified non-null) - PASS
+    Step 8: Record failed event with reason=user_cancelled (verified via events API) - PASS
+    Step 9: Signal kernel to abort via broadcast_agent_event_sync - PASS
+    Step 10: Return updated AgentRunResponse with all required fields - PASS
+  - Unit tests: 35/35 PASS (test_feature_24_cancel_agent.py in ~10s)
+  - Live API tests:
+    - Cancel running run: 200 OK, status=failed, error=user_cancelled
+    - Cancel paused run: 200 OK, status=failed, error=user_cancelled
+    - Cancel non-existent: 404 NOT_FOUND
+    - Cancel completed: 409 CONFLICT
+    - Cancel already-cancelled: 409 CONFLICT
+  - UI code verified: RunInspector.tsx has Cancel button for running/paused status
+    - LoadingButton with danger variant, Square icon
+    - Shows 'Cancelling...' during operation
+    - Error handling with user-facing error message
+  - Browser automation unavailable (Chrome SIGTRAP in container)
+  - Tests were compatible with Feature #75 standardized error responses
   - No regression found - feature still working correctly
