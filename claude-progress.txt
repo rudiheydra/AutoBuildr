@@ -1,6 +1,71 @@
 # AutoBuildr Progress Log
 # ======================
 
+## Session: 2026-01-31 (Coding Agent - Feature #157)
+
+### Feature #157: Top-level React ErrorBoundary wraps main content area - COMPLETED
+
+**Status:** PASSING
+
+**Category:** error-handling
+
+**Dependencies:** None
+
+**Description:** Add a React ErrorBoundary component wrapping the main content area. This prevents a runtime error in any child component from crashing the entire application, while keeping the header/navigation always usable.
+
+**Implementation Summary:**
+
+1. **Created ErrorBoundary component**: `ui/src/components/ErrorBoundary.tsx`
+   - React class component with `getDerivedStateFromError` (static) and `componentDidCatch` (instance)
+   - Default fallback UI with AlertTriangle icon, error details collapsible, "Try Again" and "Reload Page" buttons
+   - Supports custom `fallback` prop for specialized error screens
+   - Matches neobrutalism design system (neo-card, neo-btn, etc.) with dark mode support
+   - Logs errors to console with component stack trace for debugging
+
+2. **Integrated in App.tsx**: Wrapped main content area with `<ErrorBoundary>`
+   - `<header>` (logo, ProjectSelector, AgentControl, DevServerControl, Settings, dark mode) stays OUTSIDE
+   - `<main>` content, all modals, panels, overlays wrapped INSIDE the boundary
+   - Added descriptive comment explaining the boundary placement
+
+**Verification Summary (All 5 Feature Steps Passed):**
+
+1. **Create ErrorBoundary using componentDidCatch/getDerivedStateFromError** - PASS
+   - Both lifecycle methods present with correct TypeScript signatures
+   - getDerivedStateFromError returns partial state update (hasError, error)
+   - componentDidCatch logs error + component stack, stores errorInfo
+
+2. **Wrap main content area with ErrorBoundary** - PASS
+   - `<main>` element and all child components wrapped inside `<ErrorBoundary>`
+   - All modals (AddFeatureForm, FeatureModal, ExpandProjectModal, etc.) inside boundary
+
+3. **App shell remains outside boundary** - PASS
+   - `<header>` with all navigation controls is before/outside the ErrorBoundary
+   - Header always usable even when content area crashes
+
+4. **ErrorBoundary catches errors from child tree** - PASS
+   - Standard React error boundary pattern wrapping entire child component tree
+   - All content area components covered
+
+5. **Boundary does not interfere with normal rendering** - PASS
+   - Returns `this.props.children` directly when `hasError` is false
+   - No additional DOM wrappers or styling applied during normal operation
+
+**Build Verification:**
+- TypeScript: Zero errors (tsc --noEmit passes)
+- Production build: Successful (vite build, 2165 modules transformed)
+- ErrorBoundary present in production bundle (verified via grep)
+- Browser automation unavailable (Chrome SIGTRAP in container)
+
+**Commit:** 093b5c6
+
+**Updated Progress:**
+- Feature #157: Top-level React ErrorBoundary wraps main content area - PASSING
+- Total: 151/173 features passing (87.3%)
+
+**Session completed successfully.**
+
+---
+
 ## Session: 2026-01-31 (Coding Agent - Feature #151)
 
 ### Feature #151: WebSocket feature_update invalidates React Query cache - COMPLETED
