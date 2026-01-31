@@ -1,6 +1,64 @@
 # AutoBuildr Progress Log
 # ======================
 
+## Session: 2026-01-31 (Coding Agent - Feature #164)
+
+### Feature #164: Create useHandledMutation helper for consistent error handling - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Dependencies:** Feature #163 (All React Query mutations have onError handlers) - PASSING
+
+**Description:** Created a `useHandledMutation` wrapper around React Query's `useMutation` that enforces onError consistency. The helper automatically provides toast/error notification on failure, reducing boilerplate and preventing developers from forgetting error handlers.
+
+**Implementation Summary:**
+
+1. **Created `ui/src/hooks/useHandledMutation.ts`** (109 lines)
+   - Wraps `useMutation` from `@tanstack/react-query` v5
+   - Extends `UseMutationOptions` with optional `errorTitle` field
+   - Default `onError` handler calls `toast.error(errorTitle, error.message)`
+   - Default `errorTitle` is "Operation failed" when not specified
+   - Handles both `Error` instances and non-Error objects via `String(error)` fallback
+   - Callers can provide their own `onError` to completely override default toast
+   - Fully generic: `<TData, TError, TVariables, TContext>` type parameters
+   - Returns standard `UseMutationResult` — drop-in replacement
+
+2. **Refactored 18 mutations across 4 files:**
+   - `ui/src/hooks/useProjects.ts`: 13 mutations (createProject, deleteProject, createFeature, deleteFeature, skipFeature, updateFeature, startAgent, stopAgent, pauseAgent, resumeAgent, createDirectory, validatePath, updateSettings)
+   - `ui/src/hooks/useSchedules.ts`: 4 mutations (createSchedule, updateSchedule, deleteSchedule, toggleSchedule)
+   - `ui/src/hooks/useConversations.ts`: 1 mutation (deleteConversation)
+   - `ui/src/components/DevServerControl.tsx`: 2 mutations (startDevServer, stopDevServer)
+
+3. **Special case: `useUpdateSettings`** uses custom `onError` for optimistic update rollback + toast
+
+4. **Zero direct `useMutation` imports** remain outside `useHandledMutation.ts`
+
+**Verification (All 5 Feature Steps Passed):**
+
+Step 1: Create a useHandledMutation hook that wraps React Query's useMutation - PASS (6 tests)
+Step 2: Automatically inject a default onError handler that shows a toast notification - PASS (6 tests)
+Step 3: Allow callers to override or extend the default onError behavior - PASS (4 tests)
+Step 4: Refactor existing mutations to use useHandledMutation where appropriate - PASS (10 tests)
+Step 5: Verify that mutations using the helper surface errors correctly - PASS (9 tests)
+
+**Test Results:**
+- tests/test_feature_164_use_handled_mutation.py: 35/35 PASS (0.24s)
+
+**Browser Automation:** Chrome SIGTRAP in container — visual verification not possible.
+Code-level verification confirms all mutations route through useHandledMutation with proper errorTitle.
+
+**Commit:** 75af315
+
+**Updated Progress:**
+- Feature #164: Create useHandledMutation helper for consistent error handling - PASSING
+- Total: 160/173 features passing (92.5%)
+
+**Session completed successfully.**
+
+---
+
 ## Session: 2026-01-31 (Coding Agent - Feature #158)
 
 ### Feature #158: ErrorBoundary shows fallback UI with reload and error details - COMPLETED
