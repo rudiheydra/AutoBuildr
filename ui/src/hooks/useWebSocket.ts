@@ -3,6 +3,7 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import type {
   WSMessage,
   AgentStatus,
@@ -59,6 +60,8 @@ const MAX_ACTIVITY = 20 // Keep last 20 activity items
 const MAX_AGENT_LOGS = 500 // Keep last 500 log lines per agent
 
 export function useProjectWebSocket(projectName: string | null) {
+  const queryClient = useQueryClient()
+
   const [state, setState] = useState<WebSocketState>({
     progress: { passing: 0, in_progress: 0, total: 0, percentage: 0 },
     agentStatus: 'loading',
@@ -160,7 +163,17 @@ export function useProjectWebSocket(projectName: string | null) {
               break
 
             case 'feature_update':
-              // Feature updates will trigger a refetch via React Query
+              // Invalidate the feature list cache so components re-render with fresh data
+              // This ensures the UI refreshes within ~1 second instead of waiting for the 5s polling fallback
+              if (projectName) {
+                queryClient.invalidateQueries({ queryKey: ['features', projectName] })
+                // Also invalidate the dependency graph if it's being viewed
+                queryClient.invalidateQueries({ queryKey: ['dependencyGraph', projectName] })
+              }
+              // If a specific feature detail query exists, invalidate it too
+              if (message.feature_id) {
+                queryClient.invalidateQueries({ queryKey: ['feature', projectName, message.feature_id] })
+              }
               break
 
             case 'agent_update':
@@ -371,7 +384,7 @@ export function useProjectWebSocket(projectName: string | null) {
     } catch {
       // Failed to connect, will retry via onclose
     }
-  }, [projectName])
+  }, [projectName, queryClient])
 
   // Send ping to keep connection alive
   const sendPing = useCallback(() => {
