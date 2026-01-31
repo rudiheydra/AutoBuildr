@@ -30,7 +30,7 @@ import {
   X,
 } from 'lucide-react'
 import { ValidatorTypeIcon } from './ValidatorTypeIcon'
-import type { AgentRunVerdict, WSValidatorResult } from '../lib/types'
+import type { AgentRunVerdict, AcceptanceValidatorResult } from '../lib/types'
 
 // =============================================================================
 // Props Interface
@@ -57,21 +57,24 @@ export interface ValidatorResult {
 }
 
 /**
+ * Canonical acceptance results format: Record<string, AcceptanceValidatorResult>
+ * This is the ONLY format the UI accepts (Feature #161).
+ * Both REST API and WebSocket emit this format since Feature #160.
+ */
+export type CanonicalAcceptanceResults = Record<string, AcceptanceValidatorResult>
+
+/**
  * Props for AcceptanceResults component
+ *
+ * Feature #161: Strict parser — only accepts canonical Record<string, AcceptanceValidatorResult>.
+ * Legacy array formats and other shapes are rejected with a dev-mode warning.
  */
 export interface AcceptanceResultsProps {
   /**
-   * Array of validator results
-   * Can be passed as:
-   * - Array of ValidatorResult objects
-   * - WSValidatorResult[] from WebSocket updates
-   * - Record<string, { passed: boolean; message: string }> from API
+   * Acceptance results in canonical format: Record<string, AcceptanceValidatorResult>.
+   * Both REST API and WebSocket now emit this format (Feature #160).
    */
-  acceptanceResults:
-    | ValidatorResult[]
-    | WSValidatorResult[]
-    | Record<string, { passed: boolean; message: string; required?: boolean }>
-    | null
+  acceptanceResults: CanonicalAcceptanceResults | null
   /** Final verdict (passed/failed/partial) */
   verdict: AgentRunVerdict | null
   /** Gate mode for display context */
@@ -91,38 +94,89 @@ export interface AcceptanceResultsProps {
 // =============================================================================
 
 /**
- * Normalize various input formats to ValidatorResult[]
+ * Validate that a single entry matches AcceptanceValidatorResult shape.
+ * Returns true if the entry has the required `passed` (boolean) and `message` (string) fields.
  */
-function normalizeResults(
-  input:
-    | ValidatorResult[]
-    | WSValidatorResult[]
-    | Record<string, { passed: boolean; message: string; required?: boolean }>
-    | null
+function isValidResultEntry(entry: unknown): entry is AcceptanceValidatorResult {
+  if (typeof entry !== 'object' || entry === null) return false
+  const obj = entry as Record<string, unknown>
+  return typeof obj.passed === 'boolean' && typeof obj.message === 'string'
+}
+
+/**
+ * Dev-mode warning helper.
+ * Emits console.warn only in development builds (import.meta.env.DEV).
+ * Feature #161: Strict acceptance results parser.
+ */
+function devWarn(message: string, payload?: unknown): void {
+  if (import.meta.env.DEV) {
+    console.warn(`[AcceptanceResults] ${message}`, payload !== undefined ? payload : '')
+  }
+}
+
+/**
+ * Strict parser for canonical acceptance results format.
+ *
+ * Feature #161: Replaces the multi-format normalizeResults() that tried to handle
+ * ValidatorResult[], WSValidatorResult[], and Record<> shapes. Now only accepts
+ * the canonical Record<string, AcceptanceValidatorResult> and fails loudly in
+ * development mode if an unknown format is received.
+ *
+ * @param input - Expected: Record<string, AcceptanceValidatorResult> | null
+ * @returns ValidatorResult[] for rendering
+ */
+function parseAcceptanceResults(
+  input: CanonicalAcceptanceResults | null
 ): ValidatorResult[] {
   if (!input) return []
 
-  // If it's an array, check if it's WSValidatorResult[] or ValidatorResult[]
+  // Reject arrays — the canonical format is always a Record, never an array
   if (Array.isArray(input)) {
-    return input.map((item, idx) => ({
-      type: item.type,
-      passed: item.passed,
-      message: item.message,
-      index: 'index' in item ? (item as WSValidatorResult).index : idx,
-      score: 'score' in item ? item.score : undefined,
-      required: 'required' in item ? (item as ValidatorResult).required : undefined,
-      details: 'details' in item ? (item as WSValidatorResult | ValidatorResult).details : undefined,
-    }))
+    devWarn(
+      'Received array instead of canonical Record<string, AcceptanceValidatorResult>. ' +
+      'This is a legacy format that should have been converted by the backend (Feature #160).',
+      input
+    )
+    return []
   }
 
-  // If it's a Record, convert to array
-  return Object.entries(input).map(([type, result], idx) => ({
-    type,
-    passed: result.passed,
-    message: result.message,
-    index: idx,
-    required: result.required,
-  }))
+  // Reject non-object types
+  if (typeof input !== 'object') {
+    devWarn(
+      `Received unexpected type "${typeof input}" instead of canonical Record<string, AcceptanceValidatorResult>.`,
+      input
+    )
+    return []
+  }
+
+  const entries = Object.entries(input)
+
+  // Validate each entry matches the expected schema
+  const results: ValidatorResult[] = []
+  for (let idx = 0; idx < entries.length; idx++) {
+    const [type, entry] = entries[idx]
+
+    if (!isValidResultEntry(entry)) {
+      devWarn(
+        `Entry "${type}" does not match AcceptanceValidatorResult schema ` +
+        '(requires { passed: boolean, message: string }). Skipping.',
+        entry
+      )
+      continue
+    }
+
+    results.push({
+      type,
+      passed: entry.passed,
+      message: entry.message,
+      index: idx,
+      score: entry.score,
+      required: entry.required,
+      details: entry.details,
+    })
+  }
+
+  return results
 }
 
 /**
@@ -389,9 +443,9 @@ export function AcceptanceResults({
   defaultExpanded = false,
   minScore,
 }: AcceptanceResultsProps) {
-  // Normalize the input results to a consistent format
+  // Feature #161: Strict parser — only accepts canonical Record format
   const validators = useMemo(
-    () => normalizeResults(acceptanceResults),
+    () => parseAcceptanceResults(acceptanceResults),
     [acceptanceResults]
   )
 

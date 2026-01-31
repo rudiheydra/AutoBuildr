@@ -27,6 +27,7 @@ import type {
   AgentRun,
   AgentRunStatus,
   AgentRunVerdict,
+  AcceptanceValidatorResult,
   WSMessage,
   WSAgentRunStartedMessage,
   WSAgentEventLoggedMessage,
@@ -62,8 +63,8 @@ export interface AgentRunUpdateState {
   tokensOut: number
   /** Final verdict after acceptance check */
   finalVerdict: AgentRunVerdict | null
-  /** Per-validator acceptance results */
-  acceptanceResults: Record<string, { passed: boolean; message: string }> | null
+  /** Per-validator acceptance results (canonical format, Feature #161) */
+  acceptanceResults: Record<string, AcceptanceValidatorResult> | null
   /** Error message if failed */
   error: string | null
   /** Last event received */
