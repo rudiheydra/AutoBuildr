@@ -35,6 +35,25 @@ import type {
 
 const API_BASE = '/api'
 
+/**
+ * Maps HTTP status codes to user-friendly descriptions when no detail is available.
+ */
+function httpStatusMessage(status: number): string {
+  switch (status) {
+    case 400: return 'Bad request — please check your input'
+    case 401: return 'Not authorized — please log in again'
+    case 403: return 'Access denied'
+    case 404: return 'Resource not found'
+    case 409: return 'Conflict — another operation may be in progress'
+    case 422: return 'Invalid data — please check your input'
+    case 429: return 'Too many requests — please wait and try again'
+    case 500: return 'Server error — please try again later'
+    case 502: return 'Server unavailable — please try again later'
+    case 503: return 'Service temporarily unavailable'
+    default: return `Unexpected error (HTTP ${status})`
+  }
+}
+
 async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${url}`, {
     ...options,
@@ -45,8 +64,9 @@ async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
   })
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: 'Unknown error' }))
-    throw new Error(error.detail || error.message || `HTTP ${response.status}`)
+    const error = await response.json().catch(() => ({}))
+    const detail = error.detail || error.message
+    throw new Error(detail || httpStatusMessage(response.status))
   }
 
   // Handle 204 No Content responses

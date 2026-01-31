@@ -6,7 +6,7 @@
  */
 
 import { useState, useEffect } from 'react'
-import { MessageSquare, Trash2, Loader2, AlertCircle } from 'lucide-react'
+import { MessageSquare, Trash2, Loader2 } from 'lucide-react'
 import { useConversations, useDeleteConversation } from '../hooks/useConversations'
 import { ConfirmDialog } from './ConfirmDialog'
 import type { AssistantConversation } from '../lib/types'
@@ -74,9 +74,13 @@ export function ConversationHistory({
       setDeleteError(null)
       await deleteConversation.mutateAsync(conversationToDelete.id)
       setConversationToDelete(null)
-    } catch {
-      // Keep dialog open and show error to user
-      setDeleteError('Failed to delete conversation. Please try again.')
+    } catch (err) {
+      // Keep dialog open and show inline error so user can retry
+      setDeleteError(
+        err instanceof Error
+          ? `Failed to delete conversation: ${err.message}`
+          : 'Failed to delete conversation. Please try again.'
+      )
     }
   }
 
@@ -193,23 +197,12 @@ export function ConversationHistory({
       <ConfirmDialog
         isOpen={conversationToDelete !== null}
         title="Delete Conversation"
-        message={
-          deleteError ? (
-            <div className="space-y-3">
-              <p>{`Are you sure you want to delete "${conversationToDelete?.title || 'this conversation'}"? This action cannot be undone.`}</p>
-              <div className="flex items-center gap-2 p-2 bg-[var(--color-neo-danger)]/10 border border-[var(--color-neo-danger)] rounded text-sm text-[var(--color-neo-danger)]">
-                <AlertCircle size={16} className="flex-shrink-0" />
-                <span>{deleteError}</span>
-              </div>
-            </div>
-          ) : (
-            `Are you sure you want to delete "${conversationToDelete?.title || 'this conversation'}"? This action cannot be undone.`
-          )
-        }
+        message={`Are you sure you want to delete "${conversationToDelete?.title || 'this conversation'}"? This action cannot be undone.`}
         confirmLabel="Delete"
         cancelLabel="Cancel"
         variant="danger"
         isLoading={deleteConversation.isPending}
+        error={deleteError}
         onConfirm={handleConfirmDelete}
         onCancel={handleCancelDelete}
       />

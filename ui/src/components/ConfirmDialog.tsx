@@ -6,7 +6,7 @@
  */
 
 import type { ReactNode } from 'react'
-import { AlertTriangle, X } from 'lucide-react'
+import { AlertTriangle, AlertCircle, X } from 'lucide-react'
 
 interface ConfirmDialogProps {
   isOpen: boolean
@@ -16,6 +16,8 @@ interface ConfirmDialogProps {
   cancelLabel?: string
   variant?: 'danger' | 'warning'
   isLoading?: boolean
+  /** Inline error message to display when the confirmed action fails */
+  error?: string | null
   onConfirm: () => void
   onCancel: () => void
 }
@@ -28,6 +30,7 @@ export function ConfirmDialog({
   cancelLabel = 'Cancel',
   variant = 'danger',
   isLoading = false,
+  error = null,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
@@ -80,6 +83,14 @@ export function ConfirmDialog({
             {message}
           </div>
 
+          {/* Inline Error Message */}
+          {error && (
+            <div className="flex items-center gap-3 p-4 mb-4 bg-[var(--color-neo-error-bg)] text-[var(--color-neo-error-text)] border-3 border-[var(--color-neo-error-border)]">
+              <AlertCircle size={18} className="flex-shrink-0" />
+              <span className="text-sm">{error}</span>
+            </div>
+          )}
+
           {/* Actions */}
           <div className="flex justify-end gap-3">
             <button
@@ -94,7 +105,7 @@ export function ConfirmDialog({
               className={`neo-btn ${colors.button}`}
               disabled={isLoading}
             >
-              {isLoading ? 'Deleting...' : confirmLabel}
+              {isLoading ? 'Processing...' : confirmLabel}
             </button>
           </div>
         </div>

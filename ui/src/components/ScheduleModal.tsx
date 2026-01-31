@@ -6,7 +6,7 @@
  */
 
 import { useState, useEffect, useRef } from 'react'
-import { Clock, GitBranch, Trash2, X } from 'lucide-react'
+import { Clock, GitBranch, Trash2, X, AlertCircle } from 'lucide-react'
 import {
   useSchedules,
   useCreateSchedule,
@@ -137,7 +137,11 @@ export function ScheduleModal({ projectName, isOpen, onClose }: ScheduleModalPro
         max_concurrency: 3,
       })
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create schedule')
+      setError(
+        err instanceof Error
+          ? `Failed to create schedule: ${err.message}`
+          : 'Failed to create schedule'
+      )
     }
   }
 
@@ -146,7 +150,11 @@ export function ScheduleModal({ projectName, isOpen, onClose }: ScheduleModalPro
       setError(null)
       await toggleSchedule.mutateAsync({ scheduleId, enabled: !enabled })
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to toggle schedule')
+      setError(
+        err instanceof Error
+          ? `Failed to toggle schedule: ${err.message}`
+          : 'Failed to toggle schedule'
+      )
     }
   }
 
@@ -157,7 +165,11 @@ export function ScheduleModal({ projectName, isOpen, onClose }: ScheduleModalPro
       setError(null)
       await deleteSchedule.mutateAsync(scheduleId)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete schedule')
+      setError(
+        err instanceof Error
+          ? `Failed to delete schedule: ${err.message}`
+          : 'Failed to delete schedule'
+      )
     }
   }
 
@@ -196,8 +208,15 @@ export function ScheduleModal({ projectName, isOpen, onClose }: ScheduleModalPro
 
         {/* Error display */}
         {error && (
-          <div className="mb-4 p-3 border-2 border-red-500 bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-200 rounded">
-            {error}
+          <div className="flex items-center gap-3 mb-4 p-3 bg-[var(--color-neo-error-bg)] text-[var(--color-neo-error-text)] border-3 border-[var(--color-neo-error-border)]">
+            <AlertCircle size={18} className="flex-shrink-0" />
+            <span className="text-sm">{error}</span>
+            <button
+              onClick={() => setError(null)}
+              className="ml-auto hover:opacity-70 transition-opacity"
+            >
+              <X size={16} />
+            </button>
           </div>
         )}
 

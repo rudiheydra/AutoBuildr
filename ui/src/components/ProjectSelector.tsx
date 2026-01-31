@@ -23,6 +23,7 @@ export function ProjectSelector({
   const [isOpen, setIsOpen] = useState(false)
   const [showNewProjectModal, setShowNewProjectModal] = useState(false)
   const [projectToDelete, setProjectToDelete] = useState<string | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   const deleteProject = useDeleteProject()
 
@@ -34,6 +35,7 @@ export function ProjectSelector({
   const handleDeleteClick = (e: React.MouseEvent, projectName: string) => {
     // Prevent the click from selecting the project
     e.stopPropagation()
+    setDeleteError(null)
     setProjectToDelete(projectName)
   }
 
@@ -41,6 +43,7 @@ export function ProjectSelector({
     if (!projectToDelete) return
 
     try {
+      setDeleteError(null)
       await deleteProject.mutateAsync(projectToDelete)
       // If the deleted project was selected, clear the selection
       if (selectedProject === projectToDelete) {
@@ -48,14 +51,18 @@ export function ProjectSelector({
       }
       setProjectToDelete(null)
     } catch (error) {
-      // Error is handled by the mutation, just close the dialog
-      console.error('Failed to delete project:', error)
-      setProjectToDelete(null)
+      // Show inline error in the dialog so user can retry
+      setDeleteError(
+        error instanceof Error
+          ? `Failed to delete project: ${error.message}`
+          : 'Failed to delete project'
+      )
     }
   }
 
   const handleCancelDelete = () => {
     setProjectToDelete(null)
+    setDeleteError(null)
   }
 
   const selectedProjectData = projects.find(p => p.name === selectedProject)
@@ -180,6 +187,7 @@ export function ProjectSelector({
         cancelLabel="Cancel"
         variant="danger"
         isLoading={deleteProject.isPending}
+        error={deleteError}
         onConfirm={handleConfirmDelete}
         onCancel={handleCancelDelete}
       />

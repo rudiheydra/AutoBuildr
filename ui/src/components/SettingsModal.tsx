@@ -242,8 +242,11 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
 
             {/* Update Error */}
             {updateSettings.isError && (
-              <div className="p-3 bg-[var(--color-neo-error-bg)] border-3 border-[var(--color-neo-error-border)] text-[var(--color-neo-error-text)] text-sm">
-                Failed to save settings. Please try again.
+              <div className="flex items-center gap-2 p-3 bg-[var(--color-neo-error-bg)] border-3 border-[var(--color-neo-error-border)] text-[var(--color-neo-error-text)] text-sm">
+                <AlertCircle size={16} className="flex-shrink-0" />
+                <span>
+                  Failed to save settings: {updateSettings.error?.message || 'unknown error'}
+                </span>
               </div>
             )}
           </div>
