@@ -31,7 +31,6 @@ import type {
   WSAgentRunStartedMessage,
   WSAgentEventLoggedMessage,
   WSAgentAcceptanceUpdateMessage,
-  WSValidatorResult,
   AgentEventType,
 } from '../lib/types'
 
@@ -179,12 +178,10 @@ export function useAgentRunUpdates(options: UseAgentRunUpdatesOptions): UseAgent
       }
 
       // Update turns_used when turn_complete event is received
-      // The sequence number for turn_complete events indicates the turn number
+      // Each turn_complete event represents exactly one completed turn,
+      // so we increment the count rather than using a sequence-based heuristic.
       if (message.event_type === 'turn_complete') {
-        // Each turn_complete event means one more turn was used
-        // We use the sequence to estimate turns, but really we should
-        // count turn_complete events or use the sequence modulo
-        updates.turnsUsed = Math.max(prev.turnsUsed, Math.ceil(message.sequence / 3))
+        updates.turnsUsed = prev.turnsUsed + 1
       }
 
       return { ...prev, ...updates }
@@ -194,19 +191,18 @@ export function useAgentRunUpdates(options: UseAgentRunUpdatesOptions): UseAgent
   /**
    * Handle agent_acceptance_update message
    * Updates acceptance results and final verdict
+   *
+   * Feature #160: Now uses canonical acceptance_results Record from backend
+   * instead of manually converting validator_results array.
    */
   const handleAcceptanceUpdate = useCallback((message: WSAgentAcceptanceUpdateMessage) => {
     if (!shouldProcessMessage(message.run_id)) return
 
     setState(prev => {
-      // Convert validator results array to record format
-      const acceptanceResults: Record<string, { passed: boolean; message: string }> = {}
-      message.validator_results.forEach((result: WSValidatorResult) => {
-        acceptanceResults[result.type] = {
-          passed: result.passed,
-          message: result.message,
-        }
-      })
+      // Feature #160: Use canonical acceptance_results directly from backend
+      // The backend now emits the same Record<string, AcceptanceValidatorResult>
+      // format on both REST API and WebSocket, eliminating UI normalization.
+      const acceptanceResults = message.acceptance_results ?? null
 
       // Determine status based on verdict
       let status: AgentRunStatus | null = prev.status
@@ -451,19 +447,14 @@ export function useMultipleAgentRunUpdates(
           }
 
           if (eventMsg.event_type === 'turn_complete') {
-            updates.turnsUsed = Math.max(currentState.turnsUsed, Math.ceil(eventMsg.sequence / 3))
+            updates.turnsUsed = currentState.turnsUsed + 1
           }
 
           newMap.set(runId!, { ...currentState, ...updates })
         } else if (message.type === 'agent_acceptance_update') {
+          // Feature #160: Use canonical acceptance_results Record from backend
           const acceptMsg = message as WSAgentAcceptanceUpdateMessage
-          const acceptanceResults: Record<string, { passed: boolean; message: string }> = {}
-          acceptMsg.validator_results.forEach((result: WSValidatorResult) => {
-            acceptanceResults[result.type] = {
-              passed: result.passed,
-              message: result.message,
-            }
-          })
+          const acceptanceResults = acceptMsg.acceptance_results ?? null
 
           let status: AgentRunStatus | null = currentState.status
           if (acceptMsg.final_verdict === 'passed') {

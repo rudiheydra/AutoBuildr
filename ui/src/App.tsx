@@ -25,6 +25,7 @@ import { ViewToggle, type ViewMode } from './components/ViewToggle'
 import { DependencyGraph } from './components/DependencyGraph'
 import { DependencyHealthBanner } from './components/DependencyHealthBanner'
 import { KeyboardShortcutsHelp } from './components/KeyboardShortcutsHelp'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import { getDependencyGraph } from './lib/api'
 import { Loader2, Settings, Moon, Sun } from 'lucide-react'
 import type { Feature } from './lib/types'
@@ -336,12 +337,16 @@ function App() {
         </div>
       </header>
 
-      {/* Main Content */}
-      <main
-        className="max-w-7xl mx-auto px-4 py-8"
-        style={{ paddingBottom: debugOpen ? debugPanelHeight + 32 : undefined }}
-      >
-        {!selectedProject ? (
+      {/* ErrorBoundary wraps the main content area so runtime errors
+           in child components do not crash the entire app. The header
+           and navigation above remain outside the boundary and always usable. */}
+      <ErrorBoundary>
+        {/* Main Content */}
+        <main
+          className="max-w-7xl mx-auto px-4 py-8"
+          style={{ paddingBottom: debugOpen ? debugPanelHeight + 32 : undefined }}
+        >
+          {!selectedProject ? (
           <div className="neo-empty-state mt-12">
             <h2 className="font-display text-2xl font-bold mb-2">
               Welcome to AutoBuildr
@@ -529,6 +534,7 @@ function App() {
           onComplete={wsState.clearCelebration}
         />
       )}
+      </ErrorBoundary>
     </div>
   )
 }
