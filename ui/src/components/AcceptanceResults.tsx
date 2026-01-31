@@ -203,6 +203,15 @@ function VerdictBadge({ verdict, className = '' }: VerdictBadgeProps) {
         border-2 border-amber-300 dark:border-amber-600
       `,
     },
+    error: {
+      icon: AlertCircle,
+      label: 'Error',
+      colors: `
+        bg-orange-100 dark:bg-orange-900/30
+        text-orange-700 dark:text-orange-400
+        border-2 border-orange-300 dark:border-orange-600
+      `,
+    },
   }
 
   const { icon: Icon, label, colors } = config[verdict]

@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session, joinedload
 from api.agentspec_crud import create_event, get_agent_run, get_agent_spec, get_event_count, get_events, list_artifacts, pause_run
 from api.agentspec_models import AgentEvent, Artifact, AgentRun as AgentRunModel, RUN_STATUS, InvalidStateTransition
 from api.database import get_db
+from api.validators import normalize_acceptance_results_to_record
 # Note: broadcast_agent_event_sync is imported locally where needed
 from server.schemas.agentspec import (
     AgentEventListResponse,
@@ -37,6 +38,38 @@ from server.schemas.agentspec import (
 
 
 router = APIRouter(prefix="/api/agent-runs", tags=["agent-runs"])
+
+
+def _build_run_response(run_dict: dict) -> AgentRunResponse:
+    """
+    Build an AgentRunResponse from a run dict, normalizing acceptance_results
+    to canonical Record<string, AcceptanceValidatorResult> format.
+
+    Feature #160: Standardize acceptance results to canonical format in backend.
+    """
+    # Normalize acceptance_results from list to record format
+    raw_results = run_dict.get("acceptance_results")
+    canonical_results = (
+        normalize_acceptance_results_to_record(raw_results)
+        if raw_results is not None
+        else None
+    )
+
+    return AgentRunResponse(
+        id=run_dict["id"],
+        agent_spec_id=run_dict["agent_spec_id"],
+        status=run_dict["status"],
+        started_at=run_dict["started_at"],
+        completed_at=run_dict["completed_at"],
+        turns_used=run_dict["turns_used"],
+        tokens_in=run_dict["tokens_in"],
+        tokens_out=run_dict["tokens_out"],
+        final_verdict=run_dict["final_verdict"],
+        acceptance_results=canonical_results,
+        error=run_dict["error"],
+        retry_count=run_dict["retry_count"],
+        created_at=run_dict["created_at"],
+    )
 
 
 @router.get(
@@ -141,27 +174,11 @@ async def list_agent_runs(
     # Step 7: Execute query
     runs = query.all()
 
-    # Step 8: Build response
+    # Step 8: Build response (Feature #160: canonical acceptance_results format)
     run_responses = []
     for run in runs:
         run_dict = run.to_dict()
-        run_responses.append(
-            AgentRunResponse(
-                id=run_dict["id"],
-                agent_spec_id=run_dict["agent_spec_id"],
-                status=run_dict["status"],
-                started_at=run_dict["started_at"],
-                completed_at=run_dict["completed_at"],
-                turns_used=run_dict["turns_used"],
-                tokens_in=run_dict["tokens_in"],
-                tokens_out=run_dict["tokens_out"],
-                final_verdict=run_dict["final_verdict"],
-                acceptance_results=run_dict["acceptance_results"],
-                error=run_dict["error"],
-                retry_count=run_dict["retry_count"],
-                created_at=run_dict["created_at"],
-            )
-        )
+        run_responses.append(_build_run_response(run_dict))
 
     # Step 9: Set X-Total-Count header
     response.headers["X-Total-Count"] = str(total_count)
@@ -210,23 +227,9 @@ async def get_run_details(
     event_count = get_event_count(db, run_id)
     artifact_count = len(list_artifacts(db, run_id))
 
-    # Build AgentRunResponse from the run
+    # Build AgentRunResponse from the run (Feature #160: canonical acceptance_results format)
     run_dict = run.to_dict()
-    run_response = AgentRunResponse(
-        id=run_dict["id"],
-        agent_spec_id=run_dict["agent_spec_id"],
-        status=run_dict["status"],
-        started_at=run_dict["started_at"],
-        completed_at=run_dict["completed_at"],
-        turns_used=run_dict["turns_used"],
-        tokens_in=run_dict["tokens_in"],
-        tokens_out=run_dict["tokens_out"],
-        final_verdict=run_dict["final_verdict"],
-        acceptance_results=run_dict["acceptance_results"],
-        error=run_dict["error"],
-        retry_count=run_dict["retry_count"],
-        created_at=run_dict["created_at"],
-    )
+    run_response = _build_run_response(run_dict)
 
     # Build AgentSpecResponse if spec exists (includes display_name and icon)
     spec_response = None
@@ -576,23 +579,9 @@ async def pause_agent_run(
         # Broadcasting is optional - don't fail the pause operation
         pass
 
-    # Step 9: Return updated AgentRunResponse
+    # Step 9: Return updated AgentRunResponse (Feature #160: canonical format)
     run_dict = run.to_dict()
-    return AgentRunResponse(
-        id=run_dict["id"],
-        agent_spec_id=run_dict["agent_spec_id"],
-        status=run_dict["status"],
-        started_at=run_dict["started_at"],
-        completed_at=run_dict["completed_at"],
-        turns_used=run_dict["turns_used"],
-        tokens_in=run_dict["tokens_in"],
-        tokens_out=run_dict["tokens_out"],
-        final_verdict=run_dict["final_verdict"],
-        acceptance_results=run_dict["acceptance_results"],
-        error=run_dict["error"],
-        retry_count=run_dict["retry_count"],
-        created_at=run_dict["created_at"],
-    )
+    return _build_run_response(run_dict)
 
 
 @router.post(
@@ -725,23 +714,9 @@ async def resume_agent_run(
         # Broadcasting is optional - don't fail the resume operation
         pass
 
-    # Step 9: Return updated AgentRunResponse
+    # Step 9: Return updated AgentRunResponse (Feature #160: canonical format)
     run_dict = run.to_dict()
-    return AgentRunResponse(
-        id=run_dict["id"],
-        agent_spec_id=run_dict["agent_spec_id"],
-        status=run_dict["status"],
-        started_at=run_dict["started_at"],
-        completed_at=run_dict["completed_at"],
-        turns_used=run_dict["turns_used"],
-        tokens_in=run_dict["tokens_in"],
-        tokens_out=run_dict["tokens_out"],
-        final_verdict=run_dict["final_verdict"],
-        acceptance_results=run_dict["acceptance_results"],
-        error=run_dict["error"],
-        retry_count=run_dict["retry_count"],
-        created_at=run_dict["created_at"],
-    )
+    return _build_run_response(run_dict)
 
 
 @router.post(
@@ -891,20 +866,6 @@ async def cancel_agent_run(
         # Broadcasting is optional - don't fail the cancel operation
         pass
 
-    # Step 10: Return updated AgentRunResponse
+    # Step 10: Return updated AgentRunResponse (Feature #160: canonical format)
     run_dict = run.to_dict()
-    return AgentRunResponse(
-        id=run_dict["id"],
-        agent_spec_id=run_dict["agent_spec_id"],
-        status=run_dict["status"],
-        started_at=run_dict["started_at"],
-        completed_at=run_dict["completed_at"],
-        turns_used=run_dict["turns_used"],
-        tokens_in=run_dict["tokens_in"],
-        tokens_out=run_dict["tokens_out"],
-        final_verdict=run_dict["final_verdict"],
-        acceptance_results=run_dict["acceptance_results"],
-        error=run_dict["error"],
-        retry_count=run_dict["retry_count"],
-        created_at=run_dict["created_at"],
-    )
+    return _build_run_response(run_dict)

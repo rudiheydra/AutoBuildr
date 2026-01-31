@@ -129,7 +129,7 @@ export type AgentStatus = 'stopped' | 'running' | 'paused' | 'crashed' | 'loadin
 export type AgentRunStatus = 'pending' | 'running' | 'paused' | 'completed' | 'failed' | 'timeout'
 
 // AgentRun verdict - final outcome after acceptance check
-export type AgentRunVerdict = 'passed' | 'failed' | 'error'
+export type AgentRunVerdict = 'passed' | 'failed' | 'error' | 'partial'
 
 // AgentSpec task types
 export type AgentSpecTaskType = 'coding' | 'testing' | 'refactoring' | 'documentation' | 'audit' | 'custom'
@@ -426,6 +426,7 @@ export interface WSAgentEventLoggedMessage {
 
 /**
  * Validator result in acceptance update message.
+ * Kept for backward compatibility with legacy WS array format.
  */
 export interface WSValidatorResult {
   index: number
@@ -439,13 +440,22 @@ export interface WSValidatorResult {
 /**
  * WebSocket message for agent_acceptance_update event.
  * Broadcast when acceptance validators are evaluated.
+ *
+ * Feature #160: Now includes `acceptance_results` in canonical
+ * Record<string, AcceptanceValidatorResult> format, matching the REST API.
+ * The `validator_results` array is kept for backward compatibility.
  */
 export interface WSAgentAcceptanceUpdateMessage {
   type: 'agent_acceptance_update'
   run_id: string
   final_verdict: AgentRunVerdict | null
+  /** Canonical format: Record<string, AcceptanceValidatorResult> (Feature #160) */
+  acceptance_results: Record<string, AcceptanceValidatorResult>
+  /** Legacy array format kept for backward compatibility */
   validator_results: WSValidatorResult[]
   gate_mode: 'all_pass' | 'any_pass' | 'weighted'
+  /** Payload format version for extensibility (Feature #160) */
+  format_version?: number
   timestamp: string
 }
 

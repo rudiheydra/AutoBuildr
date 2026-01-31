@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from api.agentspec_models import AgentRun as AgentRunModel
 from api.agentspec_models import AgentSpec as AgentSpecModel
+from api.validators import normalize_acceptance_results_to_record
 from server.schemas.agentspec import (
     AcceptanceSpecResponse,
     AgentRunResponse,
@@ -945,6 +946,13 @@ async def execute_agent_spec(
     _logger.info(f"Queued execution for spec {spec_id}, run {run_id}")
 
     # Step 8: Return AgentRunResponse with status 202 Accepted
+    # Feature #160: Normalize acceptance_results to canonical Record format
+    raw_results = run_dict.get("acceptance_results")
+    canonical_results = (
+        normalize_acceptance_results_to_record(raw_results)
+        if raw_results is not None
+        else None
+    )
     return AgentRunResponse(
         id=run_dict["id"],
         agent_spec_id=run_dict["agent_spec_id"],
@@ -955,7 +963,7 @@ async def execute_agent_spec(
         tokens_in=run_dict["tokens_in"],
         tokens_out=run_dict["tokens_out"],
         final_verdict=run_dict["final_verdict"],
-        acceptance_results=run_dict["acceptance_results"],
+        acceptance_results=canonical_results,
         error=run_dict["error"],
         retry_count=run_dict["retry_count"],
         created_at=run_dict["created_at"],

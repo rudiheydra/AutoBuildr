@@ -155,6 +155,7 @@ from api.validators import (
     evaluate_acceptance_spec,
     evaluate_validator,
     get_validator,
+    normalize_acceptance_results_to_record,
 )
 from api.feature_compiler import (
     CATEGORY_TO_TASK_TYPE,
@@ -477,6 +478,7 @@ __all__ = [
     "evaluate_acceptance_spec",
     "evaluate_validator",
     "get_validator",
+    "normalize_acceptance_results_to_record",
     # Feature compiler exports
     "CATEGORY_TO_TASK_TYPE",
     "FeatureCompiler",

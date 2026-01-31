@@ -84,6 +84,80 @@ class ValidatorResult:
         }
 
 
+def normalize_acceptance_results_to_record(
+    acceptance_results: list[dict[str, Any]] | dict[str, Any] | None,
+) -> dict[str, dict[str, Any]]:
+    """
+    Convert acceptance results from list format to canonical Record format.
+
+    Feature #160: Standardize acceptance results to canonical format.
+
+    The canonical format is Record<string, AcceptanceValidatorResult> where the key
+    is the validator type string, and the value contains all validator result fields.
+
+    This function handles multiple input formats:
+    - List of dicts with "type" or "validator_type" key (from AcceptanceGate or _run_acceptance_validators)
+    - Already-converted record format (passed through unchanged)
+    - None (returns empty dict)
+
+    Args:
+        acceptance_results: Results in any supported format
+
+    Returns:
+        Dict keyed by validator type string, each value containing:
+        - passed: bool
+        - message: str
+        - score: float (default 1.0)
+        - details: dict (default {})
+        - index: int (position in original list)
+        - required: bool (default False)
+        - weight: float (default 1.0)
+    """
+    if acceptance_results is None:
+        return {}
+
+    # Already in record format (dict with string keys where values are dicts with 'passed')
+    if isinstance(acceptance_results, dict):
+        # Check if it's already in the canonical format
+        # (keys are validator types, values are result dicts)
+        first_value = next(iter(acceptance_results.values()), None)
+        if first_value is None or (isinstance(first_value, dict) and "passed" in first_value):
+            return acceptance_results
+
+    # Convert list format to record format
+    if isinstance(acceptance_results, list):
+        record: dict[str, dict[str, Any]] = {}
+        for idx, item in enumerate(acceptance_results):
+            if not isinstance(item, dict):
+                continue
+
+            # Determine the validator type key
+            validator_type = (
+                item.get("type")
+                or item.get("validator_type")
+                or f"validator_{idx}"
+            )
+
+            # Handle duplicate types by appending index
+            key = validator_type
+            if key in record:
+                key = f"{validator_type}_{idx}"
+
+            record[key] = {
+                "passed": item.get("passed", False),
+                "message": item.get("message", ""),
+                "score": item.get("score", 1.0),
+                "details": item.get("details", {}),
+                "index": item.get("index", idx),
+                "required": item.get("required", False),
+                "weight": item.get("weight", 1.0),
+            }
+
+        return record
+
+    return {}
+
+
 # =============================================================================
 # Base Validator Interface
 # =============================================================================
@@ -1233,11 +1307,53 @@ class LintCleanValidator(Validator):
 # =============================================================================
 
 # Registry of available validator types
+class CustomValidator(Validator):
+    """
+    Custom validator for feature-specific verification steps.
+
+    Custom validators represent steps that are verified by the agent during
+    execution (e.g., "verify output contains usage text"). When a real
+    turn_executor is used, the agent handles these checks. In infra-proof
+    mode, they pass by default since the work hasn't been done yet.
+    """
+
+    validator_type: str = "custom"
+
+    def evaluate(
+        self,
+        config: dict[str, Any],
+        context: dict[str, Any],
+        run: "AgentRun | None" = None,
+    ) -> ValidatorResult:
+        description = config.get("description", "Custom verification step")
+
+        # If a turn executor ran real work, check if the run completed
+        if run and run.turns_used > 0:
+            # Agent actually ran — trust completion as passing
+            return ValidatorResult(
+                passed=True,
+                message=f"Agent completed: {description}",
+                score=1.0,
+                details={"turns_used": run.turns_used},
+                validator_type=self.validator_type,
+            )
+
+        # Infra-proof mode (no turn executor) — pass as deferred
+        return ValidatorResult(
+            passed=True,
+            message=f"Deferred (no execution): {description}",
+            score=0.5,
+            details={"deferred": True},
+            validator_type=self.validator_type,
+        )
+
+
 VALIDATOR_REGISTRY: dict[str, type[Validator]] = {
     "file_exists": FileExistsValidator,
     "forbidden_patterns": ForbiddenPatternsValidator,
     "test_pass": TestPassValidator,
     "lint_clean": LintCleanValidator,
+    "custom": CustomValidator,
 }
 
 

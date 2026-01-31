@@ -167,6 +167,7 @@ class AcceptanceUpdatePayload:
     Payload for agent_acceptance_update WebSocket message.
 
     Feature #63: WebSocket agent_acceptance_update Event
+    Feature #160: Standardized canonical format (Record<string, AcceptanceValidatorResult>)
 
     Attributes:
         run_id: UUID of the AgentRun
@@ -186,24 +187,59 @@ class AcceptanceUpdatePayload:
         if self.timestamp is None:
             self.timestamp = _utc_now()
 
+    def _build_acceptance_results_record(self) -> dict[str, dict[str, Any]]:
+        """
+        Build canonical Record<string, AcceptanceValidatorResult> from validator results.
+
+        Feature #160: Both API and WebSocket now emit the same canonical format,
+        keyed by validator type string.
+
+        Returns:
+            Dict keyed by validator type, values are AcceptanceValidatorResult dicts.
+        """
+        record: dict[str, dict[str, Any]] = {}
+        for r in self.validator_results:
+            key = r.type
+            # Handle duplicate types by appending index
+            if key in record:
+                key = f"{r.type}_{r.index}"
+            record[key] = {
+                "passed": r.passed,
+                "message": r.message,
+                "score": r.score,
+                "details": r.details,
+                "index": r.index,
+                "required": False,  # Not available in ValidatorResultPayload
+                "weight": 1.0,     # Not available in ValidatorResultPayload
+            }
+        return record
+
     def to_message(self) -> dict[str, Any]:
         """
         Convert to WebSocket message format.
 
+        Feature #160: Emits acceptance_results as Record<string, AcceptanceValidatorResult>
+        matching the same canonical format used by the REST API GET /api/agent-runs/:id.
+
         Returns:
-            Dict with message type and payload following Feature #63 spec:
+            Dict with message type and payload:
             - type: "agent_acceptance_update"
             - run_id: UUID of the run
             - final_verdict: Overall result
-            - validator_results: Array of per-validator results
-            - Each validator result: index, type, passed, message
+            - acceptance_results: Record<string, AcceptanceValidatorResult> (canonical format)
+            - validator_results: Array of per-validator results (kept for backward compat)
+            - gate_mode: Gate mode used
+            - format_version: Version of the payload format (for future extensibility)
+            - timestamp: ISO timestamp
         """
         return {
             "type": "agent_acceptance_update",
             "run_id": self.run_id,
             "final_verdict": self.final_verdict,
+            "acceptance_results": self._build_acceptance_results_record(),
             "validator_results": [r.to_dict() for r in self.validator_results],
             "gate_mode": self.gate_mode,
+            "format_version": 2,
             "timestamp": self.timestamp.isoformat() if self.timestamp else None,
         }
 
