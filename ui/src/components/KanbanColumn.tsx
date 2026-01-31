@@ -1,3 +1,5 @@
+import { useRef, useCallback } from 'react'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import { FeatureCard } from './FeatureCard'
 import { Plus, Sparkles, Wand2 } from 'lucide-react'
 import type { Feature, ActiveAgent } from '../lib/types'
@@ -23,6 +25,110 @@ const colorMap = {
   done: 'var(--color-neo-done)',
 }
 
+// Threshold above which we enable virtualization for performance
+const VIRTUALIZATION_THRESHOLD = 50
+
+// Estimated height of each feature card including gap (in pixels)
+const ESTIMATED_ITEM_SIZE = 160
+
+// Gap between items in pixels (matches space-y-3 = 0.75rem = 12px)
+const ITEM_GAP = 12
+
+function VirtualizedFeatureList({
+  features,
+  allFeatures,
+  agentByFeatureId,
+  color,
+  onFeatureClick,
+}: {
+  features: Feature[]
+  allFeatures: Feature[]
+  agentByFeatureId: Map<number, ActiveAgent>
+  color: 'pending' | 'progress' | 'done'
+  onFeatureClick: (feature: Feature) => void
+}) {
+  const parentRef = useRef<HTMLDivElement>(null)
+
+  const virtualizer = useVirtualizer({
+    count: features.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => ESTIMATED_ITEM_SIZE,
+    overscan: 5, // Render 5 extra items above/below viewport for smooth scrolling
+    gap: ITEM_GAP,
+  })
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent, index: number) => {
+      if (e.key === 'ArrowDown' && index < features.length - 1) {
+        e.preventDefault()
+        virtualizer.scrollToIndex(index + 1, { align: 'auto' })
+        // Focus the next item after scroll completes
+        requestAnimationFrame(() => {
+          const nextEl = parentRef.current?.querySelector(
+            `[data-index="${index + 1}"] button`
+          ) as HTMLElement | null
+          nextEl?.focus()
+        })
+      } else if (e.key === 'ArrowUp' && index > 0) {
+        e.preventDefault()
+        virtualizer.scrollToIndex(index - 1, { align: 'auto' })
+        requestAnimationFrame(() => {
+          const prevEl = parentRef.current?.querySelector(
+            `[data-index="${index - 1}"] button`
+          ) as HTMLElement | null
+          prevEl?.focus()
+        })
+      }
+    },
+    [features.length, virtualizer]
+  )
+
+  return (
+    <div
+      ref={parentRef}
+      className="p-4 max-h-[600px] overflow-y-auto bg-[var(--color-neo-bg)]"
+      role="list"
+      aria-label={`${color} features`}
+    >
+      <div
+        style={{
+          height: `${virtualizer.getTotalSize()}px`,
+          width: '100%',
+          position: 'relative',
+        }}
+      >
+        {virtualizer.getVirtualItems().map((virtualItem) => {
+          const feature = features[virtualItem.index]
+          return (
+            <div
+              key={feature.id}
+              data-index={virtualItem.index}
+              ref={virtualizer.measureElement}
+              role="listitem"
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                transform: `translateY(${virtualItem.start}px)`,
+              }}
+              onKeyDown={(e) => handleKeyDown(e, virtualItem.index)}
+            >
+              <FeatureCard
+                feature={feature}
+                onClick={() => onFeatureClick(feature)}
+                isInProgress={color === 'progress'}
+                allFeatures={allFeatures}
+                activeAgent={agentByFeatureId.get(feature.id)}
+              />
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 export function KanbanColumn({
   title,
   count,
@@ -41,6 +147,9 @@ export function KanbanColumn({
   const agentByFeatureId = new Map(
     activeAgents.map(agent => [agent.featureId, agent])
   )
+
+  const useVirtualization = features.length >= VIRTUALIZATION_THRESHOLD
+
   return (
     <div
       className="neo-card overflow-hidden"
@@ -81,9 +190,9 @@ export function KanbanColumn({
         </div>
       </div>
 
-      {/* Cards */}
-      <div className="p-4 space-y-3 max-h-[600px] overflow-y-auto bg-[var(--color-neo-bg)]">
-        {features.length === 0 ? (
+      {/* Cards - use virtualization for large lists (50+), standard rendering for small lists */}
+      {features.length === 0 ? (
+        <div className="p-4 bg-[var(--color-neo-bg)]">
           <div className="text-center py-8 text-[var(--color-neo-text-secondary)]">
             {showCreateSpec && onCreateSpec ? (
               <div className="space-y-4">
@@ -100,8 +209,18 @@ export function KanbanColumn({
               'No features'
             )}
           </div>
-        ) : (
-          features.map((feature, index) => (
+        </div>
+      ) : useVirtualization ? (
+        <VirtualizedFeatureList
+          features={features}
+          allFeatures={allFeatures}
+          agentByFeatureId={agentByFeatureId}
+          color={color}
+          onFeatureClick={onFeatureClick}
+        />
+      ) : (
+        <div className="p-4 space-y-3 max-h-[600px] overflow-y-auto bg-[var(--color-neo-bg)]">
+          {features.map((feature, index) => (
             <div
               key={feature.id}
               className="animate-slide-in"
@@ -115,9 +234,9 @@ export function KanbanColumn({
                 activeAgent={agentByFeatureId.get(feature.id)}
               />
             </div>
-          ))
-        )}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

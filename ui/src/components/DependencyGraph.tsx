@@ -413,7 +413,7 @@ function DependencyGraphInner({ graphData, onNodeClick, activeAgents = [] }: Dep
 }
 
 // Wrapper component with error boundary for stability
-export function DependencyGraph({ graphData, onNodeClick, activeAgents }: DependencyGraphProps) {
+export default function DependencyGraph({ graphData, onNodeClick, activeAgents }: DependencyGraphProps) {
   // Use a key based on graph data length to force remount on structural changes
   // This helps recover from corrupted ReactFlow state
   const [resetKey, setResetKey] = useState(0)

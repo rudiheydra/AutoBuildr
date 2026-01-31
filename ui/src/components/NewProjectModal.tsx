@@ -9,12 +9,14 @@
  * 4b. If manual: Create project and close
  */
 
-import { useState } from 'react'
+import { useState, lazy, Suspense } from 'react'
 import { X, Bot, FileEdit, ArrowRight, ArrowLeft, Loader2, CheckCircle2, Folder } from 'lucide-react'
 import { useCreateProject } from '../hooks/useProjects'
-import { SpecCreationChat } from './SpecCreationChat'
 import { FolderBrowser } from './FolderBrowser'
 import { startAgent } from '../lib/api'
+
+// Lazy-load SpecCreationChat to reduce initial bundle size
+const SpecCreationChat = lazy(() => import('./SpecCreationChat'))
 
 type InitializerStatus = 'idle' | 'starting' | 'error'
 
@@ -190,15 +192,21 @@ export function NewProjectModal({
   if (step === 'chat') {
     return (
       <div className="fixed inset-0 z-50 bg-[var(--color-neo-bg)]">
-        <SpecCreationChat
-          projectName={projectName.trim()}
-          onComplete={handleSpecComplete}
-          onCancel={handleChatCancel}
-          onExitToProject={handleExitToProject}
-          initializerStatus={initializerStatus}
-          initializerError={initializerError}
-          onRetryInitializer={handleRetryInitializer}
-        />
+        <Suspense fallback={
+          <div className="h-full flex items-center justify-center">
+            <Loader2 size={32} className="animate-spin text-[var(--color-neo-progress)]" />
+          </div>
+        }>
+          <SpecCreationChat
+            projectName={projectName.trim()}
+            onComplete={handleSpecComplete}
+            onCancel={handleChatCancel}
+            onExitToProject={handleExitToProject}
+            initializerStatus={initializerStatus}
+            initializerError={initializerError}
+            onRetryInitializer={handleRetryInitializer}
+          />
+        </Suspense>
       </div>
     )
   }

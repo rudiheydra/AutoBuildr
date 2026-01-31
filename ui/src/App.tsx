@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, lazy, Suspense } from 'react'
 import { useQueryClient, useQuery } from '@tanstack/react-query'
 import { useProjects, useFeatures, useAgentStatus, useSettings } from './hooks/useProjects'
 import { useProjectWebSocket } from './hooks/useWebSocket'
@@ -18,17 +18,21 @@ import { CelebrationOverlay } from './components/CelebrationOverlay'
 import { AssistantFAB } from './components/AssistantFAB'
 import { AssistantPanel } from './components/AssistantPanel'
 import { ExpandProjectModal } from './components/ExpandProjectModal'
-import { SpecCreationChat } from './components/SpecCreationChat'
 import { SettingsModal } from './components/SettingsModal'
 import { DevServerControl } from './components/DevServerControl'
 import { ViewToggle, type ViewMode } from './components/ViewToggle'
-import { DependencyGraph } from './components/DependencyGraph'
 import { DependencyHealthBanner } from './components/DependencyHealthBanner'
 import { KeyboardShortcutsHelp } from './components/KeyboardShortcutsHelp'
 import { ErrorBoundary } from './components/ErrorBoundary'
+import { ToastContainer } from './components/ToastContainer'
+import { useToastState } from './hooks/useToast'
 import { getDependencyGraph } from './lib/api'
 import { Loader2, Settings, Moon, Sun } from 'lucide-react'
 import type { Feature } from './lib/types'
+
+// Lazy-loaded heavy components to reduce initial bundle size
+const SpecCreationChat = lazy(() => import('./components/SpecCreationChat'))
+const DependencyGraph = lazy(() => import('./components/DependencyGraph'))
 
 const STORAGE_KEY = 'autobuildr-selected-project'
 const DARK_MODE_KEY = 'autobuildr-dark-mode'
@@ -72,6 +76,7 @@ function App() {
   })
 
   const queryClient = useQueryClient()
+  const { toasts, removeToast } = useToastState()
   const { data: projects, isLoading: projectsLoading } = useProjects()
   const { data: features } = useFeatures(selectedProject)
   const { data: settings } = useSettings()
@@ -422,11 +427,17 @@ function App() {
             ) : (
               <div className="neo-card overflow-hidden" style={{ height: '600px' }}>
                 {graphData ? (
-                  <DependencyGraph
-                    graphData={graphData}
-                    onNodeClick={handleGraphNodeClick}
-                    activeAgents={wsState.activeAgents}
-                  />
+                  <Suspense fallback={
+                    <div className="h-full flex items-center justify-center">
+                      <Loader2 size={32} className="animate-spin text-neo-progress" />
+                    </div>
+                  }>
+                    <DependencyGraph
+                      graphData={graphData}
+                      onNodeClick={handleGraphNodeClick}
+                      activeAgents={wsState.activeAgents}
+                    />
+                  </Suspense>
                 ) : (
                   <div className="h-full flex items-center justify-center">
                     <Loader2 size={32} className="animate-spin text-neo-progress" />
@@ -471,17 +482,23 @@ function App() {
       {/* Spec Creation Chat - for creating spec from empty kanban */}
       {showSpecChat && selectedProject && (
         <div className="fixed inset-0 z-50 bg-[var(--color-neo-bg)]">
-          <SpecCreationChat
-            projectName={selectedProject}
-            onComplete={() => {
-              setShowSpecChat(false)
-              // Refresh projects to update has_spec
-              queryClient.invalidateQueries({ queryKey: ['projects'] })
-              queryClient.invalidateQueries({ queryKey: ['features', selectedProject] })
-            }}
-            onCancel={() => setShowSpecChat(false)}
-            onExitToProject={() => setShowSpecChat(false)}
-          />
+          <Suspense fallback={
+            <div className="h-full flex items-center justify-center">
+              <Loader2 size={32} className="animate-spin text-neo-progress" />
+            </div>
+          }>
+            <SpecCreationChat
+              projectName={selectedProject}
+              onComplete={() => {
+                setShowSpecChat(false)
+                // Refresh projects to update has_spec
+                queryClient.invalidateQueries({ queryKey: ['projects'] })
+                queryClient.invalidateQueries({ queryKey: ['features', selectedProject] })
+              }}
+              onCancel={() => setShowSpecChat(false)}
+              onExitToProject={() => setShowSpecChat(false)}
+            />
+          </Suspense>
         </div>
       )}
 
@@ -535,6 +552,9 @@ function App() {
         />
       )}
       </ErrorBoundary>
+
+      {/* Toast Notifications — global mutation error feedback */}
+      <ToastContainer toasts={toasts} onDismiss={removeToast} />
     </div>
   )
 }

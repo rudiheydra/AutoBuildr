@@ -6,12 +6,14 @@
  * Features a resizable height via drag handle and tabs for different log sources.
  */
 
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, lazy, Suspense } from 'react'
 import { ChevronUp, ChevronDown, Trash2, Terminal as TerminalIcon, GripHorizontal, Cpu, Server } from 'lucide-react'
-import { Terminal } from './Terminal'
 import { TerminalTabs } from './TerminalTabs'
 import { listTerminals, createTerminal, renameTerminal, deleteTerminal } from '@/lib/api'
 import type { TerminalInfo } from '@/lib/types'
+
+// Lazy-load Terminal component to reduce initial bundle size (pulls in xterm.js)
+const Terminal = lazy(() => import('./Terminal'))
 
 const MIN_HEIGHT = 150
 const MAX_HEIGHT = 600
@@ -566,11 +568,17 @@ export function DebugLogViewer({
                           pointerEvents: isActiveTerminal ? 'auto' : 'none',
                         }}
                       >
-                        <Terminal
-                          projectName={projectName}
-                          terminalId={terminal.id}
-                          isActive={activeTab === 'terminal' && isActiveTerminal}
-                        />
+                        <Suspense fallback={
+                          <div className="h-full flex items-center justify-center text-[var(--color-neo-text-muted)] font-mono text-sm">
+                            Loading terminal...
+                          </div>
+                        }>
+                          <Terminal
+                            projectName={projectName}
+                            terminalId={terminal.id}
+                            isActive={activeTab === 'terminal' && isActiveTerminal}
+                          />
+                        </Suspense>
                       </div>
                     )
                   })

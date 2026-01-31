@@ -70,7 +70,7 @@ const TERMINAL_THEME = {
 const RECONNECT_DELAY_BASE = 1000
 const RECONNECT_DELAY_MAX = 30000
 
-export function Terminal({ projectName, terminalId, isActive }: TerminalProps) {
+export default function Terminal({ projectName, terminalId, isActive }: TerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<XTerm | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)

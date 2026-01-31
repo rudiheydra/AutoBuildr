@@ -47,7 +47,7 @@ interface SpecCreationChatProps {
   onRetryInitializer?: () => void
 }
 
-export function SpecCreationChat({
+export default function SpecCreationChat({
   projectName,
   onComplete,
   onCancel,
