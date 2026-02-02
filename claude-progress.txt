@@ -12408,3 +12408,25 @@ What was done:
     - _create_run_for_spec(): line 2112 (AgentRun creation)
   - Browser automation unavailable (Chrome SIGTRAP in container)
   - No regression found - feature still working correctly
+[Testing] 2026-01-31T12:59:52+00:00 - Feature #104 regression test PASSED
+  - Feature: Create spec-builder agent definition (.claude/agents/spec-builder.md)
+  - Category: functional
+  - All 4 verification steps passed:
+    Step 1: YAML frontmatter with name=spec-builder, model=opus, color=green - PASS
+    Step 2: Description references DSPy pipeline compilation of task descriptions into AgentSpecs - PASS
+    Step 3: Markdown body documents all 6 pipeline stages with api/ module references - PASS
+      - Stage 1: detect_task_type() -> api/task_type_detector.py
+      - Stage 2: derive_tool_policy() -> api/tool_policy.py
+      - Stage 3: derive_budget() -> api/tool_policy.py
+      - Stage 4: generate_spec_name() -> api/spec_name_generator.py
+      - Stage 5: generate_validators_from_steps() -> api/validator_generator.py
+      - Stage 6: SpecBuilder.build() -> api/spec_builder.py
+    Step 4: File parseable by Claude Code (valid YAML frontmatter between --- delimiters) - PASS
+  - Additional checks:
+    - All 6 referenced api/ modules exist on disk
+    - All documented functions exist in their respective modules
+    - File is among 6 well-formed agent definitions in .claude/agents/
+    - API server healthy at localhost:8888
+    - Pipeline data flow diagram and reference table included
+  - Browser automation unavailable (Chrome SIGTRAP in container)
+  - No regression found - feature still working correctly

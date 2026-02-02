@@ -1,0 +1,56 @@
+# Version control
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+venv/
+.venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# Node (rebuilt in Docker)
+ui/node_modules/
+ui/dist/
+node_modules/
+
+# SQLite databases (start clean)
+*.db
+*.db-shm
+*.db-wal
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Docker internals
+docker/.env
+
+# Logs and temp
+*.log
+claude-progress.txt
+orchestrator_debug.log
+npm-debug.log*
+
+# Generated output
+generations/
+automaker/
+temp/
+logs/
+.browser-profiles/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Misc
+*.bak
+*.tmp
+*.temp
+.tmp/
+.temp/

@@ -1,0 +1,41 @@
+# Repo Concierge - Command Allowlist
+# Commands listed here will NOT be flagged by policy rules.
+# Add commands that are considered safe for your project.
+
+allowed_commands:
+  - name: pip
+    notes: "Python package installer"
+    examples:
+      - "pip install -r requirements.txt"
+      - "pip install package_name"
+  - name: pytest
+    notes: "Python test runner"
+    examples:
+      - "pytest"
+      - "pytest tests/"
+  - name: python
+    notes: "Python interpreter"
+    examples:
+      - "python -m repo_concierge scan ."
+      - "python setup.py install"
+  - name: git
+    notes: "Version control"
+    examples:
+      - "git clone"
+      - "git push"
+  - name: echo
+    notes: "Print text"
+    examples:
+      - "echo 'Hello'"
+  - name: cd
+    notes: "Change directory"
+  - name: ls
+    notes: "List directory contents"
+  - name: mkdir
+    notes: "Create directory"
+  - name: cp
+    notes: "Copy files"
+  - name: mv
+    notes: "Move files"
+  - name: cat
+    notes: "Display file contents"
