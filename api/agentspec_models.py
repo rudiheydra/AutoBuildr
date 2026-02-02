@@ -81,6 +81,8 @@ EVENT_TYPES = [
     "resumed",
     "policy_violation",  # Feature #44: Tool policy violation logging
     "timeout",  # Feature #134: Kernel timeout event recording
+    "sdk_session_started",   # SDK session executor began
+    "sdk_session_completed", # SDK session executor finished
 ]
 
 # Artifact types - outputs from agent runs

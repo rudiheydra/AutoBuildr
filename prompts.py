@@ -229,7 +229,66 @@ def scaffold_project_prompts(project_dir: Path) -> Path:
     if copied_files:
         print(f"  Created project files: {', '.join(copied_files)}")
 
+    # Scaffold .claude/ directory structure and CLAUDE.md
+    scaffold_claude_dir(project_dir)
+
     return project_prompts
+
+
+def scaffold_claude_dir(project_dir: Path) -> None:
+    """
+    Create the .claude/ directory structure and a minimal CLAUDE.md for a project.
+
+    Idempotent — only creates directories and files that don't already exist.
+
+    Creates:
+        - {project_dir}/.claude/
+        - {project_dir}/.claude/agents/generated/
+        - {project_dir}/CLAUDE.md (auto-generated from app_spec if available)
+
+    Args:
+        project_dir: The absolute path to the project directory
+    """
+    import re
+
+    claude_dir = project_dir / ".claude"
+    claude_dir.mkdir(parents=True, exist_ok=True)
+
+    generated_dir = claude_dir / "agents" / "generated"
+    generated_dir.mkdir(parents=True, exist_ok=True)
+
+    # Generate CLAUDE.md if it doesn't exist
+    claude_md = project_dir / "CLAUDE.md"
+    if not claude_md.exists():
+        project_name = "AutoBuildr Project"
+
+        # Try to extract project name from app_spec.txt
+        spec_path = project_dir / "prompts" / "app_spec.txt"
+        if not spec_path.exists():
+            spec_path = project_dir / "app_spec.txt"
+
+        if spec_path.exists():
+            try:
+                content = spec_path.read_text(encoding="utf-8")
+                match = re.search(
+                    r"<project_specification>\s*#?\s*(.+?)[\n<]",
+                    content,
+                )
+                if match:
+                    project_name = match.group(1).strip()
+            except (OSError, PermissionError):
+                pass
+
+        claude_md.write_text(
+            f"# {project_name}\n\n"
+            "This project is managed by AutoBuildr.\n\n"
+            "## Agent Instructions\n\n"
+            "- Follow the app specification in `prompts/app_spec.txt`\n"
+            "- Use the feature MCP tools to track progress\n"
+            "- Run tests before marking features as passing\n",
+            encoding="utf-8",
+        )
+        print(f"  Created {claude_md}")
 
 
 def has_project_prompts(project_dir: Path) -> bool:

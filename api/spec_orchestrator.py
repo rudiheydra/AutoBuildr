@@ -48,6 +48,7 @@ from api.agentspec_models import (
 from api.database import Base, Feature, create_database
 from api.feature_compiler import FeatureCompiler, extract_task_type_from_category
 from api.harness_kernel import HarnessKernel, commit_with_retry
+from api.spec_builder import SpecBuilder, BuildResult
 
 _logger = logging.getLogger(__name__)
 
@@ -297,6 +298,22 @@ class SpecOrchestrator:
         self.materialize_agents = materialize_agents
         self.compiler = FeatureCompiler()
         self._shutdown = False
+        self._feature_attempts: dict[int, int] = {}  # feature_id -> attempt count
+        self.max_retries_per_feature = 2  # max attempts before skipping
+
+        # Initialize DSPy SpecBuilder if API key is available
+        self._dspy_builder: SpecBuilder | None = None
+        api_key = os.getenv("ANTHROPIC_API_KEY")
+        if api_key:
+            try:
+                self._dspy_builder = SpecBuilder(api_key=api_key, auto_initialize=True)
+                _logger.info("DSPy SpecBuilder initialized — using DSPy for spec generation")
+                print("[SPEC] DSPy SpecBuilder active", flush=True)
+            except Exception as e:
+                _logger.warning("DSPy SpecBuilder init failed, falling back to FeatureCompiler: %s", e)
+                self._dspy_builder = None
+        else:
+            _logger.info("No API key — using FeatureCompiler (no DSPy)")
 
         # Validate DB path is under project dir
         db_path = self.project_dir / "features.db"
@@ -307,6 +324,17 @@ class SpecOrchestrator:
         # Ensure spec tables exist
         if engine:
             ensure_spec_tables(engine)
+
+        # Auto-scaffold .claude/ for projects registered before this feature
+        claude_dir = self.project_dir / ".claude"
+        if not claude_dir.exists():
+            from prompts import scaffold_claude_dir
+            scaffold_claude_dir(self.project_dir)
+
+        # Auto-enable materialize_agents when SDK executor is active
+        from api.executor_config import is_sdk_executor
+        if is_sdk_executor() and not self.materialize_agents:
+            self.materialize_agents = True
 
     # -----------------------------------------------------------------
     # Feature selection
@@ -326,6 +354,9 @@ class SpecOrchestrator:
         for f in all_features:
             if f.passes or f.in_progress:
                 continue
+            # Skip features that have exceeded retry limit
+            if self._feature_attempts.get(f.id, 0) >= self.max_retries_per_feature:
+                continue
             deps = f.get_dependencies_safe()
             if all(dep_id in passing_ids for dep_id in deps):
                 ready.append(f)
@@ -342,13 +373,56 @@ class SpecOrchestrator:
     # -----------------------------------------------------------------
 
     def compile_feature(self, feature: Feature) -> AgentSpec:
-        """Compile a Feature into an AgentSpec."""
+        """Compile a Feature into an AgentSpec.
+
+        Uses DSPy SpecBuilder when available (API key set),
+        falls back to FeatureCompiler otherwise.
+        """
         _logger.info(
             "Compiling Feature #%d '%s' (category=%s) -> AgentSpec",
             feature.id, feature.name, feature.category,
         )
-        print(f"[SPEC] Compiling Feature #{feature.id} -> AgentSpec", flush=True)
 
+        # Try DSPy SpecBuilder first
+        if self._dspy_builder is not None:
+            print(f"[SPEC] Compiling Feature #{feature.id} -> AgentSpec (DSPy)", flush=True)
+            task_type = extract_task_type_from_category(feature.category)
+            steps = feature.get_steps_safe() if hasattr(feature, 'get_steps_safe') else []
+            task_desc = (
+                f"Feature #{feature.id}: {feature.name}\n"
+                f"Category: {feature.category}\n"
+                f"Description: {feature.description}\n"
+                f"Steps:\n" + "\n".join(f"  - {s}" for s in steps)
+            )
+            context = {
+                "feature_id": feature.id,
+                "feature_name": feature.name,
+                "feature_category": feature.category,
+            }
+
+            result: BuildResult = self._dspy_builder.build(
+                task_description=task_desc,
+                task_type=task_type,
+                context=context,
+                source_feature_id=feature.id,
+            )
+
+            if result.success and result.agent_spec:
+                _logger.info(
+                    "DSPy compiled: spec=%s, task_type=%s",
+                    result.agent_spec.name, result.agent_spec.task_type,
+                )
+                print(f"[SPEC] DSPy generated spec: {result.agent_spec.name}", flush=True)
+                return result.agent_spec
+            else:
+                _logger.warning(
+                    "DSPy compilation failed for Feature #%d: %s — falling back to FeatureCompiler",
+                    feature.id, result.error,
+                )
+                print(f"[SPEC] DSPy fallback -> FeatureCompiler (error: {result.error})", flush=True)
+
+        # Fallback: FeatureCompiler (no API needed)
+        print(f"[SPEC] Compiling Feature #{feature.id} -> AgentSpec (FeatureCompiler)", flush=True)
         spec = self.compiler.compile(feature)
         _logger.info(
             "Compiled: spec=%s, task_type=%s",
@@ -360,9 +434,26 @@ class SpecOrchestrator:
         """
         Persist AgentSpec and its AcceptanceSpec to the database.
 
+        If a spec with the same name already exists (retry scenario),
+        the old spec is deleted first (cascades to runs/acceptance).
+
         Returns:
             The spec ID
         """
+        # Handle retry: delete existing spec with same name
+        existing = (
+            self.session.query(AgentSpec)
+            .filter(AgentSpec.name == spec.name)
+            .first()
+        )
+        if existing:
+            _logger.info(
+                "Replacing existing spec '%s' (id=%s) for retry",
+                existing.name, existing.id,
+            )
+            self.session.delete(existing)
+            self.session.flush()
+
         self.session.add(spec)
         if spec.acceptance_spec:
             self.session.add(spec.acceptance_spec)
@@ -380,10 +471,8 @@ class SpecOrchestrator:
         """
         Execute an AgentSpec via HarnessKernel.
 
-        Uses turn_executor=None which completes immediately (no real Claude API calls).
-        This creates proper AgentRun + AgentEvent records in the DB.
-
-        For real execution with Claude, a turn_executor callback would be provided.
+        Uses ClaudeSDKTurnExecutor when ANTHROPIC_API_KEY is available,
+        otherwise falls back to immediate completion (infra proof mode).
         """
         _logger.info(
             "HarnessKernel.execute(spec_id=%s, name=%s)",
@@ -391,10 +480,19 @@ class SpecOrchestrator:
         )
         print(f"[SPEC] HarnessKernel.execute(spec_id={spec.id})", flush=True)
 
+        # Create executor via factory (respects AUTOBUILDR_EXECUTOR env var)
+        from api.executor_config import create_executor_for_spec, get_executor_type
+        executor = create_executor_for_spec(project_dir=self.project_dir, spec=spec)
+        executor_type = get_executor_type()
+        if executor:
+            _logger.info("Using %s executor for real execution", executor_type)
+        else:
+            _logger.info("No executor available — using infra-proof mode (immediate completion)")
+
         kernel = HarnessKernel(db=self.session)
         run = kernel.execute(
             spec,
-            turn_executor=None,  # Immediate completion — infra proof
+            turn_executor=executor,
             context={
                 "project_dir": str(self.project_dir),
                 "feature_id": spec.source_feature_id,
@@ -441,6 +539,16 @@ class SpecOrchestrator:
 
         Steps: claim -> compile -> persist -> execute -> sync verdict
         """
+        # Capture identity before entering try block (avoids lazy-load
+        # issues if the session enters a PendingRollbackError state).
+        feat_id = feature.id
+        feat_name = feature.name
+
+        # Track attempt count
+        self._feature_attempts[feat_id] = self._feature_attempts.get(feat_id, 0) + 1
+        attempt = self._feature_attempts[feat_id]
+        _logger.info("Feature #%d attempt %d/%d", feat_id, attempt, self.max_retries_per_feature)
+
         # Mark in-progress
         feature.in_progress = True
         self.session.commit()
@@ -461,14 +569,17 @@ class SpecOrchestrator:
             return run
 
         except Exception as e:
+            # Rollback first to clear any pending transaction errors
+            self.session.rollback()
+
             _logger.error(
                 "Failed to process Feature #%d '%s': %s",
-                feature.id, feature.name, e,
+                feat_id, feat_name, e,
             )
             # Mark feature as not-in-progress on failure
-            feature.in_progress = False
-            feature.passes = False
             try:
+                feature.in_progress = False
+                feature.passes = False
                 self.session.commit()
             except Exception:
                 self.session.rollback()

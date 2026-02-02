@@ -1,0 +1,35 @@
+services:
+  autobuildr:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        REPO_URL: ${REPO_URL:-}
+    container_name: autobuildr-test
+    ports:
+      - "${AUTOBUILDR_PORT:-8888}:8888"
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - AUTOBUILDR_ALLOW_REMOTE=1
+      - AUTOBUILDR_TEST_PROJECT_PATH=/test-projects/repo-concierge
+      - AUTOBUILDR_TEST_PROJECT_NAME=repo-concierge
+      - AUTOBUILDR_EXECUTOR=${AUTOBUILDR_EXECUTOR:-raw_messages}
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      # Persist registry and artifacts between restarts
+      - autobuildr-data:/home/autobuildr/.autobuildr
+      # Persist test project data (features.db, etc.) across rebuilds
+      - test-project-data:/test-projects/repo-concierge
+      # Mount Claude OAuth credentials (Claude Max subscription)
+      - ${HOME}/.claude/.credentials.json:/home/autobuildr/.claude/.credentials.json:ro
+      # Uncomment to mount live host files for development:
+      # - ../../repo-concierge:/test-projects/repo-concierge
+    restart: "no"
+
+volumes:
+  autobuildr-data:
+    name: autobuildr-test-data
+  test-project-data:
+    name: autobuildr-test-project

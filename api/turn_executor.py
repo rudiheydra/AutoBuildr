@@ -696,3 +696,7 @@ def create_turn_executor(
         project_dir=project_dir,
         max_error_retries=max_error_retries,
     )
+
+
+# Alias for clarity when distinguishing from SDK session executor
+RawMessagesTurnExecutor = ClaudeSDKTurnExecutor
