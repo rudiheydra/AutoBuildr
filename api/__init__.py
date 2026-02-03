@@ -344,6 +344,23 @@ from api.task_type_detector import (
     is_valid_task_type,
     explain_detection,
 )
+from api.maestro import (
+    # Feature #174: Maestro detects when new agents are needed
+    # Constants
+    DEFAULT_AGENTS,
+    SPECIALIZED_CAPABILITY_KEYWORDS,
+    # Data classes
+    ProjectContext,
+    CapabilityRequirement,
+    AgentPlanningDecision,
+    # Main class
+    Maestro,
+    # Module-level functions
+    get_maestro,
+    reset_maestro,
+    evaluate_project,
+    detect_agent_planning_required,
+)
 
 __all__ = [
     "Feature",
@@ -635,4 +652,15 @@ __all__ = [
     "detector_get_valid_task_types",
     "is_valid_task_type",
     "explain_detection",
+    # Feature #174: Maestro Agent Planning Detection exports
+    "DEFAULT_AGENTS",
+    "SPECIALIZED_CAPABILITY_KEYWORDS",
+    "ProjectContext",
+    "CapabilityRequirement",
+    "AgentPlanningDecision",
+    "Maestro",
+    "get_maestro",
+    "reset_maestro",
+    "evaluate_project",
+    "detect_agent_planning_required",
 ]
