@@ -11,17 +11,21 @@
  * - Progress bar showing turns_used / max_turns
  * - Accessibility considerations with proper contrast ratios
  * - Animated thinking state indicator showing current activity
+ * - Feature #220: Agent icons fetched from API and displayed in card header
  */
 
 import { Clock, AlertCircle, CheckCircle, PauseCircle, XCircle, Timer, Play, ExternalLink, Check, X, Brain, Code, TestTube, Shield } from 'lucide-react'
 import { TurnsProgressBar } from './TurnsProgressBar'
 import { ValidatorTypeIcon } from './ValidatorTypeIcon'
+import { AgentIcon } from './AgentIcon'
 import type { AgentRunStatus, DynamicAgentData, AgentRun, ThinkingState, AgentEventType, AcceptanceValidatorResult } from '../lib/types'
 
 interface DynamicAgentCardProps {
   data: DynamicAgentData
   latestEventType?: AgentEventType | null
   onClick?: () => void
+  /** Project name for fetching agent icons (Feature #220) */
+  projectName?: string | null
   /** Tab index for keyboard navigation (from useAgentCardGridNavigation) */
   tabIndex?: number
   /** Whether the card is selected/focused in the grid */
@@ -441,6 +445,7 @@ export function DynamicAgentCard({
   data,
   latestEventType,
   onClick,
+  projectName = null,
   tabIndex: tabIndexProp,
   'aria-selected': ariaSelected,
   'data-card-index': dataCardIndex,
@@ -451,7 +456,8 @@ export function DynamicAgentCard({
   const { spec, run } = data
   const status: AgentRunStatus = run?.status ?? 'pending'
   const isActive = status === 'running'
-  const icon = spec.icon || getTaskTypeEmoji(spec.task_type)
+  // Feature #220: Fallback emoji when projectName is not provided or icon fetch fails
+  const fallbackIcon = spec.icon || getTaskTypeEmoji(spec.task_type)
 
   // Derive thinking state from latest event type
   const thinkingState = deriveThinkingState(latestEventType, status)
@@ -498,11 +504,24 @@ export function DynamicAgentCard({
       data-status={status}
       data-testid="dynamic-agent-card"
     >
-      {/* Header with icon and name */}
+      {/* Header with icon and name - Feature #220: Agent icons from API */}
       <div className="flex items-start gap-3 mb-3">
-        <span className="text-2xl" role="img" aria-label={spec.task_type}>
-          {icon}
-        </span>
+        {/* Feature #220: AgentIcon fetches from API with loading/fallback states */}
+        {projectName ? (
+          <AgentIcon
+            projectName={projectName}
+            specId={spec.id}
+            displayName={spec.display_name}
+            taskType={spec.task_type}
+            size="md"
+            showEmojiWhileLoading={true}
+          />
+        ) : (
+          /* Fallback to static emoji when no projectName */
+          <span className="text-2xl flex items-center justify-center w-8 h-8" role="img" aria-label={spec.task_type}>
+            {fallbackIcon}
+          </span>
+        )}
         <div className="flex-1 min-w-0">
           <h3 className="font-display font-bold text-sm truncate" title={spec.display_name}>
             {spec.display_name}
