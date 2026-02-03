@@ -208,6 +208,95 @@ COMPLEXITY_INDICATORS = {
 # Request/Response Schemas
 # =============================================================================
 
+# =============================================================================
+# Validation Result with Remediation Hints (Feature #190)
+# =============================================================================
+
+@dataclass
+class PayloadValidationError:
+    """
+    A single validation error with remediation hint.
+
+    Feature #190: When project context is incomplete or malformed, Octo returns
+    helpful errors rather than crashing.
+    """
+    field: str
+    message: str
+    severity: str  # "error" (fatal) or "warning" (can proceed with defaults)
+    remediation_hint: str
+    current_value: Any = None
+    default_value: Any = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for serialization."""
+        return {
+            "field": self.field,
+            "message": self.message,
+            "severity": self.severity,
+            "remediation_hint": self.remediation_hint,
+            "current_value": repr(self.current_value) if self.current_value is not None else None,
+            "default_value": repr(self.default_value) if self.default_value is not None else None,
+        }
+
+
+@dataclass
+class PayloadValidationResult:
+    """
+    Result of validating an OctoRequestPayload.
+
+    Feature #190: Validation results include clear error messages and remediation hints.
+    """
+    is_valid: bool
+    errors: list[PayloadValidationError] = field(default_factory=list)
+    warnings: list[PayloadValidationError] = field(default_factory=list)
+    defaults_applied: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def error_messages(self) -> list[str]:
+        """Get list of error message strings."""
+        return [f"{e.field}: {e.message}" for e in self.errors]
+
+    @property
+    def warning_messages(self) -> list[str]:
+        """Get list of warning message strings."""
+        return [f"{w.field}: {w.message}" for w in self.warnings]
+
+    @property
+    def remediation_hints(self) -> list[str]:
+        """Get list of all remediation hints."""
+        all_hints = []
+        for e in self.errors:
+            if e.remediation_hint:
+                all_hints.append(f"[ERROR] {e.field}: {e.remediation_hint}")
+        for w in self.warnings:
+            if w.remediation_hint:
+                all_hints.append(f"[WARNING] {w.field}: {w.remediation_hint}")
+        return all_hints
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for serialization."""
+        return {
+            "is_valid": self.is_valid,
+            "errors": [e.to_dict() for e in self.errors],
+            "warnings": [w.to_dict() for w in self.warnings],
+            "defaults_applied": self.defaults_applied,
+            "error_messages": self.error_messages,
+            "warning_messages": self.warning_messages,
+            "remediation_hints": self.remediation_hints,
+        }
+
+
+# Default values for project_context fields when missing/malformed
+_PROJECT_CONTEXT_DEFAULTS = {
+    "name": "UnknownProject",
+    "tech_stack": [],
+    "directory_structure": [],
+    "app_spec_summary": "",
+    "settings": {},
+    "environment": "development",
+}
+
+
 @dataclass
 class OctoRequestPayload:
     """
@@ -220,6 +309,7 @@ class OctoRequestPayload:
     - constraints: Limits like max_agents, model restrictions, tool restrictions
 
     Feature #175: Maestro produces structured Octo request payload
+    Feature #190: Graceful handling of malformed project context
     """
     project_context: dict[str, Any]
     required_capabilities: list[str]
@@ -255,40 +345,384 @@ class OctoRequestPayload:
 
     def validate(self) -> list[str]:
         """
-        Validate the payload structure.
+        Validate the payload structure (basic validation for backward compatibility).
 
         Returns:
             List of validation error messages (empty if valid)
         """
-        errors: list[str] = []
+        # Use detailed validation and extract error messages
+        result = self.validate_detailed()
+        return result.error_messages
 
-        # project_context is required and must be dict
+    def validate_detailed(self, apply_defaults: bool = False) -> PayloadValidationResult:
+        """
+        Validate the payload structure with detailed error information and remediation hints.
+
+        Feature #190: Octo handles malformed project context gracefully.
+
+        This method provides:
+        1. Clear error messages for missing required fields
+        2. Warnings for partial/malformed context (with defaults applied)
+        3. Remediation hints for each validation issue
+
+        Args:
+            apply_defaults: If True, apply defaults to malformed fields and report as warnings
+                          instead of errors (allows proceeding with partial data)
+
+        Returns:
+            PayloadValidationResult with errors, warnings, and remediation hints
+        """
+        errors: list[PayloadValidationError] = []
+        warnings: list[PayloadValidationError] = []
+        defaults_applied: dict[str, Any] = {}
+
+        # ============================================
+        # Validate project_context (required field)
+        # ============================================
         if not isinstance(self.project_context, dict):
-            errors.append("project_context must be a dictionary")
+            if apply_defaults:
+                # Apply default empty dict and warn
+                self.project_context = dict(_PROJECT_CONTEXT_DEFAULTS)
+                defaults_applied["project_context"] = self.project_context
+                warnings.append(PayloadValidationError(
+                    field="project_context",
+                    message="project_context must be a dictionary, using defaults",
+                    severity="warning",
+                    remediation_hint="Provide a dict with keys: name, tech_stack, directory_structure, app_spec_summary",
+                    current_value=None,
+                    default_value=_PROJECT_CONTEXT_DEFAULTS,
+                ))
+            else:
+                errors.append(PayloadValidationError(
+                    field="project_context",
+                    message="project_context must be a dictionary",
+                    severity="error",
+                    remediation_hint="Provide a dict with keys: name, tech_stack, directory_structure, app_spec_summary. Example: {'name': 'MyApp', 'tech_stack': ['python', 'react']}",
+                    current_value=self.project_context,
+                ))
+        else:
+            # Validate/fix project_context internal structure
+            context_issues = self._validate_project_context(apply_defaults)
+            for issue in context_issues:
+                if issue.severity == "error":
+                    errors.append(issue)
+                else:
+                    warnings.append(issue)
+                    if issue.default_value is not None:
+                        defaults_applied[f"project_context.{issue.field}"] = issue.default_value
 
-        # required_capabilities must be non-empty list
+        # ============================================
+        # Validate required_capabilities (required field - cannot apply defaults)
+        # ============================================
         if not isinstance(self.required_capabilities, list):
-            errors.append("required_capabilities must be a list")
+            errors.append(PayloadValidationError(
+                field="required_capabilities",
+                message="required_capabilities must be a list",
+                severity="error",
+                remediation_hint="Provide a list of capability strings. Example: ['e2e_testing', 'api_testing', 'documentation']",
+                current_value=self.required_capabilities,
+            ))
         elif len(self.required_capabilities) == 0:
-            errors.append("required_capabilities cannot be empty")
+            errors.append(PayloadValidationError(
+                field="required_capabilities",
+                message="required_capabilities cannot be empty",
+                severity="error",
+                remediation_hint="Specify at least one capability. Common capabilities: 'e2e_testing', 'api_testing', 'unit_testing', 'documentation', 'security_audit', 'code_review'",
+            ))
         else:
+            invalid_caps = []
             for i, cap in enumerate(self.required_capabilities):
-                if not isinstance(cap, str) or not cap.strip():
-                    errors.append(f"required_capabilities[{i}] must be a non-empty string")
+                if not isinstance(cap, str):
+                    invalid_caps.append(f"[{i}] is {type(cap).__name__}, expected string")
+                elif not cap.strip():
+                    invalid_caps.append(f"[{i}] is empty string")
 
-        # existing_agents must be list of strings
+            if invalid_caps:
+                errors.append(PayloadValidationError(
+                    field="required_capabilities",
+                    message=f"Invalid capabilities: {'; '.join(invalid_caps)}",
+                    severity="error",
+                    remediation_hint="Each capability must be a non-empty string. Example: ['e2e_testing', 'api_testing']",
+                    current_value=self.required_capabilities,
+                ))
+
+        # ============================================
+        # Validate existing_agents (optional, can apply defaults)
+        # ============================================
         if not isinstance(self.existing_agents, list):
-            errors.append("existing_agents must be a list")
+            if apply_defaults:
+                self.existing_agents = []
+                defaults_applied["existing_agents"] = []
+                warnings.append(PayloadValidationError(
+                    field="existing_agents",
+                    message="existing_agents must be a list, using empty list",
+                    severity="warning",
+                    remediation_hint="Provide a list of agent name strings. Example: ['coder', 'test-runner']",
+                    current_value=None,
+                    default_value=[],
+                ))
+            else:
+                errors.append(PayloadValidationError(
+                    field="existing_agents",
+                    message="existing_agents must be a list",
+                    severity="error",
+                    remediation_hint="Provide a list of agent name strings, or empty list []. Example: ['coder', 'test-runner']",
+                    current_value=self.existing_agents,
+                ))
         else:
+            # Validate individual agents and filter invalid ones in lenient mode
+            invalid_agents = []
+            valid_agents = []
             for i, agent in enumerate(self.existing_agents):
                 if not isinstance(agent, str):
-                    errors.append(f"existing_agents[{i}] must be a string")
+                    invalid_agents.append(f"[{i}] is {type(agent).__name__}, expected string")
+                elif not agent.strip():
+                    invalid_agents.append(f"[{i}] is empty string")
+                else:
+                    valid_agents.append(agent)
 
-        # constraints must be dict
+            if invalid_agents:
+                if apply_defaults:
+                    self.existing_agents = valid_agents
+                    defaults_applied["existing_agents"] = valid_agents
+                    warnings.append(PayloadValidationError(
+                        field="existing_agents",
+                        message=f"Removed invalid entries: {'; '.join(invalid_agents)}",
+                        severity="warning",
+                        remediation_hint="Each agent name must be a non-empty string. Invalid entries were removed.",
+                        default_value=valid_agents,
+                    ))
+                else:
+                    errors.append(PayloadValidationError(
+                        field="existing_agents",
+                        message=f"Invalid agent entries: {'; '.join(invalid_agents)}",
+                        severity="error",
+                        remediation_hint="Each agent name must be a non-empty string. Example: ['coder', 'test-runner']",
+                        current_value=self.existing_agents,
+                    ))
+
+        # ============================================
+        # Validate constraints (optional, can apply defaults)
+        # ============================================
         if not isinstance(self.constraints, dict):
-            errors.append("constraints must be a dictionary")
+            if apply_defaults:
+                self.constraints = {}
+                defaults_applied["constraints"] = {}
+                warnings.append(PayloadValidationError(
+                    field="constraints",
+                    message="constraints must be a dictionary, using empty dict",
+                    severity="warning",
+                    remediation_hint="Provide a dict with constraint keys. Example: {'max_agents': 5, 'model': 'sonnet'}",
+                    current_value=None,
+                    default_value={},
+                ))
+            else:
+                errors.append(PayloadValidationError(
+                    field="constraints",
+                    message="constraints must be a dictionary",
+                    severity="error",
+                    remediation_hint="Provide a dict with constraint keys, or empty dict {}. Example: {'max_agents': 5, 'model': 'sonnet', 'max_turns_limit': 100}",
+                    current_value=self.constraints,
+                ))
+        else:
+            # Validate constraint values
+            constraint_issues = self._validate_constraints(apply_defaults)
+            for issue in constraint_issues:
+                if issue.severity == "error":
+                    errors.append(issue)
+                else:
+                    warnings.append(issue)
+                    if issue.default_value is not None:
+                        defaults_applied[f"constraints.{issue.field}"] = issue.default_value
 
-        return errors
+        # Determine overall validity
+        is_valid = len(errors) == 0
+
+        return PayloadValidationResult(
+            is_valid=is_valid,
+            errors=errors,
+            warnings=warnings,
+            defaults_applied=defaults_applied,
+        )
+
+    def _validate_project_context(self, apply_defaults: bool) -> list[PayloadValidationError]:
+        """
+        Validate individual fields within project_context.
+
+        Feature #190: Partial context triggers warnings but proceeds with defaults.
+        """
+        issues: list[PayloadValidationError] = []
+
+        # Check 'name' field
+        name = self.project_context.get("name")
+        if name is None:
+            if apply_defaults:
+                self.project_context["name"] = _PROJECT_CONTEXT_DEFAULTS["name"]
+                issues.append(PayloadValidationError(
+                    field="name",
+                    message="project_context.name is missing, using default",
+                    severity="warning",
+                    remediation_hint="Provide a project name string for better agent generation. Example: 'name': 'MyWebApp'",
+                    default_value=_PROJECT_CONTEXT_DEFAULTS["name"],
+                ))
+        elif not isinstance(name, str):
+            if apply_defaults:
+                self.project_context["name"] = str(name) if name else _PROJECT_CONTEXT_DEFAULTS["name"]
+                issues.append(PayloadValidationError(
+                    field="name",
+                    message=f"project_context.name should be a string, converted from {type(name).__name__}",
+                    severity="warning",
+                    remediation_hint="Provide a string value for the project name.",
+                    current_value=name,
+                    default_value=self.project_context["name"],
+                ))
+            else:
+                issues.append(PayloadValidationError(
+                    field="name",
+                    message=f"project_context.name must be a string, got {type(name).__name__}",
+                    severity="error",
+                    remediation_hint="Provide a string value for the project name. Example: 'name': 'MyWebApp'",
+                    current_value=name,
+                ))
+
+        # Check 'tech_stack' field
+        tech_stack = self.project_context.get("tech_stack")
+        if tech_stack is None:
+            if apply_defaults:
+                self.project_context["tech_stack"] = _PROJECT_CONTEXT_DEFAULTS["tech_stack"]
+                issues.append(PayloadValidationError(
+                    field="tech_stack",
+                    message="project_context.tech_stack is missing, using empty list",
+                    severity="warning",
+                    remediation_hint="Provide a list of technology strings for better agent generation. Example: 'tech_stack': ['python', 'react', 'fastapi']",
+                    default_value=_PROJECT_CONTEXT_DEFAULTS["tech_stack"],
+                ))
+        elif not isinstance(tech_stack, list):
+            if apply_defaults:
+                # Try to convert if possible (e.g., comma-separated string)
+                if isinstance(tech_stack, str):
+                    self.project_context["tech_stack"] = [t.strip() for t in tech_stack.split(",") if t.strip()]
+                else:
+                    self.project_context["tech_stack"] = _PROJECT_CONTEXT_DEFAULTS["tech_stack"]
+                issues.append(PayloadValidationError(
+                    field="tech_stack",
+                    message=f"project_context.tech_stack should be a list, converted from {type(tech_stack).__name__}",
+                    severity="warning",
+                    remediation_hint="Provide a list of technology strings. Example: 'tech_stack': ['python', 'react']",
+                    current_value=tech_stack,
+                    default_value=self.project_context["tech_stack"],
+                ))
+            else:
+                issues.append(PayloadValidationError(
+                    field="tech_stack",
+                    message=f"project_context.tech_stack must be a list, got {type(tech_stack).__name__}",
+                    severity="error",
+                    remediation_hint="Provide a list of technology strings. Example: 'tech_stack': ['python', 'react', 'fastapi']",
+                    current_value=tech_stack,
+                ))
+
+        # Check 'settings' field (optional but should be dict if present)
+        settings = self.project_context.get("settings")
+        if settings is not None and not isinstance(settings, dict):
+            if apply_defaults:
+                self.project_context["settings"] = _PROJECT_CONTEXT_DEFAULTS["settings"]
+                issues.append(PayloadValidationError(
+                    field="settings",
+                    message="project_context.settings should be a dict, using empty dict",
+                    severity="warning",
+                    remediation_hint="Provide a dict for settings if needed. Example: 'settings': {'model': 'sonnet'}",
+                    current_value=settings,
+                    default_value=_PROJECT_CONTEXT_DEFAULTS["settings"],
+                ))
+            else:
+                issues.append(PayloadValidationError(
+                    field="settings",
+                    message=f"project_context.settings must be a dict, got {type(settings).__name__}",
+                    severity="error",
+                    remediation_hint="Provide a dict for settings, or remove the field. Example: 'settings': {'model': 'sonnet'}",
+                    current_value=settings,
+                ))
+
+        return issues
+
+    def _validate_constraints(self, apply_defaults: bool) -> list[PayloadValidationError]:
+        """
+        Validate individual constraint fields.
+
+        Feature #190: Validate constraint values and provide remediation hints.
+        """
+        issues: list[PayloadValidationError] = []
+
+        # Validate 'max_agents' if present
+        max_agents = self.constraints.get("max_agents")
+        if max_agents is not None:
+            if not isinstance(max_agents, int) or max_agents < 1:
+                if apply_defaults:
+                    self.constraints["max_agents"] = 10
+                    issues.append(PayloadValidationError(
+                        field="max_agents",
+                        message="constraints.max_agents must be positive integer, using default 10",
+                        severity="warning",
+                        remediation_hint="Provide a positive integer. Example: 'max_agents': 5",
+                        current_value=max_agents,
+                        default_value=10,
+                    ))
+                else:
+                    issues.append(PayloadValidationError(
+                        field="max_agents",
+                        message=f"constraints.max_agents must be a positive integer, got {repr(max_agents)}",
+                        severity="error",
+                        remediation_hint="Provide a positive integer. Example: 'max_agents': 5",
+                        current_value=max_agents,
+                    ))
+
+        # Validate 'model' if present
+        model = self.constraints.get("model")
+        if model is not None:
+            if not isinstance(model, str) or model.lower() not in VALID_MODELS:
+                if apply_defaults:
+                    self.constraints["model"] = DEFAULT_MODEL
+                    issues.append(PayloadValidationError(
+                        field="model",
+                        message=f"constraints.model must be one of {sorted(VALID_MODELS)}, using '{DEFAULT_MODEL}'",
+                        severity="warning",
+                        remediation_hint=f"Use one of: {', '.join(sorted(VALID_MODELS))}. Example: 'model': 'sonnet'",
+                        current_value=model,
+                        default_value=DEFAULT_MODEL,
+                    ))
+                else:
+                    issues.append(PayloadValidationError(
+                        field="model",
+                        message=f"constraints.model must be one of {sorted(VALID_MODELS)}, got {repr(model)}",
+                        severity="error",
+                        remediation_hint=f"Use one of: {', '.join(sorted(VALID_MODELS))}. Example: 'model': 'sonnet'",
+                        current_value=model,
+                    ))
+
+        # Validate 'max_turns_limit' if present
+        max_turns = self.constraints.get("max_turns_limit")
+        if max_turns is not None:
+            if not isinstance(max_turns, int) or max_turns < 1:
+                if apply_defaults:
+                    self.constraints["max_turns_limit"] = 100
+                    issues.append(PayloadValidationError(
+                        field="max_turns_limit",
+                        message="constraints.max_turns_limit must be positive integer, using default 100",
+                        severity="warning",
+                        remediation_hint="Provide a positive integer. Example: 'max_turns_limit': 100",
+                        current_value=max_turns,
+                        default_value=100,
+                    ))
+                else:
+                    issues.append(PayloadValidationError(
+                        field="max_turns_limit",
+                        message=f"constraints.max_turns_limit must be a positive integer, got {repr(max_turns)}",
+                        severity="error",
+                        remediation_hint="Provide a positive integer. Example: 'max_turns_limit': 100",
+                        current_value=max_turns,
+                    ))
+
+        return issues
 
 
 @dataclass
@@ -1211,6 +1645,8 @@ class Octo:
     def generate_specs(
         self,
         payload: OctoRequestPayload,
+        *,
+        lenient: bool = False,
     ) -> OctoResponse:
         """
         Generate AgentSpecs from the request payload.
@@ -1223,22 +1659,48 @@ class Octo:
         5. Generates TestContracts for testable agents (Feature #184)
         6. Returns all valid specs and contracts in the response
 
+        Feature #190: Octo handles malformed project context gracefully.
+
         Args:
             payload: OctoRequestPayload containing context and requirements
+            lenient: If True, proceed with defaults when project context is
+                    incomplete/malformed (Feature #190). Warnings are added
+                    to the response but processing continues.
 
         Returns:
-            OctoResponse with generated specs, test contracts, or error information
+            OctoResponse with generated specs, test contracts, or error information.
+            In lenient mode, may include warnings about applied defaults.
         """
-        # Step 1: Validate payload
-        validation_errors = payload.validate()
-        if validation_errors:
-            _logger.warning("Invalid OctoRequestPayload: %s", validation_errors)
+        # Step 1: Validate payload with detailed error information (Feature #190)
+        validation_result = payload.validate_detailed(apply_defaults=lenient)
+
+        if not validation_result.is_valid:
+            # Build error message with remediation hints
+            error_details = []
+            for err in validation_result.errors:
+                error_details.append(f"{err.field}: {err.message}")
+
+            _logger.warning(
+                "Invalid OctoRequestPayload: %s (hints: %s)",
+                validation_result.error_messages,
+                validation_result.remediation_hints,
+            )
+
             return OctoResponse(
                 success=False,
                 error="Invalid request payload",
                 error_type="validation_error",
-                validation_errors=validation_errors,
+                validation_errors=validation_result.error_messages,
+                # Feature #190: Include remediation hints in warnings
+                warnings=validation_result.remediation_hints,
                 request_id=payload.request_id,
+            )
+
+        # Feature #190: Log defaults applied and add warnings
+        if validation_result.defaults_applied:
+            _logger.info(
+                "Applied defaults for malformed payload fields: %s",
+                list(validation_result.defaults_applied.keys()),
             )
 
         _logger.info(
@@ -1251,6 +1713,11 @@ class Octo:
         generated_specs: list[AgentSpec] = []
         generated_contracts: list[TestContract] = []  # Feature #184
         warnings: list[str] = []
+
+        # Feature #190: Include validation warnings about applied defaults
+        if validation_result.warnings:
+            for w in validation_result.warnings:
+                warnings.append(f"[FIXED] {w.field}: {w.message}")
 
         # Track which specs were generated for which capability (for TestContract linking)
         spec_to_capability: dict[str, str] = {}

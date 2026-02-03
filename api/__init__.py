@@ -407,6 +407,17 @@ from api.octo import (
     select_model_for_capability,
     validate_model,
     get_model_characteristics,
+    # Feature #189: Octo persists AgentSpecs to database
+    SOURCE_TYPE_OCTO_GENERATED,
+    SOURCE_TYPE_MANUAL,
+    SOURCE_TYPE_DSPy,
+    SOURCE_TYPE_TEMPLATE,
+    SOURCE_TYPE_IMPORTED,
+    VALID_SOURCE_TYPES,
+    SpecPersistenceResult,
+    # Feature #190: Octo handles malformed project context gracefully
+    PayloadValidationError,
+    PayloadValidationResult,
 )
 from api.constraints import (
     # Feature #185: Constraint Satisfaction for AgentSpec Generation
@@ -448,6 +459,30 @@ from api.octo_schemas import (
     VALID_TEST_TYPES as OCTO_SCHEMA_VALID_TEST_TYPES,
     VALID_GATE_MODES as OCTO_SCHEMA_VALID_GATE_MODES,
     VALID_ASSERTION_OPERATORS,
+)
+from api.archetypes import (
+    # Feature #191: Octo uses agent archetypes for common patterns
+    # Data classes
+    AgentArchetype,
+    ArchetypeMatchResult,
+    CustomizedArchetype,
+    # Constants
+    AGENT_ARCHETYPES,
+    HIGH_CONFIDENCE_THRESHOLD,
+    MEDIUM_CONFIDENCE_THRESHOLD,
+    LOW_CONFIDENCE_THRESHOLD,
+    # Core functions
+    get_archetype,
+    get_all_archetypes,
+    get_archetype_names,
+    archetype_exists,
+    map_capability_to_archetype,
+    is_custom_agent_needed,
+    customize_archetype,
+    create_agent_from_archetype,
+    # Utility functions
+    get_archetype_for_task_type,
+    get_archetype_summary,
 )
 
 __all__ = [
@@ -791,6 +826,9 @@ __all__ = [
     "select_model_for_capability",
     "validate_model",
     "get_model_characteristics",
+    # Feature #190: Octo handles malformed project context gracefully
+    "PayloadValidationError",
+    "PayloadValidationResult",
     # Feature #188: Octo Schema Validation exports
     "OctoSchemaValidationError",
     "OctoSchemaValidationErrorDetail",
@@ -808,4 +846,22 @@ __all__ = [
     "OCTO_SCHEMA_VALID_TEST_TYPES",
     "OCTO_SCHEMA_VALID_GATE_MODES",
     "VALID_ASSERTION_OPERATORS",
+    # Feature #191: Octo uses agent archetypes for common patterns
+    "AgentArchetype",
+    "ArchetypeMatchResult",
+    "CustomizedArchetype",
+    "AGENT_ARCHETYPES",
+    "HIGH_CONFIDENCE_THRESHOLD",
+    "MEDIUM_CONFIDENCE_THRESHOLD",
+    "LOW_CONFIDENCE_THRESHOLD",
+    "get_archetype",
+    "get_all_archetypes",
+    "get_archetype_names",
+    "archetype_exists",
+    "map_capability_to_archetype",
+    "is_custom_agent_needed",
+    "customize_archetype",
+    "create_agent_from_archetype",
+    "get_archetype_for_task_type",
+    "get_archetype_summary",
 ]
