@@ -190,6 +190,14 @@ from api.dspy_signatures import (
     validate_spec_output,
     VALID_TASK_TYPES,
     DEFAULT_BUDGETS as DSPY_DEFAULT_BUDGETS,
+    # Feature #182: Octo DSPy signature for AgentSpec generation
+    OctoSpecGenerationSignature,
+    get_octo_spec_generator,
+    validate_octo_spec_output,
+    convert_octo_output_to_agent_spec_dict,
+    VALID_AGENT_MODELS,
+    VALID_GATE_MODES,
+    VALID_OCTO_VALIDATOR_TYPES,
 )
 from api.spec_name_generator import (
     # Feature #59: Unique Spec Name Generation
@@ -536,6 +544,14 @@ __all__ = [
     "validate_spec_output",
     "VALID_TASK_TYPES",
     "DSPY_DEFAULT_BUDGETS",
+    # Feature #182: Octo DSPy signature exports
+    "OctoSpecGenerationSignature",
+    "get_octo_spec_generator",
+    "validate_octo_spec_output",
+    "convert_octo_output_to_agent_spec_dict",
+    "VALID_AGENT_MODELS",
+    "VALID_GATE_MODES",
+    "VALID_OCTO_VALIDATOR_TYPES",
     # Feature #59: Unique Spec Name Generation exports
     "SPEC_NAME_MAX_LENGTH",
     "SPEC_NAME_PATTERN",

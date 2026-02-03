@@ -12700,3 +12700,241 @@ What was done:
   - Browser automation unavailable (Chrome SIGTRAP in container)
   - No regression found - feature still working correctly
 
+[Testing] 2026-02-03T23:24:37+11:00 - Feature #117 regression test PASSED
+  - Feature: Proof: Dynamic compilation produces materially different AgentSpecs
+  - Category: functional
+  - All 7 verification steps verified:
+    Step 1: Test exists in tests/test_dspy_pipeline_e2e.py - PASS
+    Step 2: Compile coding Feature (category='A. Database') into AgentSpec - PASS
+    Step 3: Compile audit Feature (category='Security') into AgentSpec - PASS
+    Step 4: spec1.task_type='coding' != spec2.task_type='audit' - PASS
+    Step 5: Tool policies differ - coding has 35 tools, audit has 9 tools - PASS
+    Step 6: Budgets differ - coding max_turns=150, audit max_turns=30 - PASS
+    Step 7: Test passes: pytest -k dynamic_compilation - PASS (4.71s)
+  - Unit verification:
+    - FeatureCompiler compiles features with correct task_type derivation
+    - extract_task_type_from_category() maps categories correctly
+    - get_budget_for_task_type() returns different budgets per task type
+    - Tool policies are dynamically generated based on task type
+  - API server: healthy
+  - Source code intact: api/feature_compiler.py (565 lines)
+  - Browser automation unavailable (Chrome SIGTRAP in container)
+  - No regression found - feature still working correctly
+
+[Session] 2026-02-03T00:00:00+00:00 - Feature #175 IMPLEMENTED AND PASSING
+  - Feature: Maestro produces structured Octo request payload
+  - Category: functional
+
+  Implementation Summary:
+  - Added construct_octo_payload() method to Maestro class
+  - Gathers project discovery artifacts (app_spec.txt, README, directory structure)
+  - Detects tech stack from project files (package.json, requirements.txt)
+  - Identifies execution environment (web, desktop, backend, mobile, cli)
+  - Fetches feature backlog with status mapping
+  - Constructs validated OctoRequestPayload with all context for Octo
+
+  Helper methods added:
+  - _gather_discovery_artifacts(): Collects app spec, README, directory listing
+  - _detect_tech_stack_from_files(): Detects languages, frameworks, testing tools
+  - _identify_execution_environment(): Determines environment type from tech stack
+  - _fetch_feature_backlog(): Fetches features with status mapping
+
+  Integration:
+  - Updated delegate_to_octo to use construct_octo_payload when ProjectContext provided
+  - Fallback to minimal payload for backwards compatibility
+
+  Test Results:
+  - 35/35 tests PASS (test_feature_175_maestro_octo_payload.py)
+  - Tests cover: project discovery, tech stack detection, environment detection,
+    feature backlog fetching, payload construction, validation, integration
+
+  Files Modified:
+  - api/maestro.py: Added construct_octo_payload and helper methods
+  - tests/test_feature_175_maestro_octo_payload.py: New test file (35 tests)
+
+  Feature marked as passing: True
+[Testing] 2026-02-03T23:28:13+11:00 - Feature #26 regression test PASSED
+  - Feature: AgentRun Status Transition State Machine
+  - Category: D. Workflow Completeness
+  - All 9 verification steps passed:
+    Step 1: Valid state transitions defined as adjacency map - PASS
+    Step 2: pending can transition to running only - PASS
+    Step 3: running can transition to paused, completed, failed, timeout - PASS
+    Step 4: paused can transition to running, failed (cancel) - PASS
+    Step 5: completed, failed, timeout are terminal states - PASS
+    Step 6: Transition validation implemented in AgentRun model - PASS
+    Step 7: InvalidStateTransition exception raised for invalid transitions - PASS
+    Step 8: All state transitions logged with timestamps - PASS
+    Step 9: Transitions atomic when used within database transactions - PASS
+  - Unit tests: 64/64 PASS (test_agentrun_state_machine.py in 5.29s)
+  - API endpoints verified:
+    - POST /api/agent-runs/{id}/pause: Uses run.pause() state machine method
+    - POST /api/agent-runs/{id}/resume: Uses run.resume() state machine method
+    - POST /api/agent-runs/{id}/cancel: Uses run.fail() state machine method
+  - Harness kernel integration verified:
+    - run.start() at execution start
+    - run.complete() on successful completion
+    - run.fail() on errors
+    - run.timeout() on budget exhaustion
+  - Database verification:
+    - 2238 total runs with valid statuses only
+    - 2397 state transition events recorded (started, paused, resumed, completed, failed)
+  - Source code intact: api/agentspec_models.py (903 lines)
+    - VALID_STATE_TRANSITIONS: line 108
+    - TERMINAL_STATUSES: line 104
+    - InvalidStateTransition exception: line 122
+    - AgentRun.transition_to(): line 435
+    - AgentRun convenience methods: lines 500-580
+  - Browser automation unavailable (Chrome SIGTRAP in container)
+  - No regression found - feature still working correctly
+
+
+---
+
+## Session: 2026-02-03 - Feature #179
+
+### Feature #179: Maestro persists agent-planning decisions to database - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Dependencies:** None
+
+**Description:** Agent-planning decisions are persisted to SQLite for auditability and UI display.
+
+**Changes Made:**
+
+1. `api/agentspec_models.py`: Added AgentPlanningDecisionRecord model
+   - id: UUID primary key
+   - project_name: Indexed for fast project-scoped queries
+   - requires_agent_planning: Boolean flag
+   - justification: Text field for human-readable rationale
+   - required_capabilities: JSON array of CapabilityRequirement dicts
+   - existing_capabilities: JSON array of strings
+   - recommended_agent_types: JSON array of strings
+   - project_context_snapshot: JSON dict for reproducibility
+   - triggering_feature_ids: JSON array of feature IDs
+   - created_at: Timestamp with index
+
+2. `api/database.py`: Added migration function
+   - _migrate_add_agent_planning_decisions_table() creates table for existing DBs
+   - Called in create_database() after other migrations
+   - Idempotent - safe to run multiple times
+
+3. `api/maestro.py`: Added persistence methods
+   - persist_decision(): Creates record from AgentPlanningDecision
+   - evaluate_and_persist(): Convenience method combining evaluate + persist
+   - PersistDecisionResult dataclass for return values
+
+4. `server/routers/planning_decisions.py`: New API router
+   - GET /api/projects/{project_name}/planning-decisions (list with pagination)
+   - GET /api/projects/{project_name}/planning-decisions/{id} (get by ID)
+   - POST /api/projects/{project_name}/planning-decisions (evaluate + persist)
+   - GET /api/projects/{project_name}/planning-decisions/stats/summary
+
+5. `api/__init__.py`: Export new classes
+   - PersistDecisionResult
+   - AgentPlanningDecisionRecord
+
+6. `server/main.py`, `server/routers/__init__.py`: Register new router
+
+**Verification Summary (All 4 Feature Steps Passed):**
+
+1. **Create AgentPlanningDecisionRecord model/table if needed** - PASS
+   - Model class exists with __tablename__ = "agent_planning_decisions"
+   - All required columns present
+   - Indexes on project_name, created_at, requires_agent_planning
+   - to_dict() method for JSON serialization
+
+2. **Store decision rationale, required capabilities, and timestamp** - PASS
+   - persist_decision() creates records with correct data
+   - justification text stored in TEXT column
+   - required_capabilities stored as JSON array
+   - created_at timestamp automatically set
+
+3. **Link decision to project and triggering feature(s)** - PASS
+   - project_name column with index
+   - triggering_feature_ids stores array of feature IDs
+   - project_context_snapshot stores full context for reproducibility
+
+4. **Decision retrievable via API for UI display** - PASS
+   - List endpoint with pagination (limit/offset)
+   - Get by ID endpoint
+   - Stats summary endpoint
+   - Proper response models defined
+
+**Test Results:**
+- tests/test_feature_179_decision_persistence.py: 35/35 tests PASS (8.96s)
+  - TestStep1ModelTable: 5/5 PASS
+  - TestStep2StoreDecision: 8/8 PASS
+  - TestStep3LinkToProjectAndFeatures: 5/5 PASS
+  - TestStep4APIRetrieval: 7/7 PASS
+  - TestIntegration: 3/3 PASS
+  - TestEdgeCases: 4/4 PASS
+  - TestMigration: 3/3 PASS
+
+**Live Verification:**
+- Migration creates table successfully (9 tables in database)
+- Decision persisted with ID 64647001-c3d0-422a-a509-5c0ea8e65485
+- Record retrieved from database with correct project_name, triggering_feature_ids
+- Required capabilities detected: playwright, react
+
+**Commit:** 4523b6d
+
+**Updated Progress:**
+- Feature #179: Maestro persists agent-planning decisions to database - PASSING
+
+**Session completed successfully.**
+
+[Feature #181] 2026-02-03T23:29:03+11:00 - Maestro tracks which agents are available per project
+===============================================================================
+
+IMPLEMENTATION COMPLETE:
+
+1. scan_file_based_agents() - Scans .claude/agents/generated/ and .claude/agents/manual/
+   - Parses YAML frontmatter from .md files
+   - Extracts agent name, display_name, model, capabilities
+   - Categorizes agents by source (file, file:generated, file:manual)
+
+2. query_db_agents() - Queries database for persisted AgentSpecs
+   - Returns AgentInfo objects from database AgentSpec records
+   - Handles missing session gracefully
+
+3. reconcile_available_agents() - Reconciles file-based and DB-based agent lists
+   - Priority order: default < file < database
+   - Deduplicates by agent name
+   - Includes/excludes defaults based on parameter
+
+4. get_available_agents() - Main entry point returning AvailableAgentsResult
+   - Combines all three methods above
+   - Returns counts by source (file, db, default)
+   - Records scanned paths and any errors
+
+5. evaluate_with_available_agents() - Influences delegation decisions
+   - Discovers available agents dynamically
+   - Updates ProjectContext.existing_agents
+   - Calls evaluate() with discovered agents
+
+NEW DATA CLASSES:
+- AgentInfo: Information about a single available agent
+- AvailableAgentsResult: Result of scanning for all available agents
+
+TESTING:
+- 25 unit tests in test_feature_181_agent_tracking.py: ALL PASS
+- Verification script verify_feature_181.py: ALL CHECKS PASS
+  - Found 7 file-based agents in actual project
+  - Found 2 default agents (coding, testing)
+  - Total 9 agents after reconciliation
+
+VERIFICATION RESULTS:
+  Step 1: scan_file_based_agents() - PASS (7 agents found)
+  Step 2: query_db_agents() - PASS (works without session)
+  Step 3: reconcile_available_agents() - PASS (9 agents merged)
+  Step 4: get_available_agents() + evaluate - PASS
+
+Files modified:
+- api/maestro.py: Added agent tracking functionality (~350 lines)
+- tests/test_feature_181_agent_tracking.py: New unit tests (25 tests)
+- tests/verify_feature_181.py: New verification script
+

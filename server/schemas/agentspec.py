@@ -30,7 +30,8 @@ RETRY_POLICIES = Literal["none", "fixed", "exponential"]
 EVENT_TYPES = Literal[
     "started", "tool_call", "tool_result", "turn_complete",
     "acceptance_check", "completed", "failed", "paused", "resumed",
-    "policy_violation", "timeout"
+    "policy_violation", "timeout", "sdk_session_started", "sdk_session_completed",
+    "agent_planned", "octo_failure"
 ]
 ARTIFACT_TYPES = Literal["file_change", "test_result", "log", "metric", "snapshot"]
 VALIDATOR_TYPES = Literal["test_pass", "file_exists", "lint_clean", "forbidden_patterns", "custom"]
