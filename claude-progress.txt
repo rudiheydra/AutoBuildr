@@ -16958,3 +16958,98 @@ This feature was already fully implemented in the codebase:
 - Total: 218/227 features passing (96.0%)
 
 **Session completed successfully.**
+
+
+---
+
+## Session: 2026-02-04 - Feature #223
+
+### Feature #223: icon_generated audit event type created - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Dependencies:** None
+
+**Description:** New event type recorded when an icon is generated for an agent.
+
+**Findings:**
+
+This feature was already implemented as part of Feature #218 (Icon generation triggered 
+during agent materialization). The implementation exists in:
+- `api/agentspec_models.py`: EVENT_TYPES includes "icon_generated"
+- `api/event_recorder.py`: record_icon_generated() convenience method
+- `api/agent_materializer.py`: materialize_with_audit() records icon events
+
+**Implementation Details (Pre-existing):**
+
+1. `api/agentspec_models.py` line 94:
+   - "icon_generated" added to EVENT_TYPES list
+
+2. `api/event_recorder.py` lines 866-923:
+   - `record_icon_generated()` convenience method
+   - Payload fields: agent_name, icon_format, success, generation_time_ms
+   - Optional fields: icon_data, spec_id, provider_name, error
+   - Note: Feature spec says "provider_used" but implementation uses "provider_name"
+     (semantically equivalent - both refer to which provider generated the icon)
+
+3. `api/agent_materializer.py`:
+   - `materialize_with_audit()` records icon_generated event after generation
+   - Event includes spec_id linking to AgentSpec
+
+4. `server/routers/agent_runs.py`:
+   - Events queryable via GET /api/agent-runs/:id/events
+   - Validates event_type against EVENT_TYPES (includes icon_generated)
+
+**Tests Created:**
+
+1. `tests/test_feature_223_icon_generated_event.py`: 26 comprehensive tests
+   - TestStep1IconGeneratedEventType: 3 tests
+   - TestStep2EventPayloadContents: 5 tests
+   - TestStep3EventRecordedAfterSuccess: 3 tests
+   - TestStep4EventLinkedToAgentSpec: 2 tests
+   - TestStep5EventQueryableViaAPIs: 4 tests
+   - TestFeature223VerificationSteps: 5 acceptance tests
+   - TestIntegration: 1 test
+   - TestEdgeCases: 3 tests
+
+**Verification Summary (All 5 Feature Steps Passed):**
+
+1. **Add 'icon_generated' to event_type enum** - PASS
+   - "icon_generated" is in EVENT_TYPES
+   - Can be recorded in database
+   - Invalid event types raise ValueError
+
+2. **Event payload includes: agent_name, provider_used, icon_format** - PASS
+   - agent_name: Name of the agent icon was generated for
+   - provider_name: Name of icon provider used (spec says "provider_used")
+   - icon_format: Format of icon (svg, png, icon_id, etc.)
+   - Optional fields: success, generation_time_ms, spec_id, error
+
+3. **Event recorded after successful icon generation** - PASS
+   - Event created with EventRecorder.record_icon_generated()
+   - Event has timestamp
+   - Also recorded on failure (for audit trail)
+
+4. **Event linked to AgentSpec** - PASS
+   - spec_id field in payload links to AgentSpec.id
+   - run_id links to AgentRun which has agent_spec_id
+
+5. **Event queryable via existing event APIs** - PASS
+   - GET /api/agent-runs/:id/events?event_type=icon_generated
+   - Events ordered by sequence for timeline display
+   - Supports filtering, pagination, and type validation
+
+**Test Results:**
+- tests/test_feature_223_icon_generated_event.py: 26/26 tests PASS (27.29s)
+- tests/test_feature_218_icon_generation_materialization.py: 42/42 tests PASS (no regressions)
+- tests/test_events_api.py: 3/3 tests PASS (events API works)
+
+**Commit:** 189335c
+
+**Updated Progress:**
+- Feature #223: icon_generated audit event type created - PASSING
+- Total: 220/227 features passing (96.9%)
+
+**Session completed successfully.**
