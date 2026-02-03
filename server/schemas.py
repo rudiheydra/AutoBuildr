@@ -71,6 +71,66 @@ class ProjectPromptsUpdate(BaseModel):
 
 
 # ============================================================================
+# Scaffolding Schemas (Feature #203)
+# ============================================================================
+
+class DirectoryStatusResponse(BaseModel):
+    """Status of a single directory in the scaffold."""
+    path: str
+    relative_path: str
+    existed: bool = False
+    created: bool = False
+    error: str | None = None
+    phase: int = 1
+
+
+class ClaudeMdStatusResponse(BaseModel):
+    """Status of CLAUDE.md file generation."""
+    path: str
+    existed: bool = False
+    created: bool = False
+    skipped: bool = False
+    error: str | None = None
+
+
+class ScaffoldResponse(BaseModel):
+    """
+    Response schema for POST /api/projects/{name}/scaffold endpoint.
+
+    Feature #203: Scaffolding can be triggered manually via API.
+
+    Returns the status of created/existing directories and files.
+    Useful for repair/reset scenarios.
+    """
+    success: bool
+    project_name: str
+    project_dir: str
+    claude_root: str
+    directories: list[DirectoryStatusResponse]
+    directories_created: int = 0
+    directories_existed: int = 0
+    directories_failed: int = 0
+    claude_md: ClaudeMdStatusResponse | None = None
+    message: str = ""
+
+
+class ScaffoldRequest(BaseModel):
+    """
+    Request schema for POST /api/projects/{name}/scaffold endpoint.
+
+    Feature #203: Scaffolding can be triggered manually via API.
+    """
+    include_phase2: bool = Field(
+        default=True,
+        description="Whether to create Phase 2 directories (skills/, commands/)"
+    )
+    include_claude_md: bool = Field(
+        default=True,
+        description="Whether to create CLAUDE.md if missing"
+    )
+
+
+# ============================================================================
 # Feature Schemas
 # ============================================================================
 

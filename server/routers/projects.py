@@ -20,6 +20,11 @@ from ..schemas import (
     ProjectPromptsUpdate,
     ProjectStats,
     ProjectSummary,
+    # Feature #203: Scaffolding schemas
+    ScaffoldRequest,
+    ScaffoldResponse,
+    DirectoryStatusResponse,
+    ClaudeMdStatusResponse,
 )
 
 # Lazy imports to avoid circular dependencies
@@ -189,6 +194,20 @@ async def create_project(project: ProjectCreate):
     # Scaffold prompts
     _scaffold_project_prompts(project_path)
 
+    # Feature #202: Trigger scaffolding on project initialization
+    # This creates the .claude directory structure automatically
+    from api.scaffolding import initialize_project_scaffolding
+    init_result = initialize_project_scaffolding(project_path, include_claude_md=True)
+    if not init_result.success:
+        # Log warning but don't fail - scaffolding is non-critical for project creation
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning(
+            "Scaffolding failed for project %s: %s",
+            name,
+            init_result.scaffolding_status.error if init_result.scaffolding_status else "unknown error"
+        )
+
     # Register in registry
     try:
         register_project(name, project_path)
@@ -355,3 +374,108 @@ async def get_project_stats_endpoint(name: str):
         raise HTTPException(status_code=404, detail="Project directory not found")
 
     return get_project_stats(project_dir)
+
+
+@router.post("/{name}/scaffold", response_model=ScaffoldResponse)
+async def scaffold_project(name: str, request: ScaffoldRequest | None = None):
+    """
+    Manually trigger scaffolding for a project.
+
+    Feature #203: Scaffolding can be triggered manually via API.
+
+    This endpoint:
+    1. Runs scaffolding for the specified project
+    2. Returns status of created/existing directories and files
+    3. Is idempotent - safe to call multiple times
+    4. Useful for repair/reset scenarios
+
+    Args:
+        name: Project name
+        request: Optional scaffolding options
+
+    Returns:
+        ScaffoldResponse with status of all directories and files
+    """
+    _init_imports()
+    _, _, get_project_path, _, _ = _get_registry_functions()
+
+    name = validate_project_name(name)
+    project_dir = get_project_path(name)
+
+    if not project_dir:
+        raise HTTPException(status_code=404, detail=f"Project '{name}' not found")
+
+    if not project_dir.exists():
+        raise HTTPException(status_code=404, detail="Project directory not found")
+
+    # Use defaults if no request body provided
+    include_phase2 = True
+    include_claude_md = True
+    if request:
+        include_phase2 = request.include_phase2
+        include_claude_md = request.include_claude_md
+
+    # Import scaffolding functions
+    from api.scaffolding import scaffold_with_claude_md, CLAUDE_ROOT_DIR
+
+    # Run scaffolding
+    scaffold_result, claude_md_result = scaffold_with_claude_md(
+        project_dir,
+        include_phase2=include_phase2,
+        include_claude_md=include_claude_md,
+    )
+
+    # Convert DirectoryStatus to response format
+    directories = [
+        DirectoryStatusResponse(
+            path=str(d.path),
+            relative_path=d.relative_path,
+            existed=d.existed,
+            created=d.created,
+            error=d.error,
+            phase=d.phase,
+        )
+        for d in scaffold_result.directories
+    ]
+
+    # Convert CLAUDE.md result if present
+    claude_md_response = None
+    if claude_md_result:
+        claude_md_response = ClaudeMdStatusResponse(
+            path=str(claude_md_result.path),
+            existed=claude_md_result.existed,
+            created=claude_md_result.created,
+            skipped=claude_md_result.skipped,
+            error=claude_md_result.error,
+        )
+
+    # Build message
+    messages = []
+    if scaffold_result.directories_created > 0:
+        messages.append(f"{scaffold_result.directories_created} directories created")
+    if scaffold_result.directories_existed > 0:
+        messages.append(f"{scaffold_result.directories_existed} directories already existed")
+    if scaffold_result.directories_failed > 0:
+        messages.append(f"{scaffold_result.directories_failed} directories failed")
+    if claude_md_result:
+        if claude_md_result.created:
+            messages.append("CLAUDE.md created")
+        elif claude_md_result.skipped:
+            messages.append("CLAUDE.md already exists (preserved)")
+        elif claude_md_result.error:
+            messages.append(f"CLAUDE.md error: {claude_md_result.error}")
+
+    message = "; ".join(messages) if messages else "No changes needed"
+
+    return ScaffoldResponse(
+        success=scaffold_result.success,
+        project_name=name,
+        project_dir=str(project_dir),
+        claude_root=str(project_dir / CLAUDE_ROOT_DIR),
+        directories=directories,
+        directories_created=scaffold_result.directories_created,
+        directories_existed=scaffold_result.directories_existed,
+        directories_failed=scaffold_result.directories_failed,
+        claude_md=claude_md_response,
+        message=message,
+    )

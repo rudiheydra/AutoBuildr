@@ -69,6 +69,11 @@ if _schemas_file.exists():
     ProjectPromptsUpdate = _legacy.ProjectPromptsUpdate
     ProjectStats = _legacy.ProjectStats
     ProjectSummary = _legacy.ProjectSummary
+    # Feature #203: Scaffolding schemas
+    ScaffoldRequest = _legacy.ScaffoldRequest
+    ScaffoldResponse = _legacy.ScaffoldResponse
+    DirectoryStatusResponse = _legacy.DirectoryStatusResponse
+    ClaudeMdStatusResponse = _legacy.ClaudeMdStatusResponse
     # Additional Filesystem schemas
     DirectoryEntry = _legacy.DirectoryEntry
     DriveInfo = _legacy.DriveInfo
@@ -156,6 +161,11 @@ __all__ = [
     "ProjectPromptsUpdate",
     "ProjectStats",
     "ProjectSummary",
+    # Feature #203: Scaffolding schemas
+    "ScaffoldRequest",
+    "ScaffoldResponse",
+    "DirectoryStatusResponse",
+    "ClaudeMdStatusResponse",
     # Spec creation schemas
     "ImageAttachment",
     # WebSocket schemas
