@@ -1,6 +1,124 @@
 # AutoBuildr Progress Log
 # ======================
 
+## Session: 2026-02-04 - Feature #217
+
+### Feature #217: Icon provider is configurable via settings - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Dependencies:** None
+
+**Description:** Active icon provider selected via configuration, defaulting to placeholder.
+
+**Changes Made:**
+
+1. `api/icon_provider_config.py`: Pre-existing module with full implementation (778 lines)
+   - **Constants:**
+     - `ENV_VAR_ICON_PROVIDER` = "ICON_PROVIDER" for environment variable
+     - `SETTINGS_ICON_PROVIDER_KEY` = "icon_provider" for settings file
+     - `DEFAULT_ICON_PROVIDER` = "local_placeholder"
+     - `KNOWN_PROVIDERS`: frozenset with local_placeholder, nano_banana, default
+     - `PROVIDER_ALIASES`: Maps aliases like "nanobanana" -> "nano_banana"
+   - **Enums:**
+     - `ConfigSource`: ENVIRONMENT, SETTINGS, PROGRAMMATIC, DEFAULT
+   - **Data Classes:**
+     - `IconProviderConfigResult`: provider_name, source, original_value, is_valid, fallback_used, timestamp, metadata
+     - `IconProviderSettings`: active, fallback, auto_register, cache_enabled, metadata
+   - **Core Functions:**
+     - `normalize_provider_name()`: Lowercase, strip, resolve aliases
+     - `is_valid_provider_name()`: Check if provider is known
+     - `get_env_icon_provider()`: Read ICON_PROVIDER env var
+     - `get_settings_icon_provider()`: Read from settings dict
+     - `resolve_icon_provider()`: Full resolution with priority chain
+     - `get_icon_provider()`: Convenience function
+     - `set_icon_provider()`: Programmatic override
+     - `clear_icon_provider_override()`: Clear override
+     - `get_icon_provider_override()`: Get current override
+   - **Settings Functions:**
+     - `load_icon_provider_settings()`: Load from file
+     - `save_icon_provider_settings()`: Save to file
+   - **Validation Functions:**
+     - `validate_icon_provider_config()`: Validate provider
+     - `get_available_providers()`: List all known providers
+     - `get_provider_info()`: Get provider details
+   - **Configuration:**
+     - `configure_icon_provider()`: Full configuration flow
+     - `get_icon_provider_config_documentation()`: Documentation string
+
+2. `api/__init__.py`: Added Feature #217 exports
+   - All constants, enums, data classes, and functions
+   - Total 26 new exports
+
+3. `tests/test_feature_217_icon_provider_config.py`: 82 comprehensive tests
+   - TestStep1EnvironmentVariableOrConfigSetting: 11 tests
+   - TestStep2DefaultValueLocalPlaceholder: 5 tests
+   - TestStep3FutureValueNanoBanana: 7 tests
+   - TestStep4InvalidProviderFallback: 7 tests
+   - TestStep5ConfigurationDocumented: 6 tests
+   - TestIconProviderConfigResult: 4 tests
+   - TestIconProviderSettings: 4 tests
+   - TestProgrammaticOverride: 5 tests
+   - TestNormalizationAndAliases: 4 tests
+   - TestSettingsFileFunctions: 4 tests
+   - TestConfigurationValidation: 5 tests
+   - TestConfigSourceEnum: 2 tests
+   - TestApiPackageExports: 7 tests
+   - TestFeature217VerificationSteps: 5 tests
+   - TestIntegration: 2 tests
+   - TestEdgeCases: 4 tests
+
+4. `tests/verify_feature_217.py`: Standalone verification script
+
+**Verification Summary (All 5 Feature Steps Passed):**
+
+1. **ICON_PROVIDER environment variable or config setting** - PASS
+   - ENV_VAR_ICON_PROVIDER = "ICON_PROVIDER"
+   - SETTINGS_ICON_PROVIDER_KEY = "icon_provider"
+   - get_env_icon_provider() reads from env var
+   - get_settings_icon_provider() reads from settings dict
+   - Environment variable takes priority over settings
+
+2. **Default value: 'local_placeholder'** - PASS
+   - DEFAULT_ICON_PROVIDER = "local_placeholder"
+   - resolve_icon_provider() returns "local_placeholder" as default
+   - Source is ConfigSource.DEFAULT when nothing configured
+
+3. **Future value: 'nano_banana' or other** - PASS
+   - "nano_banana" is in KNOWN_PROVIDERS
+   - Can be set via env var, settings, or programmatically
+   - Aliases like "nanobanana" and "banana" resolve to "nano_banana"
+
+4. **Invalid provider falls back to placeholder** - PASS
+   - Invalid provider from env var falls back to default
+   - Invalid provider from settings falls back to default
+   - fallback_used=True in result when fallback occurs
+   - original_value preserved in result
+
+5. **Configuration documented** - PASS
+   - get_icon_provider_config_documentation() returns 1600+ chars
+   - Documents ICON_PROVIDER env var
+   - Documents settings file configuration
+   - Documents default value and fallback behavior
+
+**Test Results:**
+- tests/test_feature_217_icon_provider_config.py: 82/82 tests PASS
+- tests/verify_feature_217.py: 5/5 verification steps PASS
+- tests/test_feature_215_icon_provider.py: 85/85 tests PASS (no regression)
+- tests/test_feature_198_settings_manager.py: 52/52 tests PASS (no regression)
+
+**Commit:** e9ae707
+
+**Updated Progress:**
+- Feature #217: Icon provider is configurable via settings - PASSING
+- Total: 217/227 features passing (95.6%)
+
+**Session completed successfully.**
+
+---
+
 ## Session: 2026-02-04 - Feature #209
 
 ### Feature #209: TestContract schema defined and documented - COMPLETED
@@ -16074,4 +16192,213 @@ Feature #181 has been marked as passing after successful:
 - Total: 210/227 features passing (92.5%)
 
 **Session completed successfully.**
+
+
+---
+
+## Session: 2026-02-04 - Feature #215
+
+### Feature #215: Icon provider interface defined - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Dependencies:** None
+
+**Description:** Define pluggable interface for icon generation providers.
+
+**Changes Made:**
+
+1. `api/icon_provider.py`: New module implementing icon provider interface (1170 lines)
+   - **Exceptions:**
+     - `IconProviderError`: Base exception
+     - `IconGenerationError`: Icon generation failure
+     - `ProviderNotFoundError`: Unknown provider
+     - `ProviderAlreadyRegisteredError`: Duplicate registration
+     - `InvalidIconFormatError`: Invalid format
+   - **Enums:**
+     - `IconFormat`: svg, png, jpeg, webp, emoji, icon_id
+     - `IconTone`: professional, playful, minimalist, detailed, cartoon, tech, default
+     - `ProviderStatus`: available, unavailable, rate_limited, api_key_required, error
+   - **Data Classes:**
+     - `IconResult`: success, icon_url, icon_data, format, provider_name, generation_time_ms, metadata, error, cached
+     - `IconProviderCapabilities`: supported_formats, supports_url_generation, supports_data_generation, supports_caching, max_concurrent_requests, rate_limit_per_minute, requires_api_key, generation_speed, version, metadata
+     - `IconGenerationRequest`: agent_name, role, tone, task_type, preferred_format, size_hint, context
+   - **Abstract Base Class:**
+     - `IconProvider`: Abstract interface with generate_icon(agent_name, role, tone) -> IconResult
+   - **Default Implementation:**
+     - `DefaultIconProvider`: Maps roles to task type icons with caching
+   - **Registry:**
+     - `IconProviderRegistry`: Manages multiple providers, tracks active provider
+   - **Convenience Functions:**
+     - `get_icon_registry()`, `reset_icon_registry()`, `register_icon_provider()`
+     - `generate_icon()`, `get_default_icon_provider()`, `configure_icon_provider_from_settings()`
+     - `get_active_provider_from_config()`, `set_active_provider_in_config()`
+   - **Constants:**
+     - `ICON_PROVIDER_CONFIG_KEY`, `DEFAULT_PROVIDER_NAME`
+
+2. `api/__init__.py`: Added Feature #215 exports
+   - All exceptions, enums, data classes, classes, functions, and constants
+
+3. `tests/test_feature_215_icon_provider.py`: 85 comprehensive tests
+   - TestStep1IconProviderAbstractClass: 8 tests
+   - TestStep2GenerateIconMethod: 5 tests
+   - TestStep3IconResultDataclass: 10 tests
+   - TestStep4ProviderRegistrationMechanism: 11 tests
+   - TestStep5ConfigurationSelectsActiveProvider: 8 tests
+   - TestIconResultAdditionalFunctionality: 4 tests
+   - TestDefaultIconProvider: 9 tests
+   - TestIconProviderCapabilities: 2 tests
+   - TestIconGenerationRequest: 3 tests
+   - TestExceptions: 5 tests
+   - TestConvenienceFunctions: 3 tests
+   - TestApiPackageExports: 6 tests
+   - TestFeature215VerificationSteps: 5 acceptance tests
+   - TestEdgeCases: 6 tests
+
+**Verification Summary (All 5 Feature Steps Passed):**
+
+1. **IconProvider abstract class/interface created** - PASS
+   - Abstract base class with ABC inheritance
+   - Cannot be instantiated directly
+   - Has abstract methods: name, generate_icon, get_capabilities
+   - Has provider_type class variable
+
+2. **Interface method: generate_icon(agent_name, role, tone) -> IconResult** - PASS
+   - Accepts agent_name, role, tone parameters
+   - Returns IconResult dataclass
+   - Works with DefaultIconProvider implementation
+   - generate_icon_from_request() convenience method
+
+3. **IconResult includes: icon_url, icon_data, format (svg/png)** - PASS
+   - icon_url: URL to generated icon
+   - icon_data: Raw icon data
+   - format: IconFormat enum (svg, png, jpeg, webp, emoji, icon_id)
+   - Additional fields: success, provider_name, generation_time_ms, metadata, error, cached
+
+4. **Provider registration mechanism defined** - PASS
+   - IconProviderRegistry for managing providers
+   - register(), unregister(), get_provider(), has_provider(), list_providers()
+   - Prevents duplicate registration (ProviderAlreadyRegisteredError)
+   - Supports replace=True for overwriting
+   - Global registry with get_icon_registry()
+
+5. **Configuration selects active provider** - PASS
+   - Registry tracks active_provider_name
+   - set_active_provider() changes active provider
+   - generate_icon() uses active provider by default
+   - get_active_provider_from_config() / set_active_provider_in_config()
+   - configure_icon_provider_from_settings() for settings integration
+
+**Test Results:**
+- tests/test_feature_215_icon_provider.py: 85/85 tests PASS (6.64s)
+- tests/test_feature_191_archetypes.py: 72/72 tests PASS (no regressions)
+- tests/test_feature_74_validator_icons.py: 10/10 tests PASS (no regressions)
+
+**Commit:** e909322
+
+**Updated Progress:**
+- Feature #215: Icon provider interface defined - PASSING
+- Total: 215/227 features passing (94.7%)
+
+**Session completed successfully.**
+
+---
+
+## Session: 2026-02-04 - Testing Feature #68
+
+### Feature #68: Event Timeline Component - VERIFIED PASSING
+
+**Status:** PASSING (Regression test passed)
+
+**Category:** O. Responsive & Layout
+
+**Description:** Create Event Timeline component with vertical timeline, expandable event details, and type filtering.
+
+**Verification Method:** Code review + API testing (browser automation unavailable)
+
+**Verification Results:**
+
+1. **Create EventTimeline.tsx component** - PASS
+   - File exists at ui/src/components/EventTimeline.tsx (672 lines)
+
+2. **Props: runId (string)** - PASS
+   - Interface defined with runId: string parameter
+
+3. **Fetch events via GET /api/agent-runs/:id/events** - PASS
+   - API call implemented with query parameters
+   - API tests pass: tests/test_events_api.py (3/3 tests)
+
+4. **Render as vertical timeline with timestamps** - PASS
+   - Timeline structure with vertical line and timestamps
+
+5. **Different icons for event types** - PASS
+   - EVENT_TYPE_CONFIG maps 10 event types to unique icons
+
+6. **Expandable cards for payload details** - PASS
+   - Click toggles expansion, JSON payload displayed
+
+7. **Add filter dropdown by event_type** - PASS
+   - FilterDropdown component with all event types
+
+8. **Load more button for pagination** - PASS
+   - Load more button shows remaining count
+
+9. **Auto-scroll to latest on update** - PASS
+   - endRef with scrollIntoView behavior
+
+**Component Usage Verified:**
+- Exported from EventTimeline.tsx
+- Used in RunInspector.tsx
+- Demo page available: EventTimelineDemo.tsx
+
+**Test Results:**
+- tests/test_events_api.py: 3/3 tests PASS
+
+**Session completed successfully.**
+
+
+---
+
+## Session: 2026-02-04 03:06 - Regression Testing Feature #37
+
+### Feature #37: StaticSpecAdapter for Legacy Coding Agent - VERIFIED PASSING
+
+**Status:** PASSING (No regression found)
+
+**Category:** K. Default & Reset
+
+**Description:** Wrap the existing coding agent as a static AgentSpec with security-restricted tool_policy.
+
+**Verification Method:** Code review + Unit tests (browser automation unavailable)
+
+**Verification Results:**
+
+1. **Code Verification (verify_feature_37.py):** ALL 11 STEPS PASSED
+   - create_coding_spec method exists
+   - Loads coding prompt from prompts/ (10391 chars)
+   - Interpolates feature details into objective
+   - task_type set to "coding"
+   - tool_policy with code editing tools (Read, Write, Edit, Glob, Grep)
+   - Bash tool with security allowlist reference
+   - 7 forbidden_patterns for dangerous operations
+   - max_turns=150 (appropriate for implementation)
+   - AcceptanceSpec with test_pass, lint_clean, custom validators
+   - source_feature_id linked to feature
+   - Returns valid AgentSpec
+
+2. **Unit Tests:**
+   - test_feature_37_coding_spec_adapter.py: 53/53 PASS (6.17s)
+   - test_static_spec_adapter.py: 45/45 PASS (6.55s)
+   - Total: 98/98 tests PASS
+
+3. **Browser Automation:** Unavailable (Chrome launch failure in environment)
+
+**Implementation Files Verified:**
+- api/static_spec_adapter.py: StaticSpecAdapter class with create_coding_spec method
+- api/agentspec_models.py: AgentSpec, AcceptanceSpec, validator helpers
+- prompts/coding_prompt.md: Template for coding agent objectives
+
+**Session completed successfully - Feature #37 still passing.**
 
