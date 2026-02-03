@@ -15184,3 +15184,137 @@ Feature #181 has been marked as passing after successful:
 - Total: 203/227 features passing (89.4%)
 
 **Session completed successfully.**
+[Testing] 2026-02-04T00:13:31+11:00 - Feature #106 regression test PASSED
+  - Feature: Create auditor agent definition (.claude/agents/auditor.md)
+  - Category: functional
+  - All 4 verification steps verified:
+    Step 1: YAML frontmatter with name: auditor, model: opus, color: yellow - PASS
+    Step 2: Description references security/quality audit + read-only policies - PASS
+    Step 3: Markdown body documents audit pipeline, security scanning, tool restrictions - PASS
+    Step 4: File is parseable by Claude Code (valid YAML frontmatter) - PASS
+  - Related tests: tests/test_feature_191_archetypes.py - 4 auditor tests PASS
+  - Browser automation: Unavailable (Chrome SIGTRAP in container)
+  - No regression found - feature still working correctly
+
+---
+
+---
+
+## Session: 2026-02-04 - Feature #207
+
+### Feature #207: Test-runner agent executes tests and reports results - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Dependencies:** None
+
+**Description:** Test-runner executes written tests and reports pass/fail status.
+
+**Changes Made:**
+
+1. `api/test_runner.py`: New module implementing test execution functionality (915 lines)
+   - `TestFailure` dataclass: Individual test failure details
+     - test_name, message, test_file, test_class, test_method
+     - traceback, line_number, failure_type
+   - `TestExecutionResult` dataclass: Structured test results
+     - passed, exit_code, total_tests, passed_tests, failed_tests
+     - skipped_tests, error_tests, failures list
+     - stdout, stderr, command, working_directory
+     - duration_seconds, framework, framework_version, timestamp
+     - success_rate property, to_dict() serialization
+   - `PytestResultParser`: Parses pytest verbose output
+     - Extracts passed/failed/skipped/error counts
+     - Detects pytest version
+     - Parses individual failure details
+   - `UnittestResultParser`: Parses Python unittest output
+     - Extracts "Ran X tests" counts
+     - Parses FAILED status with failure/error counts
+   - `JestResultParser`: Parses Jest (JavaScript) output
+     - Extracts "Tests: X failed, Y passed, Z total" line
+   - `TestRunner` class: Main test execution engine
+     - run(): Invokes test framework via subprocess (Bash)
+     - Captures stdout, stderr, exit code
+     - Respects timeout and working directory
+     - Detects framework from command (pytest, unittest, jest)
+     - Parses results using appropriate parser
+     - Returns structured TestExecutionResult
+   - `record_tests_executed()`: Convenience function for audit events
+   - `run_tests()`: Convenience function for quick execution
+
+2. `api/agentspec_models.py`: Added tests_executed event type
+   - Added "tests_executed" to EVENT_TYPES list (Feature #207)
+
+3. `api/event_recorder.py`: Added record_tests_executed() method
+   - Records agent_name, command, passed status
+   - Includes exit_code, test counts, duration_seconds
+   - Supports test_framework, test_target, failures list
+   - Truncates failures to max 10 for payload size
+
+4. `api/__init__.py`: Added Feature #207 exports
+   - TestFailure, TestExecutionResult
+   - PytestResultParser, UnittestResultParser, JestResultParser
+   - TestRunner, record_tests_executed, run_tests
+
+5. `tests/test_feature_207_test_runner.py`: 66 comprehensive tests
+   - TestStep1InvokesTestFramework: 7 tests
+   - TestStep2CapturesOutput: 10 tests
+   - TestStep3ParsesResults: 12 tests
+   - TestStep4ReportsStructuredResults: 7 tests
+   - TestStep5AuditEventRecorded: 6 tests
+   - TestIntegration: 3 tests
+   - TestTestFailure: 3 tests
+   - TestTestExecutionResult: 3 tests
+   - TestApiPackageExports: 6 tests
+   - TestFeature207VerificationSteps: 5 comprehensive tests
+   - TestEdgeCases: 5 edge case tests
+
+**Verification Summary (All 5 Feature Steps Passed):**
+
+1. **Test-runner invokes test framework via Bash** - PASS
+   - TestRunner.run() executes commands via subprocess
+   - Uses shell=True for proper Bash invocation
+   - Supports working_directory parameter
+   - Handles timeout with subprocess.TimeoutExpired
+
+2. **Captures test output and exit code** - PASS
+   - Captures stdout and stderr
+   - Captures exit code (returncode)
+   - Supports expected_exit_code customization
+   - Truncates large output (configurable max size)
+   - Records duration and timestamp
+
+3. **Parses results to identify failures** - PASS
+   - PytestResultParser extracts pytest output
+   - UnittestResultParser extracts unittest output
+   - JestResultParser extracts Jest output
+   - Framework auto-detection from command
+   - Failure details extraction (test_name, message)
+
+4. **Reports structured results back to harness** - PASS
+   - TestExecutionResult contains all execution data
+   - to_dict() for JSON serialization
+   - success_rate calculation
+   - failures_count property
+   - Full metadata (command, working_dir, timeout, duration)
+
+5. **tests_executed audit event recorded** - PASS
+   - "tests_executed" added to EVENT_TYPES
+   - EventRecorder.record_tests_executed() method
+   - Payload includes all test execution details
+   - Failures truncated to max 10 for payload size
+
+**Test Results:**
+- tests/test_feature_207_test_runner.py: 66/66 tests PASS (6.77s)
+- tests/test_feature_205_test_runner_archetype.py: 47/47 tests PASS (no regressions)
+- tests/test_feature_206_test_code_writer.py: 61/61 tests PASS (no regressions)
+
+**Commit:** 99db373
+
+**Updated Progress:**
+- Feature #207: Test-runner agent executes tests and reports results - PASSING
+- Total: 205/227 features passing (90.3%)
+
+**Session completed successfully.**
+
