@@ -751,6 +751,7 @@ class EventRecorder:
         agent_name: str,
         test_files: list[str],
         *,
+        test_count: int | None = None,
         test_type: str | None = None,
         test_framework: str | None = None,
         test_directory: str | None = None,
@@ -760,6 +761,7 @@ class EventRecorder:
         Convenience method to record a 'tests_written' event.
 
         Feature #206: Test-runner agent writes test code from TestContract.
+        Feature #224: tests_written audit event type created.
         Records details of test files written including paths, framework, and contract link.
 
         Args:
@@ -767,6 +769,7 @@ class EventRecorder:
             contract_id: ID of the TestContract used to generate tests
             agent_name: Name of the test-runner agent that wrote the tests
             test_files: List of test file paths that were written
+            test_count: Number of test functions/cases written (Feature #224)
             test_type: Type of test (unit, integration, e2e, api, etc.)
             test_framework: Testing framework used (pytest, jest, etc.)
             test_directory: Directory where tests were written
@@ -780,6 +783,8 @@ class EventRecorder:
             "agent_name": agent_name,
             "test_files": test_files,
         }
+        if test_count is not None:
+            payload["test_count"] = test_count
         if test_type:
             payload["test_type"] = test_type
         if test_framework:

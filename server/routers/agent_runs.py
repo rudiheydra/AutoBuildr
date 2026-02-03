@@ -309,14 +309,13 @@ async def get_run_events(
         raise HTTPException(status_code=404, detail=f"AgentRun {run_id} not found")
 
     # Validate event_type if provided
-    valid_event_types = [
-        "started", "tool_call", "tool_result", "turn_complete",
-        "acceptance_check", "completed", "failed", "paused", "resumed"
-    ]
-    if event_type and event_type not in valid_event_types:
+    # Feature #221: Use EVENT_TYPES from agentspec_models for comprehensive validation
+    # This ensures all registered event types including agent_planned are queryable
+    from api.agentspec_models import EVENT_TYPES as VALID_EVENT_TYPES
+    if event_type and event_type not in VALID_EVENT_TYPES:
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid event_type '{event_type}'. Must be one of: {', '.join(valid_event_types)}"
+            detail=f"Invalid event_type '{event_type}'. Must be one of: {', '.join(VALID_EVENT_TYPES)}"
         )
 
     # Get total count (for the specific filter if applied)

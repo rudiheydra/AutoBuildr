@@ -16674,3 +16674,132 @@ Feature #181 has been marked as passing after successful:
 - Total: 216/227 features passing (95.2%)
 
 **Session completed successfully.**
+
+---
+
+## Session: 2026-02-04 - Feature #220
+
+### Feature #220: UI displays agent icons in agent cards - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Dependencies:** Features #215, #216, #219
+
+**Description:** Agent cards in the UI show the generated or placeholder icon.
+
+**Files Created:**
+- `ui/src/components/AgentIcon.tsx` - Icon display component with loading/fallback states
+- `ui/src/hooks/useAgentIcon.ts` - Data fetching hook with in-memory caching
+- `tests/test_feature_220_agent_icons.py` - 32 comprehensive tests
+
+**Files Modified:**
+- `ui/src/components/DynamicAgentCard.tsx` - Added projectName prop and AgentIcon integration
+
+**Feature Steps Completed:**
+
+1. **AgentCard component fetches icon from API** - PASS
+   - API endpoint: GET /api/projects/{project_name}/agent-specs/{spec_id}/icon
+   - useAgentIcon hook handles fetch lifecycle
+   - Returns iconUrl, isLoading, error states
+
+2. **Icon displayed in card header** - PASS
+   - AgentIcon component renders in card header
+   - Supports sm/md/lg sizes (24px, 32px, 48px)
+   - Proper SVG rendering via data URL
+
+3. **Loading state while icon fetches** - PASS
+   - Shows spinner during fetch
+   - Optional showEmojiWhileLoading prop for fallback during load
+   - generation_time_ms tracking
+
+4. **Fallback to emoji icon if API fails** - PASS
+   - Task type emoji mapping: coding=laptop, testing=beaker, etc.
+   - Error state triggers fallback
+   - Graceful degradation
+
+5. **Icon cached in browser** - PASS
+   - In-memory cache in useAgentIcon hook
+   - Request deduplication prevents concurrent duplicate fetches
+   - Cached responses return instantly
+
+**Test Results:**
+- tests/test_feature_220_agent_icons.py: 32/32 tests PASS
+
+**Commit:** c017e15
+
+**Updated Progress:**
+- Feature #220: UI displays agent icons in agent cards - PASSING
+
+**Session completed successfully.**
+
+---
+
+## Session: Feature #218 - Icon Generation During Agent Materialization
+
+**Date:** 2025-02-04
+
+**Feature ID:** 218
+
+**Feature Name:** Icon generation triggered during agent materialization
+
+**Category:** functional
+
+**Dependencies:** Features #215, #216
+
+**Description:** AgentMaterializer automatically generates icons during agent materialization, recording the results alongside agent metadata and creating audit events.
+
+**Files Modified:**
+- `api/agentspec_models.py` - Added "icon_generated" to EVENT_TYPES
+- `api/agent_materializer.py` - Added icon generation integration
+- `api/event_recorder.py` - Added record_icon_generated() method
+- `tests/test_feature_195_materializer_audit_event.py` - Updated to account for new icon_generated event
+
+**Files Created:**
+- `tests/test_feature_218_icon_generation_materialization.py` - 42 comprehensive tests
+
+**New Classes/Methods:**
+- `IconGenerationInfo` dataclass - Stores icon generation results
+- `AgentMaterializer._generate_icon_for_spec()` - Calls IconProvider.generate_icon()
+- `AgentMaterializer._derive_role_from_spec()` - Maps task_type to role
+- `AgentMaterializer._record_icon_generated_event()` - Records audit event
+- `EventRecorder.record_icon_generated()` - Convenience method for icon events
+
+**Feature Steps Completed:**
+
+1. **Materializer calls IconProvider.generate_icon()** - PASS
+   - _generate_icon_for_spec() imports and calls generate_icon
+   - Called after file write in materialize()
+   - Handles ImportError gracefully
+
+2. **Icon generated based on agent name and role** - PASS
+   - Role derived from task_type: coding→coder, testing→tester, etc.
+   - Default role is "assistant" for unknown task types
+   - Name and role passed to generate_icon()
+
+3. **Icon stored alongside agent metadata** - PASS
+   - MaterializationResult.icon_info field added
+   - IconGenerationInfo contains: icon_data, format, provider_name, timing
+   - to_dict() method for serialization
+
+4. **icon_generated audit event recorded** - PASS
+   - "icon_generated" added to EVENT_TYPES
+   - record_icon_generated() method on EventRecorder
+   - Event payload includes: agent_name, icon_format, success, timing, error
+
+5. **Failure does not block materialization** - PASS
+   - Icon generation wrapped in try/except
+   - Errors stored in IconGenerationInfo.error
+   - materialize() returns success even if icon fails
+
+**Test Results:**
+- tests/test_feature_218_icon_generation_materialization.py: 42/42 tests PASS
+- tests/test_feature_195_materializer_audit_event.py: 33/33 tests PASS (regression)
+
+**Commit:** 8da9b5e
+
+**Updated Progress:**
+- Feature #218: Icon generation triggered during agent materialization - PASSING
+
+**Session completed successfully.**
