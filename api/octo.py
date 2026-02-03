@@ -1934,6 +1934,9 @@ class Octo:
     Each generated AgentSpec is validated against the schema before being
     returned to Maestro.
 
+    When no API key is available, Octo falls back to the Claude CLI which
+    uses the user's Claude subscription instead of API credits.
+
     Feature #176: Maestro delegates to Octo for agent generation
     Feature #183: Octo processes OctoRequestPayload and returns AgentSpecs
     """
@@ -1943,6 +1946,7 @@ class Octo:
         api_key: str | None = None,
         *,
         spec_builder: SpecBuilder | None = None,
+        use_cli_fallback: bool = True,
     ):
         """
         Initialize Octo service.
@@ -1950,8 +1954,11 @@ class Octo:
         Args:
             api_key: Anthropic API key (uses environment if not provided)
             spec_builder: Optional SpecBuilder instance (creates new if not provided)
+            use_cli_fallback: If True, fall back to Claude CLI when API is unavailable
         """
         self._api_key = api_key
+        self._use_cli_fallback = use_cli_fallback
+        self._cli_builder = None
 
         # Use provided builder or get/create singleton
         if spec_builder is not None:
@@ -1962,7 +1969,21 @@ class Octo:
                 force_new=api_key is not None,
             )
 
-        _logger.info("Octo service initialized")
+        # Initialize CLI fallback if enabled
+        if use_cli_fallback:
+            try:
+                from api.cli_spec_builder import get_cli_spec_builder
+                self._cli_builder = get_cli_spec_builder()
+                if self._cli_builder.is_available:
+                    _logger.info("CLI fallback available for spec generation")
+                else:
+                    _logger.info("CLI fallback not available (Claude CLI not installed)")
+                    self._cli_builder = None
+            except Exception as e:
+                _logger.warning("Failed to initialize CLI fallback: %s", e)
+                self._cli_builder = None
+
+        _logger.info("Octo service initialized (cli_fallback=%s)", self._cli_builder is not None)
 
     def generate_specs(
         self,
@@ -2069,56 +2090,87 @@ class Octo:
                 capability, task_type, selected_model
             )
 
+            spec_context = {
+                "capability": capability,
+                "project_context": payload.project_context,
+                "octo_request_id": payload.request_id,
+                "model": selected_model,  # Feature #187: Include selected model
+            }
+
+            # Try API-based SpecBuilder first
+            result = None
             try:
-                result: BuildResult = self._builder.build(
+                result = self._builder.build(
                     task_description=task_desc,
                     task_type=task_type,
-                    context={
-                        "capability": capability,
-                        "project_context": payload.project_context,
-                        "octo_request_id": payload.request_id,
-                        "model": selected_model,  # Feature #187: Include selected model
-                    },
+                    context=spec_context,
                 )
+            except Exception as e:
+                _logger.warning("SpecBuilder failed for %s: %s", capability, e)
+                result = None
 
-                if result.success and result.agent_spec:
-                    # Feature #187: Inject model into AgentSpec context
-                    self._inject_model_into_spec(result.agent_spec, selected_model)
-
-                    # Validate generated spec against schema
-                    validation_result = self._validate_spec(result.agent_spec)
-
-                    if validation_result.is_valid:
-                        generated_specs.append(result.agent_spec)
-                        spec_to_capability[result.agent_spec.name] = capability
-                        _logger.info(
-                            "Generated valid spec: %s (task_type=%s, model=%s)",
-                            result.agent_spec.name,
-                            result.agent_spec.task_type,
-                            selected_model,
-                        )
+            # If API failed and CLI fallback is available, try CLI
+            if (result is None or not result.success) and self._cli_builder is not None:
+                _logger.info(
+                    "Trying CLI fallback for %s (API result: %s)",
+                    capability,
+                    result.error if result else "exception",
+                )
+                try:
+                    cli_result = self._cli_builder.build(
+                        task_description=task_desc,
+                        task_type=task_type,
+                        context=spec_context,
+                    )
+                    if cli_result.success and cli_result.agent_spec:
+                        # Convert CLIBuildResult to BuildResult-like
+                        result = type('BuildResult', (), {
+                            'success': True,
+                            'agent_spec': cli_result.agent_spec,
+                            'error': None,
+                        })()
+                        _logger.info("CLI fallback succeeded for %s", capability)
                     else:
-                        warnings.append(
-                            f"Spec for '{capability}' failed validation: {validation_result.errors}"
-                        )
-                        _logger.warning(
-                            "Spec validation failed for %s: %s",
-                            capability,
-                            validation_result.errors,
-                        )
+                        _logger.warning("CLI fallback failed for %s: %s", capability, cli_result.error)
+                except Exception as cli_e:
+                    _logger.warning("CLI fallback exception for %s: %s", capability, cli_e)
+
+            # Process result (from API or CLI)
+            if result and result.success and result.agent_spec:
+                # Feature #187: Inject model into AgentSpec context
+                self._inject_model_into_spec(result.agent_spec, selected_model)
+
+                # Validate generated spec against schema
+                validation_result = self._validate_spec(result.agent_spec)
+
+                if validation_result.is_valid:
+                    generated_specs.append(result.agent_spec)
+                    spec_to_capability[result.agent_spec.name] = capability
+                    _logger.info(
+                        "Generated valid spec: %s (task_type=%s, model=%s)",
+                        result.agent_spec.name,
+                        result.agent_spec.task_type,
+                        selected_model,
+                    )
                 else:
                     warnings.append(
-                        f"Failed to generate spec for '{capability}': {result.error}"
+                        f"Spec for '{capability}' failed validation: {validation_result.errors}"
                     )
                     _logger.warning(
-                        "SpecBuilder failed for %s: %s",
+                        "Spec validation failed for %s: %s",
                         capability,
-                        result.error,
+                        validation_result.errors,
                     )
-
-            except Exception as e:
-                warnings.append(f"Exception generating spec for '{capability}': {e}")
-                _logger.exception("Exception during spec generation for %s", capability)
+            else:
+                error_msg = result.error if result else "No result from API or CLI"
+                warnings.append(
+                    f"Failed to generate spec for '{capability}': {error_msg}"
+                )
+                _logger.warning(
+                    "Spec generation failed for %s: %s",
+                    capability,
+                    error_msg,
+                )
 
         # Step 3: Check if any specs were generated
         if not generated_specs:
