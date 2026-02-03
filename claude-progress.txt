@@ -17415,3 +17415,136 @@ during agent materialization). The implementation exists in:
 - Total: 224/227 features passing (98.7%)
 
 **Session completed successfully.**
+
+---
+
+## Session: 2026-02-04 03:24 - Regression Testing Feature #122
+
+### Feature #122: Proof: ForbiddenPatternsValidator catches forbidden output deterministically - VERIFIED PASSING
+
+**Status:** PASSING (No regression found)
+
+**Category:** security
+
+**Description:** Prove ForbiddenPatternsValidator works deterministically against agent run events containing forbidden patterns.
+
+**Verification Method:** Unit tests + Integration verification script (browser automation unavailable)
+
+**Verification Results:**
+
+1. **Step 1: test_forbidden_patterns_catches_violations() exists** - PASS
+   - Test exists at line 1350 in tests/test_dspy_pipeline_e2e.py
+   - Properly documented with 7 verification steps
+
+2. **Step 2: Create AgentRun with forbidden content** - PASS
+   - Test creates AgentRun with AgentEvent(event_type='tool_result')
+   - Payload contains "rm -rf / --no-preserve-root"
+
+3. **Step 3: Configure ForbiddenPatternsValidator** - PASS
+   - Validator configured with patterns=['rm -rf']
+   - case_sensitive=True, description included
+
+4. **Step 4: Evaluate validator with run context** - PASS
+   - validator.evaluate(config=config, context={}, run=run) works correctly
+
+5. **Step 5: Assert result.passed is False** - PASS
+   - Forbidden pattern correctly detected
+   - result.passed = False when pattern matches
+
+6. **Step 6: Assert result.details contains match information** - PASS
+   - result.details['matches'] contains list of matches
+   - Each match includes: pattern, matched_text, event_id, event_sequence, tool_name, context
+
+7. **Step 7: Test passes deterministically** - PASS
+   - Test passed 3/3 consecutive runs
+   - No LLM involvement, purely deterministic
+
+**Test Results:**
+- tests/test_dspy_pipeline_e2e.py::test_forbidden_patterns_catches_violations: 3/3 runs PASS
+- tests/test_feature_34_forbidden_patterns_validator.py: 56/56 tests PASS
+- tests/verify_feature_34.py: 37/37 verification checks PASS
+- Total forbidden_patterns tests: 59/59 PASS
+
+**Implementation Files Verified:**
+- api/validators.py: ForbiddenPatternsValidator class (lines 378-550+)
+- tests/test_dspy_pipeline_e2e.py: test_forbidden_patterns_catches_violations (lines 1350-1449)
+- tests/test_feature_34_forbidden_patterns_validator.py: 56 comprehensive tests
+- tests/verify_feature_34.py: Full 8-step verification script
+
+**Browser Automation:** Unavailable (Chrome launch failure in environment)
+
+**Session completed successfully - Feature #122 still passing.**
+[Testing] Session complete - verified feature #122 (ForbiddenPatternsValidator deterministic proof) - STILL PASSING
+
+---
+
+## Session: 2026-02-04 - Feature #224
+
+### Feature #224: tests_written audit event type created - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Dependencies:** None (existing Feature #206 provides the foundation)
+
+**Description:** New event type recorded when test-runner writes test code.
+
+**Changes Made:**
+
+1. `api/event_recorder.py`: Added test_count parameter to record_tests_written method
+   - Added `test_count: int | None = None` parameter
+   - Added to payload when value is provided
+   - Updated docstring with Feature #224 reference
+
+2. `api/test_code_writer.py`: Added test_count field and integration
+   - Added `test_count: int = 0` field to TestCodeWriteResult dataclass
+   - Updated write_tests() to populate test_count from assertion_count
+   - Updated _record_tests_written_event() to pass test_count to recorder
+   - Updated logging to show test_count instead of assertions
+
+3. `tests/test_feature_224_tests_written_event.py`: 35 comprehensive tests
+   - TestStep1EventTypeEnum: 4 tests verifying tests_written in EVENT_TYPES
+   - TestStep2EventPayload: 6 tests verifying payload fields (test_files, test_count, framework)
+   - TestStep3EventRecording: 5 tests verifying event recording after test file write
+   - TestStep4EventLinkedToRun: 4 tests verifying event linked to AgentRun
+   - TestStep5EventQueryable: 4 tests verifying event queryable via existing APIs
+   - TestRecordTestsWrittenMethod: 4 tests for convenience method
+   - TestIntegration: 3 end-to-end integration tests
+   - TestFeature224VerificationSteps: 5 acceptance tests for all feature steps
+
+**Verification Summary (All 5 Feature Steps Passed):**
+
+1. **Add 'tests_written' to event_type enum** - PASS
+   - "tests_written" present in EVENT_TYPES list
+   - Added as part of Feature #206 implementation
+
+2. **Event payload includes: test_files, test_count, framework** - PASS
+   - test_files: List of test file paths written
+   - test_count: Number of test functions/cases generated
+   - test_framework: Testing framework used (pytest, jest, etc.)
+
+3. **Event recorded after test files written** - PASS
+   - record_tests_written() convenience method exists
+   - Event recorded with timestamp, sequence number
+   - Event type is "tests_written"
+
+4. **Event linked to AgentRun** - PASS
+   - Event has run_id field populated
+   - Event.run relationship to AgentRun object
+   - Events queryable by run_id
+
+5. **Event queryable via existing event APIs** - PASS
+   - tests_written is valid event_type filter
+   - GET /api/agent-runs/:id/events supports filtering
+   - Event serializable via to_dict() for API response
+
+**Test Results:**
+- tests/test_feature_224_tests_written_event.py: 35/35 tests PASS (46.29s)
+- tests/test_feature_206_test_code_writer.py: 59/59 tests PASS (no regressions)
+
+**Updated Progress:**
+- Feature #224: tests_written audit event type created - PASSING
+- Total: 227/227 features passing (100.0%)
+
+**Session completed successfully - ALL FEATURES COMPLETE!**
