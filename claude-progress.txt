@@ -16872,3 +16872,89 @@ This feature was already fully implemented in the codebase:
 - Total: 220/227 features passing (96.9%)
 
 **Session completed successfully.**
+
+
+---
+
+## Session: 2026-02-04 - Feature #221
+
+### Feature #221: agent_planned audit event type created - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Dependencies:** None
+
+**Description:** New event type recorded when Maestro plans an agent.
+
+**Changes Made:**
+
+1. `api/event_recorder.py`: Updated `record_agent_planned` method
+   - Added `project_name` parameter for linking event to project
+   - Added `feature_id` parameter for linking event to triggering feature
+   - Updated docstring with Feature #221 reference
+
+2. `api/maestro.py`: Updated Maestro event recording methods
+   - `_record_agent_planned_event()`: Added project_name and feature_id parameters
+   - Automatically uses spec.source_feature_id if feature_id not provided
+   - `record_agent_planned()`: Added project_name and feature_id parameters
+   - Enhanced logging to include project/feature linking info
+
+3. `server/routers/agent_runs.py`: Fixed API event type validation
+   - Changed from hardcoded list to using `EVENT_TYPES` from agentspec_models
+   - Now includes all registered event types including agent_planned
+
+4. `tests/test_feature_221_agent_planned_event.py`: 25 comprehensive tests
+   - TestStep1EventTypeEnum: 3 tests
+   - TestStep2EventPayload: 4 tests
+   - TestStep3EventLinking: 3 tests
+   - TestStep4EventTiming: 3 tests
+   - TestStep5EventQueryable: 3 tests
+   - TestIntegration: 1 test
+   - TestFeature221VerificationSteps: 5 acceptance tests
+   - TestApiPackageExports: 3 tests
+
+5. `tests/verify_feature_221.py`: Standalone verification script
+
+**Verification Summary (All 5 Feature Steps Passed):**
+
+1. **Add 'agent_planned' to event_type enum** - PASS
+   - 'agent_planned' is in EVENT_TYPES list
+   - Appears exactly once
+   - EventRecorder accepts it as valid event type
+
+2. **Event payload includes: agent_name, capabilities, rationale** - PASS
+   - agent_name: Required parameter
+   - capabilities: Optional list of capability strings
+   - rationale: Optional explanation string
+   - Additional fields: display_name, task_type
+
+3. **Event linked to project or feature triggering planning** - PASS
+   - project_name: Links to project triggering planning
+   - feature_id: Links to specific feature ID
+   - Both Maestro methods support these parameters
+   - Fallback to spec.source_feature_id if not provided
+
+4. **Event recorded before Octo invocation** - PASS
+   - Maestro._record_agent_planned_event available
+   - Maestro.record_agent_planned public method available
+   - EventRecorder.record_agent_planned method available
+   - Can be called at any point in planning workflow
+
+5. **Event queryable via existing event APIs** - PASS
+   - API uses EVENT_TYPES for validation
+   - agent_planned included in valid event types
+   - Events queryable by run_id and event_type filter
+
+**Test Results:**
+- tests/test_feature_221_agent_planned_event.py: 25/25 tests PASS (11.47s)
+- tests/verify_feature_221.py: All steps PASS
+- tests/test_feature_176_maestro_octo_delegation.py: 19/19 tests PASS (no regressions)
+- tests/test_events_api.py: 3/3 tests PASS (no regressions)
+
+**Updated Progress:**
+- Feature #221: agent_planned audit event type created - PASSING
+- Total: 218/227 features passing (96.0%)
+
+**Session completed successfully.**
