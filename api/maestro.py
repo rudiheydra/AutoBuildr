@@ -2566,3 +2566,90 @@ def detect_agent_planning_required(
         existing_agents=existing_agents or list(DEFAULT_AGENTS),
     )
     return get_maestro().evaluate(context)
+
+
+# =============================================================================
+# Feature #181: Agent Tracking Data Classes
+# =============================================================================
+
+@dataclass
+class AgentInfo:
+    """
+    Information about an available agent.
+
+    Feature #181: Maestro tracks which agents are available per project
+
+    Attributes:
+        name: Machine-readable agent name (e.g., "coder", "auditor")
+        display_name: Human-readable display name
+        source: Where this agent was discovered ("file", "database", "default")
+        source_path: Path to the agent file (if file-based)
+        spec_id: Database ID (if DB-based)
+        capabilities: List of capabilities this agent provides
+        model: Preferred model (if specified)
+    """
+    name: str
+    display_name: str
+    source: str  # "file", "database", "default"
+    source_path: Path | None = None
+    spec_id: str | None = None
+    capabilities: list[str] = field(default_factory=list)
+    model: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for serialization."""
+        return {
+            "name": self.name,
+            "display_name": self.display_name,
+            "source": self.source,
+            "source_path": str(self.source_path) if self.source_path else None,
+            "spec_id": self.spec_id,
+            "capabilities": self.capabilities,
+            "model": self.model,
+        }
+
+
+@dataclass
+class AvailableAgentsResult:
+    """
+    Result of scanning for available agents.
+
+    Feature #181: Maestro tracks which agents are available per project
+
+    Attributes:
+        agents: List of discovered agents
+        file_based_count: Number of agents found in files
+        db_based_count: Number of agents found in database
+        default_count: Number of default agents included
+        scan_paths: Paths that were scanned
+        errors: Any errors encountered during scanning
+    """
+    agents: list[AgentInfo] = field(default_factory=list)
+    file_based_count: int = 0
+    db_based_count: int = 0
+    default_count: int = 0
+    scan_paths: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+
+    @property
+    def total_count(self) -> int:
+        """Total number of available agents."""
+        return len(self.agents)
+
+    @property
+    def agent_names(self) -> list[str]:
+        """List of agent names for quick reference."""
+        return [a.name for a in self.agents]
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for serialization."""
+        return {
+            "agents": [a.to_dict() for a in self.agents],
+            "file_based_count": self.file_based_count,
+            "db_based_count": self.db_based_count,
+            "default_count": self.default_count,
+            "total_count": self.total_count,
+            "agent_names": self.agent_names,
+            "scan_paths": self.scan_paths,
+            "errors": self.errors,
+        }
