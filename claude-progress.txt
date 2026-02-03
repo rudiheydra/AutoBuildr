@@ -14688,3 +14688,114 @@ Feature #181 has been marked as passing after successful:
 
 **Session completed successfully.**
 
+
+---
+
+## Session: 2026-02-04 - Feature #200
+
+### Feature #200: Scaffolding generates minimal CLAUDE.md if missing - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Dependencies:** None
+
+**Description:** If project lacks CLAUDE.md, scaffolding creates a minimal version with basic project context.
+
+**Changes Made:**
+
+1. `api/scaffolding.py`: Added CLAUDE.md generation functionality (500+ lines)
+   - `ProjectMetadata`: Dataclass for project metadata
+     - `name`: Project name
+     - `tech_stack`: List of technologies
+     - `key_directories`: List of (path, description) tuples
+     - `description`: Optional project description
+     - `from_project_context()`: Create from OctoRequestPayload-style dict
+     - `from_directory()`: Auto-detect from project directory
+   - `ClaudeMdResult`: Dataclass for generation results
+     - `path`: Path to CLAUDE.md
+     - `existed`: Whether file existed
+     - `created`: Whether file was created
+     - `skipped`: Whether creation was skipped
+     - `error`: Error message if failed
+     - `content`: Generated content
+   - `_detect_tech_stack()`: Auto-detect technologies from marker files
+     - Python (requirements.txt, pyproject.toml, setup.py)
+     - Node.js (package.json)
+     - TypeScript (tsconfig.json)
+     - React, Vue, Next.js (from package.json dependencies)
+     - FastAPI, Flask, Django (from requirements.txt)
+     - Docker (Dockerfile, docker-compose.yml)
+   - `_detect_key_directories()`: Auto-detect key project directories
+     - src, api, server, client, ui, frontend, backend, etc.
+   - `generate_claude_md_content()`: Generate markdown content from metadata
+   - `claude_md_exists()`: Check if CLAUDE.md exists
+   - `generate_claude_md()`: Main function to generate CLAUDE.md
+   - `ensure_claude_md()`: Convenience function (never overwrites)
+   - `scaffold_with_claude_md()`: Combined scaffolding with CLAUDE.md
+   - Constants: CLAUDE_MD_FILE, DEFAULT_FILE_PERMISSIONS
+
+2. `api/__init__.py`: Added exports for Feature #200
+   - ProjectMetadata, ClaudeMdResult
+   - claude_md_exists, generate_claude_md, ensure_claude_md
+   - scaffold_with_claude_md, generate_claude_md_content
+   - CLAUDE_MD_FILE, DEFAULT_FILE_PERMISSIONS
+
+3. `tests/test_feature_200_claude_md_generation.py`: 66 comprehensive tests
+   - TestStep1CheckClaudeMdExists: 4 tests
+   - TestStep2GenerateFromMetadata: 5 tests
+   - TestStep3IncludesRequiredContent: 7 tests
+   - TestStep4ProvidesContext: 4 tests
+   - TestStep5NeverOverwriteExisting: 4 tests
+   - TestProjectMetadata: 8 tests
+   - TestClaudeMdResult: 2 tests
+   - TestGenerateClaudeMdContent: 3 tests
+   - TestScaffoldWithClaudeMd: 4 tests
+   - TestTechStackDetection: 13 tests
+   - TestKeyDirectoryDetection: 4 tests
+   - TestErrorHandling: 1 test
+   - TestIntegration: 3 tests
+   - TestFeature200VerificationSteps: 5 tests
+
+**Verification Summary (All 5 Feature Steps Passed):**
+
+1. **Check if CLAUDE.md exists in project root** - PASS
+   - claude_md_exists() returns False when missing
+   - claude_md_exists() returns True when file exists
+   - Case-sensitive detection (CLAUDE.md not claude.md)
+
+2. **If missing, generate minimal CLAUDE.md from project metadata** - PASS
+   - CLAUDE.md created when missing
+   - Uses provided ProjectMetadata
+   - Uses project_context dict (OctoRequestPayload format)
+   - Auto-detects from directory structure
+
+3. **Include: project name, tech stack summary, key directories** - PASS
+   - Project name as main heading
+   - Tech Stack section with bullet list
+   - Project Structure section with directories
+   - Getting Started section for context
+   - Description when provided
+
+4. **CLAUDE.md provides context for Claude CLI agents** - PASS
+   - File written to project root
+   - Correct permissions (0644)
+   - Valid, readable markdown
+   - Content mentions Claude Code agents
+
+5. **Existing CLAUDE.md is never overwritten** - PASS
+   - Default behavior: skip if exists
+   - result.skipped=True when file exists
+   - Multiple calls preserve content
+   - Only overwrite=True allows replacement
+
+**Test Results:**
+- tests/test_feature_200_claude_md_generation.py: 66/66 tests PASS (4.65s)
+- tests/test_feature_199_scaffolding.py: 72/72 tests PASS (no regression)
+
+**Updated Progress:**
+- Feature #200: Scaffolding generates minimal CLAUDE.md if missing - PASSING
+- Total: 197/227 features passing (86.8%)
+
+**Session completed successfully.**
