@@ -1,6 +1,58 @@
 # AutoBuildr Progress Log
 # ======================
 
+## Session: 2026-02-04 - Feature #206
+
+### Feature #206: Test-runner agent writes test code from TestContract - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Dependencies:** None
+
+**Description:** Test-runner agent receives TestContract and implements actual test code.
+
+**Changes Made:**
+
+1. `api/test_code_writer.py`: New module implementing test code generation (600+ lines)
+   - TestCodeWriter class with framework detection and test generation
+   - TestCodeWriteResult and TestCodeWriterAuditInfo dataclasses
+   - Support for pytest, jest, mocha, vitest, playwright frameworks
+   - Automatic framework detection from project config files
+
+2. `api/agentspec_models.py`: Added tests_written to EVENT_TYPES
+
+3. `api/event_recorder.py`: Added record_tests_written() convenience method
+
+4. `api/__init__.py`: Added exports for Feature #206 components
+
+5. `tests/test_feature_206_test_code_writer.py`: 59 comprehensive tests
+
+6. `tests/verify_feature_206.py`: Standalone verification script
+
+**Verification Summary (All 5 Feature Steps Passed):**
+
+1. **Test-runner receives TestContract with test requirements** - PASS
+2. **Agent writes test files based on contract assertions** - PASS
+3. **Tests placed in project's standard test directory** - PASS
+4. **Test code follows project conventions (pytest, jest, etc.)** - PASS
+5. **tests_written audit event recorded** - PASS
+
+**Test Results:**
+- tests/test_feature_206_test_code_writer.py: 59/59 tests PASS (6.13s)
+- tests/verify_feature_206.py: 5/5 verification steps PASS
+
+**Commit:** 62ee89d
+
+**Updated Progress:**
+- Feature #206: Test-runner agent writes test code from TestContract - PASSING
+- Total: 204/227 features passing (89.9%)
+
+**Session completed successfully.**
+
+---
+
 ## Session: 2026-02-03 (Coding Agent - Feature #180)
 
 ### Feature #180: Maestro handles Octo failures gracefully - COMPLETED
@@ -15314,6 +15366,116 @@ Feature #181 has been marked as passing after successful:
 
 **Updated Progress:**
 - Feature #207: Test-runner agent executes tests and reports results - PASSING
+- Total: 205/227 features passing (90.3%)
+
+**Session completed successfully.**
+
+[Testing] 2026-02-04T00:16:37+11:00 - Feature #74 regression test PASSED
+  - Feature: Validator Type Icons
+  - Category: O. Responsive & Layout
+  - All 8 verification steps verified:
+    Step 1: Define icon map for validator types - PASS
+    Step 2: test_pass: terminal icon - PASS
+    Step 3: file_exists: file icon - PASS
+    Step 4: lint_clean: code icon - PASS
+    Step 5: forbidden_patterns: shield icon - PASS
+    Step 6: custom: gear icon - PASS
+    Step 7: Use in AcceptanceResults component - PASS
+    Step 8: Use in validator status indicators on card - PASS
+  - Unit tests: 10/10 tests PASS (tests/test_feature_74_validator_icons.py)
+  - Browser automation: Unavailable (Chrome SIGTRAP in container)
+  - No regression found - feature still working correctly
+
+---
+
+---
+
+## Session: 2026-02-04 - Feature #208
+
+### Feature #208: Test-runner agent supports multiple test frameworks - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Dependencies:** None
+
+**Description:** Test-runner can work with pytest, jest, vitest, and other common frameworks.
+
+**Changes Made:**
+
+1. `api/test_framework.py`: New module with comprehensive test framework support (1069 lines)
+   - `TestFramework` enum: pytest, unittest, jest, vitest, mocha, unknown
+   - `TestFrameworkDetectionResult`: Detection result with confidence and language
+   - `TestCommand`: Command configuration with args, env, and timeout
+   - `TestResult`: Parsed test output with pass/fail/skip counts
+   - `FrameworkPreference`: Settings-based framework preference
+   - `detect_framework()`: Multi-source framework detection
+   - `generate_test_command()`: Framework-specific command generation
+   - `parse_test_output()`: Framework-specific output parsing
+   - `get_framework_preference()` / `set_framework_preference()`: Settings integration
+   - Constants: FRAMEWORK_MARKERS, FRAMEWORK_LANGUAGES, DEFAULT_TEST_COMMANDS, TEST_COMMAND_OPTIONS
+
+2. `api/__init__.py`: Added Feature #208 exports
+   - All public classes, functions, and constants
+
+3. `tests/test_feature_208_test_framework_support.py`: 68 comprehensive tests
+   - TestStep1FrameworkDetection: 10 tests
+   - TestStep2CommandGeneration: 13 tests
+   - TestStep3ResultParsing: 14 tests
+   - TestStep4SettingsPreference: 8 tests
+   - TestDataClasses: 5 tests
+   - TestUtilityFunctions: 3 tests
+   - TestConstants: 4 tests
+   - TestApiPackageExports: 9 tests
+   - TestFeature208VerificationSteps: 4 comprehensive acceptance tests
+
+4. `tests/verify_feature_208.py`: Standalone verification script (20/20 checks)
+
+**Verification Summary (All 4 Feature Steps Passed):**
+
+1. **Framework detected from project configuration** - PASS
+   - pytest from pytest.ini (confidence: 0.75)
+   - Jest from package.json (confidence: 0.85)
+   - Vitest from vitest.config.ts (confidence: 0.75)
+   - Mocha from .mocharc.json (confidence: 0.75)
+   - Detection includes language (python/javascript)
+   - Settings override detection works
+
+2. **Appropriate test commands generated per framework** - PASS
+   - pytest: "pytest"
+   - unittest: "python -m unittest discover"
+   - jest: "npx jest"
+   - vitest: "npx vitest run"
+   - mocha: "npx mocha"
+   - Options support (verbose, coverage, failfast)
+   - Custom command from preference works
+
+3. **Result parsing handles framework-specific output** - PASS
+   - pytest summary line parsing (passed/failed/skipped/duration)
+   - unittest OK/FAILED parsing
+   - Jest Tests: line parsing
+   - Vitest Tests: line parsing
+   - Mocha passing/failing parsing
+   - Coverage percentage extraction (pytest)
+   - Failed test name extraction
+
+4. **Framework preference configurable in project settings** - PASS
+   - Get/set preference in settings dict
+   - testing.test_framework key
+   - Custom command and args support
+   - Environment variables support
+   - Timeout configuration
+   - Settings override file-based detection
+
+**Test Results:**
+- tests/test_feature_208_test_framework_support.py: 68/68 tests PASS (5.62s)
+- tests/verify_feature_208.py: 20/20 checks PASS
+
+**Commit:** e0173e8
+
+**Updated Progress:**
+- Feature #208: Test-runner agent supports multiple test frameworks - PASSING
 - Total: 205/227 features passing (90.3%)
 
 **Session completed successfully.**
