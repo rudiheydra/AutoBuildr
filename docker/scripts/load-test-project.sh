@@ -1,18 +1,28 @@
 #!/bin/bash
 # Register the test project with AutoBuildr via REST API
+# Always starts fresh: preserves app_spec.txt but clears features database
 set -e
 
 PROJECT_NAME="${AUTOBUILDR_TEST_PROJECT_NAME:-repo-concierge}"
 PROJECT_PATH="${AUTOBUILDR_TEST_PROJECT_PATH:-/test-projects/repo-concierge}"
 
-echo "Registering test project: ${PROJECT_NAME} at ${PROJECT_PATH}"
+echo "Preparing test project: ${PROJECT_NAME} at ${PROJECT_PATH}"
+
+# Always reset to clean state (preserving app_spec.txt)
+echo "Resetting project to fresh state..."
+rm -f "${PROJECT_PATH}/features.db" \
+      "${PROJECT_PATH}/features.db-shm" \
+      "${PROJECT_PATH}/features.db-wal" \
+      "${PROJECT_PATH}/assistant.db"
+rm -rf "${PROJECT_PATH}/.claude/agents/generated/"*
+echo "  - Cleared features.db, assistant.db, generated agents"
 
 # Check if already registered
 STATUS=$(curl -sf -o /dev/null -w "%{http_code}" \
     "http://localhost:8888/api/projects/${PROJECT_NAME}" 2>/dev/null || echo "000")
 
 if [ "$STATUS" = "200" ]; then
-    echo "Project '${PROJECT_NAME}' already registered. Skipping."
+    echo "Project '${PROJECT_NAME}' already registered."
     exit 0
 fi
 
