@@ -2445,6 +2445,59 @@ class OctoDelegationResult:
 
 
 # =============================================================================
+# Feature #180: Octo Delegation With Fallback Result
+# =============================================================================
+
+@dataclass
+class OctoDelegationWithFallbackResult:
+    """
+    Result of delegating to Octo with graceful fallback handling.
+
+    Feature #180: Maestro handles Octo failures gracefully
+
+    This extends OctoDelegationResult with fallback-specific fields:
+    - fallback_used: Whether default agents were used as fallback
+    - available_agents: List of agents available for continued execution
+    - error_type: Classification of the error (if any)
+    """
+    success: bool
+    agent_specs: list[AgentSpec] = field(default_factory=list)
+    fallback_used: bool = False
+    available_agents: list[str] = field(default_factory=list)
+    event_ids: list[int] = field(default_factory=list)
+    error: str | None = None
+    error_type: str | None = None
+    warnings: list[str] = field(default_factory=list)
+
+    @property
+    def can_continue_execution(self) -> bool:
+        """
+        Check if execution can continue with available agents.
+
+        Feature #180: Feature execution continues with available agents
+
+        Returns True if:
+        - Octo succeeded and generated specs, OR
+        - Fallback was triggered and agents are available
+        """
+        return bool(self.agent_specs) or (self.fallback_used and bool(self.available_agents))
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for serialization."""
+        return {
+            "success": self.success,
+            "agent_specs": [spec.to_dict() for spec in self.agent_specs],
+            "fallback_used": self.fallback_used,
+            "available_agents": self.available_agents,
+            "can_continue_execution": self.can_continue_execution,
+            "event_ids": self.event_ids,
+            "error": self.error,
+            "error_type": self.error_type,
+            "warnings": self.warnings,
+        }
+
+
+# =============================================================================
 # Module-Level Convenience Functions
 # =============================================================================
 
