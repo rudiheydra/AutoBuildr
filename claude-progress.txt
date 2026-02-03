@@ -13067,3 +13067,223 @@ Feature #181 has been marked as passing after successful:
 - Total passing features increased
 
 **Session completed successfully.**
+
+---
+
+## Session: 2026-02-03 - Feature #182
+
+### Feature #182: Octo DSPy signature for AgentSpec generation - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Dependencies:** None
+
+**Description:** Define DSPy signature that takes project context and outputs structured AgentSpec objects for Octo agent generation.
+
+**Changes Made:**
+
+1. `api/dspy_signatures.py`: Added OctoSpecGenerationSignature and utilities
+   - OctoSpecGenerationSignature class with:
+     - Input fields: project_context, capabilities_needed, constraints (all JSON strings)
+     - Output fields: reasoning, agent_name, role, tools_json, skills_json, model, responsibilities_json, acceptance_contract_json
+     - Comprehensive docstring with field descriptions and usage examples
+   - get_octo_spec_generator(): Factory for DSPy modules (Predict or ChainOfThought)
+   - validate_octo_spec_output(): Schema validation returning errors/warnings dict
+   - convert_octo_output_to_agent_spec_dict(): Convert DSPy output to AgentSpec-compatible dict
+   - _derive_icon_from_skills(): Icon derivation from skills list
+   - New constants: VALID_AGENT_MODELS, VALID_GATE_MODES, VALID_OCTO_VALIDATOR_TYPES
+
+2. `api/__init__.py`: Exported all new Octo signature classes and functions
+
+3. `tests/test_feature_182_octo_dspy_signature.py`: 64 comprehensive tests
+   - TestStep1TypedInputs: 7 tests for input field verification
+   - TestStep2TypedOutputs: 8 tests for output field verification  
+   - TestStep3ChainOfThoughtReasoning: 4 tests for reasoning field and CoT module
+   - TestStep4SchemaValidation: 8 tests for validation function
+   - TestUtilityFunctions: 7 tests for utility functions
+   - TestConstants: 6 tests for constants
+   - TestApiPackageIntegration: 7 tests for package exports
+   - TestDocstrings: 5 tests for docstring presence
+   - TestEdgeCases: 5 tests for boundary conditions
+   - TestFeature182VerificationSteps: 4 tests covering all 4 feature steps
+   - TestDspyModuleIntegration: 3 tests for DSPy module creation
+
+**Verification Summary (All 4 Feature Steps Passed):**
+
+1. **Create SpecGenerationSignature with typed inputs** - PASS
+   - project_context: JSON string with project info (name, tech_stack, etc.)
+   - capabilities_needed: JSON array of required capabilities
+   - constraints: JSON string with execution limits
+
+2. **Define typed outputs** - PASS
+   - agent_name: URL-safe identifier (lowercase, hyphens, <= 100 chars)
+   - role: Human-readable description
+   - tools_json: JSON array of MCP tool names
+   - skills_json: JSON array of domain skills
+   - model: One of sonnet/opus/haiku
+   - responsibilities_json: JSON array of duties
+   - acceptance_contract_json: JSON object with gate_mode and validators
+
+3. **Include chain-of-thought reasoning field for auditability** - PASS
+   - reasoning field is first output field
+   - Description mentions auditability and design decisions
+   - Works with dspy.ChainOfThought module
+
+4. **Signature validates output against AgentSpec schema** - PASS
+   - validate_octo_spec_output() validates all output fields
+   - Detects invalid agent_name format (must be lowercase, hyphens only)
+   - Detects invalid model (must be sonnet/opus/haiku)
+   - Detects invalid gate_mode (must be all_pass/any_pass/weighted)
+   - Detects invalid validator types
+   - Detects invalid JSON in array fields
+   - Warns on empty validators, missing min_score for weighted mode
+
+**Test Results:**
+- tests/test_feature_182_octo_dspy_signature.py: 64/64 tests PASS (4.76s)
+- Regression: tests/test_feature_50_dspy_signature.py: 57/57 tests PASS (4.73s)
+
+**Commit:** ecb9f80
+
+**Updated Progress:**
+- Feature #182: Octo DSPy signature for AgentSpec generation - PASSING
+- Total: 183/227 features passing (80.6%)
+
+**Session completed successfully.**
+[Testing] 2026-02-03T23:33:36+11:00 - Feature #43 regression test PASSED
+  - Feature: Tool Hints System Prompt Injection
+  - Category: N. Feedback & Notification
+  - All 4 verification steps verified:
+    Step 1: Extract tool_hints dict from spec.tool_policy - PASS
+    Step 2: Format hints as markdown guidelines - PASS
+    Step 3: Append to system prompt in dedicated section - PASS
+    Step 4: Example format matches specification - PASS
+  - Unit tests: 36/36 PASS (test_prompt_builder.py in 4.15s)
+  - Verification script: ALL STEPS PASSED (verify_feature_43.py)
+  - Integration tests: ALL PASSED (verify_feature_43_integration.py)
+  - Source code intact: api/prompt_builder.py (248 lines)
+    - extract_tool_hints() extracts from tool_policy
+    - format_tool_hints_as_markdown() formats as bullet points
+    - build_system_prompt() includes tool hints section
+    - inject_tool_hints_into_prompt() adds hints to existing prompts
+  - Browser automation unavailable (Chrome SIGTRAP in container)
+  - No regression found - feature still working correctly
+
+[Testing] 2026-02-03T23:36:09+11:00 - Feature #79 regression test PASSED
+  - Feature: Orphaned Run Cleanup on Startup
+  - Category: J. Data Cleanup & Cascade
+  - All 6 verification steps verified:
+    Step 1: Query runs where status in (running, pending) - PASS
+    Step 2: Check if run started_at is older than max timeout - PASS
+    Step 3: For stale runs, set status to failed - PASS
+    Step 4: Set error to orphaned_on_restart - PASS
+    Step 5: Record failed event - PASS
+    Step 6: Log cleanup actions - PASS
+  - Unit tests: 45/45 PASS (test_feature_79_orphaned_run_cleanup.py in 5.35s)
+  - Verification script: 7/7 STEPS PASSED (verify_feature_79.py)
+  - Integration tests: 3/3 PASS (test_feature_79_integration.py)
+  - Server health: PASS (running on port 8890)
+  - Source code intact: api/orphaned_run_cleanup.py (459 lines)
+    - get_orphaned_runs() queries running/pending status
+    - is_run_stale() checks timeout
+    - cleanup_single_run() marks as failed with orphaned_on_restart
+    - cleanup_orphaned_runs() main function with event recording
+  - Server integration: server/main.py calls cleanup_orphaned_runs in lifespan
+  - Browser automation unavailable (Chrome SIGTRAP in container)
+  - No regression found - feature still working correctly
+
+---
+
+## Session: 2026-02-03 - Feature #187
+
+### Feature #187: Octo selects appropriate model for each agent - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Dependencies:** None
+
+**Description:** Octo determines the appropriate Claude model (sonnet, opus, haiku) based on agent complexity and cost considerations.
+
+**Changes Made:**
+
+1. `api/octo.py`: Added model selection logic and constants
+   - VALID_MODELS: frozenset of valid models (sonnet, opus, haiku)
+   - DEFAULT_MODEL: "sonnet" as the default choice
+   - HAIKU_CAPABILITIES: Set of simple/fast capabilities (documentation, lint, smoke_testing, etc.)
+   - OPUS_CAPABILITIES: Set of complex capabilities (security_audit, architecture_design, etc.)
+   - TASK_TYPE_MODEL_DEFAULTS: Default models per task type
+   - COMPLEXITY_INDICATORS: Keywords that indicate complexity level
+   - select_model_for_capability(): Main selection function with priority:
+     1. Project settings override
+     2. Constraints model_preference
+     3. Explicit capability match
+     4. Complexity keywords in capability name
+     5. Task type defaults
+     6. Default model (sonnet)
+   - validate_model(): Validates model names
+   - get_model_characteristics(): Returns model traits (complexity, cost, speed, use_cases)
+   - _inject_model_into_spec(): Injects model into AgentSpec context
+
+2. `api/__init__.py`: Exported new functions and constants
+   - OCTO_VALID_MODELS, OCTO_DEFAULT_MODEL
+   - HAIKU_CAPABILITIES, OPUS_CAPABILITIES
+   - TASK_TYPE_MODEL_DEFAULTS, COMPLEXITY_INDICATORS
+   - select_model_for_capability, validate_model, get_model_characteristics
+
+3. `tests/test_feature_187_octo_model_selection.py`: 70 comprehensive tests
+   - TestStep1HaikuDefaultsForSimple: 10 tests for haiku selection
+   - TestStep2OpusForComplex: 11 tests for opus selection
+   - TestStep3SonnetForCoding: 8 tests for sonnet selection
+   - TestStep4ProjectSettingsOverride: 8 tests for configuration
+   - TestStep5ModelInAgentSpec: 4 tests for model injection
+   - TestConstants: 5 tests for constant definitions
+   - TestValidateModel: 6 tests for validation function
+   - TestGetModelCharacteristics: 6 tests for characteristics function
+   - TestIntegration: 2 integration tests
+   - TestEdgeCases: 7 edge case tests
+   - TestRegressions: 3 regression tests
+
+**Verification Summary (All 5 Feature Steps Passed):**
+
+1. **Simple/fast agents default to haiku** - PASS
+   - documentation -> haiku
+   - lint -> haiku
+   - smoke_testing -> haiku
+   - Keywords: simple, quick, fast -> haiku
+
+2. **Complex reasoning agents use opus** - PASS
+   - security_audit -> opus
+   - architecture_design -> opus
+   - performance_optimization -> opus
+   - Keywords: complex, advanced, comprehensive -> opus
+
+3. **Standard coding agents use sonnet** - PASS
+   - Generic coding -> sonnet
+   - e2e_testing -> sonnet
+   - api_implementation -> sonnet
+   - Unknown capabilities -> sonnet (default)
+
+4. **Model selection configurable via project settings** - PASS
+   - project_settings["model"] overrides all
+   - Also supports: default_model, model_preference, agent_model
+   - constraints["model_preference"] overrides task defaults
+   - Case insensitive model names
+
+5. **Model included in AgentSpec output** - PASS
+   - context["model"] contains selected model
+   - context["model_characteristics"] contains traits
+   - Model passed in SpecBuilder build context
+
+**Test Results:**
+- tests/test_feature_187_octo_model_selection.py: 70/70 tests PASS (4.67s)
+
+**Commit:** 0333f6b
+
+**Updated Progress:**
+- Feature #187: Octo selects appropriate model for each agent - PASSING
+- Total: 184/227 features passing (81.1%)
+
+**Session completed successfully.**
