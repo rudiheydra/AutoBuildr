@@ -1268,3 +1268,174 @@ async def delete_agent_spec(
 
     # Step 7: Return 204 No Content
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# =============================================================================
+# Agent Icon Endpoint (Feature #219 & #220)
+# =============================================================================
+
+@router.get(
+    "/{spec_id}/icon",
+    responses={
+        200: {
+            "description": "Agent icon (SVG, PNG, JPEG, or WebP)",
+            "content": {
+                "image/svg+xml": {
+                    "example": '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">...</svg>'
+                },
+                "image/png": {},
+                "image/jpeg": {},
+                "image/webp": {},
+            },
+        },
+        400: {
+            "description": "Invalid UUID format",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Invalid UUID format for spec_id: 'not-a-uuid'"}
+                }
+            },
+        },
+        404: {
+            "description": "AgentSpec not found",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "AgentSpec 'abc-123' not found"}
+                }
+            },
+        },
+    },
+)
+async def get_agent_icon(
+    project_name: str,
+    spec_id: str,
+    response: Response,
+) -> Response:
+    """
+    Get the icon for an AgentSpec.
+
+    Feature #219: Generated icons stored and retrievable
+    Feature #220: UI displays agent icons in agent cards.
+
+    This endpoint serves icons for agents with the following priority:
+    1. Stored icon from database/filesystem (Feature #219)
+    2. Generated placeholder icon (Feature #220)
+
+    The response includes:
+    - Appropriate Content-Type header based on icon format (image/svg+xml, image/png, etc.)
+    - Caching headers for browser caching
+    - X-Icon-Is-Placeholder header indicating if this is a generated placeholder
+
+    Args:
+        project_name: Name of the project
+        spec_id: UUID of the AgentSpec to get icon for
+
+    Returns:
+        Image response with appropriate content type and caching headers
+
+    Raises:
+        400: If spec_id is not a valid UUID format
+        404: If the project or AgentSpec is not found
+    """
+    import hashlib
+
+    # Validate project name and get path
+    validate_project_name(project_name)
+    try:
+        project_dir = _get_project_path(project_name)
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Project '{project_name}' not found"
+        )
+
+    # Validate spec_id is valid UUID format
+    if not _is_valid_uuid(spec_id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid UUID format for spec_id: '{spec_id}'"
+        )
+
+    with get_db_session(project_dir) as db:
+        # First verify the AgentSpec exists
+        spec = db.query(AgentSpecModel).filter(AgentSpecModel.id == spec_id).first()
+
+        if not spec:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"AgentSpec '{spec_id}' not found"
+            )
+
+        # Get the agent's display name and task type
+        agent_name = spec.display_name or spec.name
+        task_type = spec.task_type or "custom"
+
+        # Feature #219: Try to retrieve stored icon first
+        from api.icon_storage import IconStorage
+
+        storage = IconStorage(project_dir)
+        retrieved = storage.retrieve_icon(
+            session=db,
+            agent_spec_id=spec_id,
+            generate_placeholder=True,  # Fall back to placeholder if no stored icon
+            agent_name=agent_name,
+            role=task_type,
+        )
+
+    if not retrieved.found:
+        _logger.warning(f"No icon available for spec {spec_id}, returning fallback")
+        # Return a simple fallback SVG
+        fallback_svg = (
+            '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">'
+            '<circle cx="32" cy="32" r="30" fill="#6366f1"/>'
+            '<text x="32" y="40" font-family="Arial, Helvetica, sans-serif" font-size="24" '
+            'font-weight="bold" fill="white" text-anchor="middle">?</text>'
+            '</svg>'
+        )
+        return Response(
+            content=fallback_svg,
+            media_type="image/svg+xml",
+            headers={
+                "Cache-Control": "public, max-age=3600",
+                "ETag": f'"{spec_id}-fallback"',
+                "X-Icon-Is-Placeholder": "true",
+            },
+        )
+
+    # Get icon content as bytes
+    icon_bytes = retrieved.get_bytes()
+    if icon_bytes is None:
+        # Should not happen, but handle gracefully
+        _logger.error(f"Retrieved icon has no data for spec {spec_id}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve icon data"
+        )
+
+    # Feature #219 Step 4: Icon format header set appropriately
+    content_type = retrieved.content_type
+
+    # Generate ETag based on content hash or agent name
+    if retrieved.content_hash:
+        etag = retrieved.content_hash[:16]
+    else:
+        etag = hashlib.md5(agent_name.encode()).hexdigest()[:16]
+
+    # Return icon with appropriate headers
+    # Feature #220 Step 5: Icon cached in browser
+    return Response(
+        content=icon_bytes,
+        media_type=content_type,
+        headers={
+            # Allow browser caching for 1 hour
+            "Cache-Control": "public, max-age=3600",
+            # ETag for cache validation
+            "ETag": f'"{etag}"',
+            # Indicate if this is a placeholder
+            "X-Icon-Is-Placeholder": "true" if retrieved.is_placeholder else "false",
+            # Include format info
+            "X-Icon-Format": retrieved.icon_format or "unknown",
+            # Agent name for debugging
+            "X-Icon-Agent-Name": agent_name[:50],  # Truncate for header safety
+        },
+    )

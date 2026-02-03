@@ -648,6 +648,42 @@ def _migrate_add_agent_planning_decisions_table(engine) -> None:
         )
 
 
+def _migrate_add_agent_icons_table(engine) -> None:
+    """Create agent_icons table if it doesn't exist.
+
+    Feature #219: Generated icons stored and retrievable.
+
+    This table stores icons for AgentSpecs:
+    - Icon linked to AgentSpec by agent_spec_id (unique)
+    - Content stored inline for small icons (<= 16KB)
+    - Content stored in files for large icons
+    - SHA256 hash for deduplication
+    """
+    from sqlalchemy import inspect
+
+    inspector = inspect(engine)
+    existing_tables = inspector.get_table_names()
+
+    if "agent_icons" in existing_tables:
+        return  # Table already exists
+
+    # Import model here to avoid circular imports
+    try:
+        from api.icon_storage import AgentIcon
+    except ImportError:
+        # Model not yet available (shouldn't happen in normal use)
+        return
+
+    # Create the table
+    try:
+        AgentIcon.__table__.create(bind=engine)
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(
+            f"Could not create agent_icons table: {e}"
+        )
+
+
 def create_database(project_dir: Path) -> tuple:
     """
     Create database and return engine + session maker.
@@ -707,6 +743,9 @@ def create_database(project_dir: Path) -> tuple:
 
     # Feature #179: Add agent_planning_decisions table
     _migrate_add_agent_planning_decisions_table(engine)
+
+    # Feature #219: Add agent_icons table
+    _migrate_add_agent_icons_table(engine)
 
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     return engine, SessionLocal
