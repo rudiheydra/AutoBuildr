@@ -1348,12 +1348,382 @@ class CustomValidator(Validator):
         )
 
 
+# =============================================================================
+# TestEnforcementValidator (Feature #211)
+# =============================================================================
+
+class TestEnforcementValidator(Validator):
+    """
+    Validator that checks test execution status as an acceptance gate.
+
+    Feature #211: Test enforcement gate added to acceptance validators.
+
+    This validator enforces test-driven development by checking:
+    - tests_exist: Whether test files exist for the feature
+    - tests_ran: Whether tests were actually executed (via tests_executed event)
+    - tests_passed: Whether all executed tests passed
+
+    The validator can be configured to be required (must pass for feature completion)
+    or optional (advisory-only). When required, failed tests block feature completion.
+
+    Config Options:
+        test_file_pattern (str, optional): Glob pattern for test files.
+            Supports {project_dir} and {feature_id} interpolation.
+            Default: "{project_dir}/tests/**/test_*.py"
+        require_tests_exist (bool, optional): Require test files to exist.
+            Default: True
+        require_tests_ran (bool, optional): Require tests to have been executed.
+            Default: True
+        require_tests_passed (bool, optional): Require all tests to pass.
+            Default: True
+        check_events (bool, optional): Check agent events for tests_executed.
+            Default: True
+        min_tests (int, optional): Minimum number of tests required.
+            Default: 1
+        description (str, optional): Human-readable description.
+
+    Context Variables:
+        project_dir: Base project directory
+        feature_id: ID of the feature being validated
+        test_results: Optional pre-computed test results from test runner
+
+    Example Config (required validator):
+        {
+            "type": "test_enforcement",
+            "config": {
+                "test_file_pattern": "{project_dir}/tests/test_feature_{feature_id}*.py",
+                "require_tests_exist": true,
+                "require_tests_ran": true,
+                "require_tests_passed": true,
+                "min_tests": 1,
+                "description": "Feature tests must exist and pass"
+            },
+            "required": true
+        }
+
+    Example Config (optional validator):
+        {
+            "type": "test_enforcement",
+            "config": {
+                "require_tests_exist": true,
+                "require_tests_ran": false,
+                "require_tests_passed": false,
+                "description": "Advisory test coverage check"
+            },
+            "required": false
+        }
+    """
+
+    validator_type: str = "test_enforcement"
+
+    def evaluate(
+        self,
+        config: dict[str, Any],
+        context: dict[str, Any],
+        run: "AgentRun | None" = None,
+    ) -> ValidatorResult:
+        """
+        Check test enforcement gate status.
+
+        Feature #211 Steps:
+        1. Check if tests exist (test files match pattern)
+        2. Check if tests ran (tests_executed event exists)
+        3. Check if tests passed (all tests passed)
+        4. Result can be required or optional per feature
+        5. Include result in acceptance_results
+
+        Args:
+            config: Validator configuration containing:
+                - test_file_pattern (optional): Glob pattern for test files
+                - require_tests_exist (optional, default True): Require test files
+                - require_tests_ran (optional, default True): Require test execution
+                - require_tests_passed (optional, default True): Require test pass
+                - check_events (optional, default True): Check agent events
+                - min_tests (optional, default 1): Minimum test count
+                - description (optional): Human-readable description
+            context: Runtime context with variable values for interpolation
+            run: Optional AgentRun instance to check events from
+
+        Returns:
+            ValidatorResult with detailed enforcement status
+        """
+        # Extract configuration options
+        test_file_pattern = config.get("test_file_pattern", "{project_dir}/tests/**/test_*.py")
+        require_tests_exist = config.get("require_tests_exist", True)
+        require_tests_ran = config.get("require_tests_ran", True)
+        require_tests_passed = config.get("require_tests_passed", True)
+        check_events = config.get("check_events", True)
+        min_tests = config.get("min_tests", 1)
+        description = config.get("description", "")
+
+        # Normalize boolean values
+        if isinstance(require_tests_exist, str):
+            require_tests_exist = require_tests_exist.lower() in ("true", "1", "yes")
+        if isinstance(require_tests_ran, str):
+            require_tests_ran = require_tests_ran.lower() in ("true", "1", "yes")
+        if isinstance(require_tests_passed, str):
+            require_tests_passed = require_tests_passed.lower() in ("true", "1", "yes")
+        if isinstance(check_events, str):
+            check_events = check_events.lower() in ("true", "1", "yes")
+        if isinstance(min_tests, str):
+            try:
+                min_tests = int(min_tests)
+            except ValueError:
+                min_tests = 1
+
+        # Build enforcement status tracking
+        enforcement_status = {
+            "tests_exist": False,
+            "tests_ran": False,
+            "tests_passed": False,
+            "test_files_found": 0,
+            "tests_total": 0,
+            "tests_passed_count": 0,
+            "tests_failed_count": 0,
+            "test_execution_events": 0,
+        }
+
+        failures: list[str] = []
+
+        # Step 1: Check if tests exist (via file pattern)
+        if require_tests_exist:
+            tests_exist, test_files_found = self._check_tests_exist(
+                test_file_pattern, context
+            )
+            enforcement_status["tests_exist"] = tests_exist
+            enforcement_status["test_files_found"] = test_files_found
+
+            if not tests_exist:
+                failures.append(f"No test files found matching pattern: {test_file_pattern}")
+            elif test_files_found < min_tests:
+                failures.append(
+                    f"Found {test_files_found} test file(s), minimum required: {min_tests}"
+                )
+                enforcement_status["tests_exist"] = False
+        else:
+            # If not required, mark as passed
+            enforcement_status["tests_exist"] = True
+
+        # Step 2: Check if tests ran (via events or context)
+        if require_tests_ran:
+            # Check context for pre-computed test results
+            test_results = context.get("test_results")
+
+            if test_results is not None:
+                # Use pre-computed results from context
+                enforcement_status["tests_ran"] = True
+                enforcement_status["tests_total"] = test_results.get("total_tests", 0)
+                enforcement_status["tests_passed_count"] = test_results.get("passed_tests", 0)
+                enforcement_status["tests_failed_count"] = test_results.get("failed_tests", 0)
+                enforcement_status["tests_passed"] = test_results.get("passed", False)
+            elif check_events and run is not None:
+                # Check agent events for tests_executed
+                tests_ran, event_data = self._check_tests_ran_from_events(run)
+                enforcement_status["tests_ran"] = tests_ran
+                enforcement_status["test_execution_events"] = event_data.get("event_count", 0)
+
+                if tests_ran:
+                    # Extract test counts from most recent event
+                    enforcement_status["tests_total"] = event_data.get("total_tests", 0)
+                    enforcement_status["tests_passed_count"] = event_data.get("passed_tests", 0)
+                    enforcement_status["tests_failed_count"] = event_data.get("failed_tests", 0)
+                    enforcement_status["tests_passed"] = event_data.get("passed", False)
+            else:
+                enforcement_status["tests_ran"] = False
+
+            if not enforcement_status["tests_ran"]:
+                failures.append("Tests have not been executed")
+        else:
+            # If not required, mark as passed
+            enforcement_status["tests_ran"] = True
+
+        # Step 3: Check if tests passed
+        if require_tests_passed:
+            if enforcement_status["tests_ran"]:
+                # Tests ran, check pass status
+                if not enforcement_status["tests_passed"]:
+                    failed_count = enforcement_status["tests_failed_count"]
+                    total_count = enforcement_status["tests_total"]
+                    failures.append(
+                        f"Tests failed: {failed_count} of {total_count} tests did not pass"
+                    )
+            else:
+                # Can't verify tests passed if they didn't run
+                if require_tests_ran:
+                    # Already reported tests didn't run
+                    pass
+                else:
+                    failures.append("Cannot verify tests passed - tests have not been executed")
+        else:
+            # If not required, mark as passed
+            enforcement_status["tests_passed"] = True
+
+        # Step 4 & 5: Determine overall pass/fail
+        # Validator passes if all required checks pass
+        passed = len(failures) == 0
+
+        # Calculate score based on enforcement status
+        checks_enabled = sum([
+            1 if require_tests_exist else 0,
+            1 if require_tests_ran else 0,
+            1 if require_tests_passed else 0,
+        ])
+        checks_passed = sum([
+            1 if enforcement_status["tests_exist"] else 0,
+            1 if enforcement_status["tests_ran"] else 0,
+            1 if enforcement_status["tests_passed"] else 0,
+        ])
+        score = (checks_passed / max(checks_enabled, 1)) if checks_enabled > 0 else 1.0
+
+        # Build result message
+        if passed:
+            message = "Test enforcement gate passed"
+            if enforcement_status["tests_total"] > 0:
+                message += f": {enforcement_status['tests_passed_count']}/{enforcement_status['tests_total']} tests passed"
+        else:
+            message = f"Test enforcement gate failed: {'; '.join(failures)}"
+
+        if description:
+            message = f"{message} ({description})"
+
+        _logger.info(
+            "TestEnforcementValidator: %s - exist=%s, ran=%s, passed=%s, total=%d",
+            "PASSED" if passed else "FAILED",
+            enforcement_status["tests_exist"],
+            enforcement_status["tests_ran"],
+            enforcement_status["tests_passed"],
+            enforcement_status["tests_total"],
+        )
+
+        return ValidatorResult(
+            passed=passed,
+            message=message,
+            score=score,
+            details={
+                "enforcement_status": enforcement_status,
+                "failures": failures,
+                "config": {
+                    "test_file_pattern": test_file_pattern,
+                    "require_tests_exist": require_tests_exist,
+                    "require_tests_ran": require_tests_ran,
+                    "require_tests_passed": require_tests_passed,
+                    "check_events": check_events,
+                    "min_tests": min_tests,
+                },
+            },
+            validator_type=self.validator_type,
+        )
+
+    def _check_tests_exist(
+        self,
+        pattern: str,
+        context: dict[str, Any],
+    ) -> tuple[bool, int]:
+        """
+        Check if test files exist matching the pattern.
+
+        Args:
+            pattern: Glob pattern with optional {variable} placeholders
+            context: Runtime context for variable interpolation
+
+        Returns:
+            Tuple of (tests_exist, count_of_files_found)
+        """
+        import glob
+
+        # Interpolate variables in pattern
+        interpolated_pattern = self.interpolate_path(pattern, context)
+
+        # Handle relative patterns by resolving against project_dir
+        if not Path(interpolated_pattern).is_absolute() and "project_dir" in context:
+            interpolated_pattern = str(Path(context["project_dir"]) / interpolated_pattern)
+
+        try:
+            # Use glob to find matching files
+            matches = glob.glob(interpolated_pattern, recursive=True)
+            # Filter to only files (not directories)
+            files = [m for m in matches if Path(m).is_file()]
+
+            _logger.debug(
+                "TestEnforcementValidator._check_tests_exist: pattern=%s, found=%d files",
+                interpolated_pattern, len(files)
+            )
+
+            return len(files) > 0, len(files)
+
+        except Exception as e:
+            _logger.warning(
+                "TestEnforcementValidator._check_tests_exist failed: pattern=%s, error=%s",
+                interpolated_pattern, e
+            )
+            return False, 0
+
+    def _check_tests_ran_from_events(
+        self,
+        run: "AgentRun",
+    ) -> tuple[bool, dict[str, Any]]:
+        """
+        Check if tests were executed by examining agent events.
+
+        Looks for "tests_executed" events in the run's event log.
+
+        Args:
+            run: AgentRun to check events from
+
+        Returns:
+            Tuple of (tests_ran, event_data_dict)
+        """
+        event_data: dict[str, Any] = {
+            "event_count": 0,
+            "total_tests": 0,
+            "passed_tests": 0,
+            "failed_tests": 0,
+            "passed": False,
+        }
+
+        if run is None or not hasattr(run, "events"):
+            return False, event_data
+
+        # Find all tests_executed events
+        tests_executed_events = [
+            event for event in run.events
+            if event.event_type == "tests_executed"
+        ]
+
+        event_data["event_count"] = len(tests_executed_events)
+
+        if not tests_executed_events:
+            _logger.debug(
+                "TestEnforcementValidator._check_tests_ran_from_events: no tests_executed events in run %s",
+                run.id
+            )
+            return False, event_data
+
+        # Use the most recent tests_executed event
+        latest_event = tests_executed_events[-1]
+        payload = latest_event.payload
+
+        if payload and isinstance(payload, dict):
+            event_data["total_tests"] = payload.get("total_tests", 0)
+            event_data["passed_tests"] = payload.get("passed_tests", 0)
+            event_data["failed_tests"] = payload.get("failed_tests", 0)
+            event_data["passed"] = payload.get("passed", False)
+
+        _logger.debug(
+            "TestEnforcementValidator._check_tests_ran_from_events: found %d events, latest passed=%s",
+            len(tests_executed_events), event_data["passed"]
+        )
+
+        return True, event_data
+
+
 VALIDATOR_REGISTRY: dict[str, type[Validator]] = {
     "file_exists": FileExistsValidator,
     "forbidden_patterns": ForbiddenPatternsValidator,
     "test_pass": TestPassValidator,
     "lint_clean": LintCleanValidator,
     "custom": CustomValidator,
+    "test_enforcement": TestEnforcementValidator,  # Feature #211
 }
 
 
