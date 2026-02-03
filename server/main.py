@@ -37,6 +37,7 @@ from .routers import (
     expand_project_router,
     features_router,
     filesystem_router,
+    planning_decisions_router,
     projects_router,
     schedules_router,
     settings_router,
@@ -72,9 +73,13 @@ async def lifespan(app: FastAPI):
     cleanup_orphaned_locks()
     cleanup_orphaned_devserver_locks()
 
-    # Initialize the global database session maker for AgentRun/AgentSpec endpoints
+    # Initialize the global database session maker for AgentRun/AgentSpec endpoints.
+    # Use the project directory (where harness_kernel writes) rather than ROOT_DIR
+    # so that the agent-runs API reads from the same DB as the execution engine.
     from api.database import create_database, set_session_maker
-    _, session_maker = create_database(ROOT_DIR)
+    db_dir = Path(os.environ.get("AUTOBUILDR_TEST_PROJECT_PATH", str(ROOT_DIR)))
+    _logger.info("Global session maker DB dir: %s", db_dir)
+    _, session_maker = create_database(db_dir)
     set_session_maker(session_maker)
 
     # Feature #79: Clean up orphaned AgentRuns from previous server instance
@@ -82,7 +87,7 @@ async def lifespan(app: FastAPI):
     from api.orphaned_run_cleanup import cleanup_orphaned_runs
     try:
         with session_maker() as session:
-            result = cleanup_orphaned_runs(session, project_dir=ROOT_DIR)
+            result = cleanup_orphaned_runs(session, project_dir=db_dir)
             if result.cleaned_count > 0:
                 _logger.info(
                     "Cleaned %d orphaned AgentRuns on startup",
@@ -194,6 +199,7 @@ app.include_router(filesystem_router)
 app.include_router(assistant_chat_router)
 app.include_router(settings_router)
 app.include_router(terminal_router)
+app.include_router(planning_decisions_router)  # Feature #179
 
 
 # ============================================================================

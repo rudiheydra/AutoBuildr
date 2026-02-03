@@ -353,6 +353,12 @@ from api.maestro import (
     ProjectContext,
     CapabilityRequirement,
     AgentPlanningDecision,
+    # Feature #176: Octo Delegation Result
+    OctoDelegationResult,
+    # Feature #179: Decision Persistence
+    PersistDecisionResult,
+    # Feature #180: Octo Delegation With Fallback
+    OctoDelegationWithFallbackResult,
     # Main class
     Maestro,
     # Module-level functions
@@ -360,6 +366,10 @@ from api.maestro import (
     reset_maestro,
     evaluate_project,
     detect_agent_planning_required,
+)
+from api.agentspec_models import (
+    # Feature #179: Agent Planning Decision Record (persisted to DB)
+    AgentPlanningDecisionRecord,
 )
 
 __all__ = [
@@ -663,4 +673,11 @@ __all__ = [
     "reset_maestro",
     "evaluate_project",
     "detect_agent_planning_required",
+    # Feature #176: Octo Delegation Result
+    "OctoDelegationResult",
+    # Feature #179: Decision Persistence exports
+    "PersistDecisionResult",
+    "AgentPlanningDecisionRecord",
+    # Feature #180: Octo Delegation With Fallback
+    "OctoDelegationWithFallbackResult",
 ]

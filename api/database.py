@@ -611,6 +611,43 @@ def _migrate_artifact_not_null_content_hash_size(engine) -> None:
         )
 
 
+def _migrate_add_agent_planning_decisions_table(engine) -> None:
+    """Create agent_planning_decisions table if it doesn't exist.
+
+    Feature #179: Maestro persists agent-planning decisions to database.
+
+    This table stores agent-planning decisions for auditability and UI display.
+    Each decision record captures:
+    - Project context and triggering features
+    - Required capabilities that existing agents cannot handle
+    - Recommended agent types to create
+    - Decision timestamp and justification
+    """
+    from sqlalchemy import inspect
+
+    inspector = inspect(engine)
+    existing_tables = inspector.get_table_names()
+
+    if "agent_planning_decisions" in existing_tables:
+        return  # Table already exists
+
+    # Import model here to avoid circular imports
+    try:
+        from api.agentspec_models import AgentPlanningDecisionRecord
+    except ImportError:
+        # Model not yet available (shouldn't happen in normal use)
+        return
+
+    # Create the table
+    try:
+        AgentPlanningDecisionRecord.__table__.create(bind=engine)
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(
+            f"Could not create agent_planning_decisions table: {e}"
+        )
+
+
 def create_database(project_dir: Path) -> tuple:
     """
     Create database and return engine + session maker.
@@ -667,6 +704,9 @@ def create_database(project_dir: Path) -> tuple:
 
     # Feature #147: Fix NULL content_hash/size_bytes in artifacts
     _migrate_artifact_not_null_content_hash_size(engine)
+
+    # Feature #179: Add agent_planning_decisions table
+    _migrate_add_agent_planning_decisions_table(engine)
 
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     return engine, SessionLocal

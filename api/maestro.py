@@ -2233,6 +2233,416 @@ class Maestro:
         return orchestration_result
 
     # -------------------------------------------------------------------------
+    # Feature #181: Agent Tracking
+    # -------------------------------------------------------------------------
+
+    def scan_file_based_agents(
+        self,
+        project_dir: Path | None = None,
+    ) -> list["AgentInfo"]:
+        """
+        Scan .claude/agents/generated/ and .claude/agents/manual/ for agent files.
+
+        Feature #181 Step 1: Maestro scans .claude/agents/generated/ and manual/
+
+        Agent files are markdown files with YAML frontmatter containing:
+        - name: Agent identifier
+        - description: What the agent does
+        - model: Preferred model (optional)
+
+        Args:
+            project_dir: Project root directory (uses self.project_dir if None)
+
+        Returns:
+            List of AgentInfo for discovered agents
+        """
+        agents: list["AgentInfo"] = []
+        scan_dir = project_dir or self.project_dir
+
+        if not scan_dir:
+            _logger.warning("No project_dir configured for file scanning")
+            return agents
+
+        scan_path = Path(scan_dir)
+
+        # Directories to scan
+        scan_paths = [
+            scan_path / ".claude" / "agents",           # Root agents dir
+            scan_path / ".claude" / "agents" / "generated",  # Generated agents
+            scan_path / ".claude" / "agents" / "manual",     # Manual agents
+        ]
+
+        for dir_path in scan_paths:
+            if not dir_path.exists():
+                continue
+
+            _logger.debug("Scanning for agents in: %s", dir_path)
+
+            # Find all .md files
+            for agent_file in dir_path.glob("*.md"):
+                try:
+                    agent_info = self._parse_agent_file(agent_file)
+                    if agent_info:
+                        agents.append(agent_info)
+                except Exception as e:
+                    _logger.warning(
+                        "Failed to parse agent file %s: %s",
+                        agent_file, e,
+                    )
+
+        _logger.info(
+            "Scanned file-based agents: found %d agents",
+            len(agents),
+        )
+        return agents
+
+    def _parse_agent_file(self, filepath: Path) -> "AgentInfo | None":
+        """
+        Parse an agent markdown file with YAML frontmatter.
+
+        Expected format:
+        ---
+        name: agent-name
+        description: "Agent description"
+        model: opus  # optional
+        ---
+        # Agent content...
+
+        Args:
+            filepath: Path to the agent .md file
+
+        Returns:
+            AgentInfo if successfully parsed, None otherwise
+        """
+        try:
+            content = filepath.read_text(encoding="utf-8")
+
+            # Check for YAML frontmatter
+            if not content.startswith("---"):
+                _logger.debug("No YAML frontmatter in %s", filepath.name)
+                return None
+
+            # Parse frontmatter
+            parts = content.split("---", 2)
+            if len(parts) < 3:
+                _logger.debug("Invalid frontmatter format in %s", filepath.name)
+                return None
+
+            # Parse YAML (simple key: value parsing)
+            frontmatter = parts[1].strip()
+            metadata: dict[str, str] = {}
+
+            for line in frontmatter.split("\n"):
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+
+                if ":" in line:
+                    key, value = line.split(":", 1)
+                    key = key.strip()
+                    value = value.strip().strip('"').strip("'")
+                    metadata[key] = value
+
+            name = metadata.get("name")
+            if not name:
+                # Fall back to filename without extension
+                name = filepath.stem
+
+            # Determine source based on parent directory
+            source = "file"
+            if "generated" in str(filepath.parent):
+                source = "file:generated"
+            elif "manual" in str(filepath.parent):
+                source = "file:manual"
+
+            # Extract capabilities from tags or description
+            capabilities: list[str] = []
+            if "tags" in metadata:
+                # Parse JSON-like tags
+                tags_str = metadata["tags"]
+                if tags_str.startswith("["):
+                    try:
+                        capabilities = json.loads(tags_str)
+                    except json.JSONDecodeError:
+                        pass
+
+            return AgentInfo(
+                name=name,
+                display_name=metadata.get("display_name", name.replace("-", " ").title()),
+                source=source,
+                source_path=filepath,
+                spec_id=metadata.get("spec_id"),
+                capabilities=capabilities,
+                model=metadata.get("model"),
+            )
+
+        except Exception as e:
+            _logger.error("Error parsing agent file %s: %s", filepath, e)
+            return None
+
+    def query_db_agents(
+        self,
+        session: Session | None = None,
+    ) -> list["AgentInfo"]:
+        """
+        Query database for persisted AgentSpecs.
+
+        Feature #181 Step 2: Maestro queries database for persisted AgentSpecs
+
+        Args:
+            session: SQLAlchemy session (uses self.session if None)
+
+        Returns:
+            List of AgentInfo for database agents
+        """
+        agents: list["AgentInfo"] = []
+        db_session = session or self.session
+
+        if not db_session:
+            _logger.debug("No database session configured for agent query")
+            return agents
+
+        try:
+            from api.agentspec_models import AgentSpec as AgentSpecModel
+
+            # Query all AgentSpecs
+            specs = db_session.query(AgentSpecModel).all()
+
+            for spec in specs:
+                agent_info = AgentInfo(
+                    name=spec.name,
+                    display_name=spec.display_name,
+                    source="database",
+                    source_path=Path(spec.spec_path) if spec.spec_path else None,
+                    spec_id=spec.id,
+                    capabilities=spec.tags or [],
+                    model=None,  # AgentSpec doesn't have model preference
+                )
+                agents.append(agent_info)
+
+            _logger.info(
+                "Queried database agents: found %d specs",
+                len(agents),
+            )
+
+        except Exception as e:
+            _logger.exception("Failed to query database agents: %s", e)
+
+        return agents
+
+    def reconcile_available_agents(
+        self,
+        file_agents: list["AgentInfo"],
+        db_agents: list["AgentInfo"],
+        include_defaults: bool = True,
+    ) -> list["AgentInfo"]:
+        """
+        Reconcile file-based and DB-based agent lists.
+
+        Feature #181 Step 3: Maestro reconciles file-based and DB-based agent lists
+
+        Priority order (later overrides earlier):
+        1. Default agents (if include_defaults=True)
+        2. File-based agents
+        3. Database agents (highest priority)
+
+        Args:
+            file_agents: Agents discovered from files
+            db_agents: Agents from database
+            include_defaults: Whether to include default agents
+
+        Returns:
+            Reconciled list of unique agents (by name)
+        """
+        # Use dict for deduplication, preserving last occurrence
+        agents_by_name: dict[str, "AgentInfo"] = {}
+
+        # Step 1: Add default agents first (lowest priority)
+        if include_defaults:
+            for default_name in self.default_agents:
+                agents_by_name[default_name] = AgentInfo(
+                    name=default_name,
+                    display_name=default_name.replace("_", " ").title(),
+                    source="default",
+                )
+
+        # Step 2: Add file-based agents (medium priority)
+        for agent in file_agents:
+            agents_by_name[agent.name] = agent
+
+        # Step 3: Add database agents (highest priority)
+        for agent in db_agents:
+            agents_by_name[agent.name] = agent
+
+        reconciled = list(agents_by_name.values())
+
+        _logger.info(
+            "Reconciled agents: %d total (defaults=%d, file=%d, db=%d)",
+            len(reconciled),
+            sum(1 for a in reconciled if a.source == "default"),
+            sum(1 for a in reconciled if a.source.startswith("file")),
+            sum(1 for a in reconciled if a.source == "database"),
+        )
+
+        return reconciled
+
+    def get_available_agents(
+        self,
+        project_dir: Path | None = None,
+        session: Session | None = None,
+        include_defaults: bool = True,
+    ) -> "AvailableAgentsResult":
+        """
+        Get all available agents for a project.
+
+        Feature #181: Maestro tracks which agents are available per project
+
+        This is the main entry point that:
+        1. Scans .claude/agents/generated/ and .claude/agents/manual/
+        2. Queries database for persisted AgentSpecs
+        3. Reconciles file-based and DB-based agent lists
+
+        Args:
+            project_dir: Project root directory (uses self.project_dir if None)
+            session: SQLAlchemy session (uses self.session if None)
+            include_defaults: Whether to include default agents
+
+        Returns:
+            AvailableAgentsResult with all discovered agents
+        """
+        scan_dir = project_dir or self.project_dir
+        db_session = session or self.session
+
+        errors: list[str] = []
+        scan_paths: list[str] = []
+
+        # Step 1: Scan file-based agents
+        file_agents: list["AgentInfo"] = []
+        if scan_dir:
+            try:
+                file_agents = self.scan_file_based_agents(scan_dir)
+                scan_paths.extend([
+                    str(Path(scan_dir) / ".claude" / "agents"),
+                    str(Path(scan_dir) / ".claude" / "agents" / "generated"),
+                    str(Path(scan_dir) / ".claude" / "agents" / "manual"),
+                ])
+            except Exception as e:
+                errors.append(f"File scan error: {e}")
+                _logger.exception("Failed to scan file-based agents")
+
+        # Step 2: Query database agents
+        db_agents: list["AgentInfo"] = []
+        if db_session:
+            try:
+                db_agents = self.query_db_agents(db_session)
+            except Exception as e:
+                errors.append(f"Database query error: {e}")
+                _logger.exception("Failed to query database agents")
+
+        # Step 3: Reconcile
+        reconciled = self.reconcile_available_agents(
+            file_agents=file_agents,
+            db_agents=db_agents,
+            include_defaults=include_defaults,
+        )
+
+        # Count by source
+        file_count = sum(1 for a in reconciled if a.source.startswith("file"))
+        db_count = sum(1 for a in reconciled if a.source == "database")
+        default_count = sum(1 for a in reconciled if a.source == "default")
+
+        result = AvailableAgentsResult(
+            agents=reconciled,
+            file_based_count=file_count,
+            db_based_count=db_count,
+            default_count=default_count,
+            scan_paths=scan_paths,
+            errors=errors,
+        )
+
+        _logger.info(
+            "Available agents result: %d total, %d file, %d db, %d default",
+            result.total_count,
+            file_count,
+            db_count,
+            default_count,
+        )
+
+        return result
+
+    def get_available_agent_names(
+        self,
+        project_dir: Path | None = None,
+        session: Session | None = None,
+    ) -> list[str]:
+        """
+        Get list of available agent names for a project.
+
+        Feature #181: Convenience method for quick agent name lookup
+
+        Args:
+            project_dir: Project root directory
+            session: SQLAlchemy session
+
+        Returns:
+            List of agent names
+        """
+        result = self.get_available_agents(
+            project_dir=project_dir,
+            session=session,
+            include_defaults=True,
+        )
+        return result.agent_names
+
+    def evaluate_with_available_agents(
+        self,
+        context: ProjectContext,
+        session: Session | None = None,
+    ) -> AgentPlanningDecision:
+        """
+        Evaluate project context using dynamically discovered available agents.
+
+        Feature #181: Available agents influence delegation decisions
+
+        This method:
+        1. Discovers available agents from files and database
+        2. Updates context.existing_agents with discovered agents
+        3. Calls evaluate() with the updated context
+
+        Args:
+            context: Project context to evaluate
+            session: SQLAlchemy session for DB queries
+
+        Returns:
+            AgentPlanningDecision
+        """
+        # Get available agents
+        available = self.get_available_agents(
+            project_dir=context.project_dir,
+            session=session or self.session,
+            include_defaults=True,
+        )
+
+        # Update context with discovered agents
+        updated_context = ProjectContext(
+            project_name=context.project_name,
+            project_dir=context.project_dir,
+            tech_stack=context.tech_stack,
+            features=context.features,
+            execution_environment=context.execution_environment,
+            existing_agents=available.agent_names,  # Use discovered agents
+            config_files=context.config_files,
+        )
+
+        _logger.info(
+            "Evaluating with %d available agents: %s",
+            len(available.agent_names),
+            available.agent_names[:10],  # Log first 10
+        )
+
+        return self.evaluate(updated_context)
+
+    # -------------------------------------------------------------------------
     # Feature #179: Decision Persistence
     # -------------------------------------------------------------------------
 
