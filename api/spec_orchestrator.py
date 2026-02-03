@@ -54,6 +54,175 @@ _logger = logging.getLogger(__name__)
 
 
 # =============================================================================
+# Agent Planning (Maestro → Octo → Materializer)
+# =============================================================================
+
+def run_agent_planning(project_dir: Path, session: Session) -> bool:
+    """
+    Run agent planning after initialization if specialized agents are needed.
+
+    This is triggered when:
+    - Features exist in the database (initialization has run)
+    - No generated agents exist yet
+
+    Invokes Maestro.evaluate() to identify capability gaps, then
+    delegates to Octo for AgentSpec generation if needed.
+
+    Args:
+        project_dir: Project directory
+        session: SQLAlchemy session
+
+    Returns:
+        True if agent planning ran successfully, False otherwise
+    """
+    from api.database import Feature
+
+    # Check if we have features
+    feature_count = session.query(Feature).count()
+    if feature_count == 0:
+        _logger.info("No features yet — skipping agent planning")
+        return False
+
+    # Check if generated agents already exist
+    generated_dir = project_dir / ".claude" / "agents" / "generated"
+    generated_agents = list(generated_dir.glob("*.md")) if generated_dir.exists() else []
+    if generated_agents:
+        _logger.info(
+            "Generated agents already exist (%d) — skipping agent planning",
+            len(generated_agents),
+        )
+        return True
+
+    # Run Maestro evaluation
+    _logger.info("Running agent planning for %d features...", feature_count)
+    print(f"[SPEC] Running Maestro agent planning for {feature_count} features...", flush=True)
+
+    try:
+        from api.maestro import get_maestro, ProjectContext
+
+        # Build project context
+        features = session.query(Feature).all()
+        feature_dicts = [f.to_dict() for f in features]
+
+        # Get project name from directory
+        project_name = project_dir.name
+
+        # Detect tech stack from project files
+        tech_stack = _detect_tech_stack(project_dir)
+        _logger.info("Detected tech stack: %s", tech_stack)
+
+        context = ProjectContext(
+            project_name=project_name,
+            project_dir=project_dir,
+            tech_stack=tech_stack,
+            features=feature_dicts,
+            execution_environment="local",
+        )
+
+        maestro = get_maestro()
+        decision = maestro.evaluate(context)
+
+        _logger.info(
+            "Maestro decision: requires_agent_planning=%s, capabilities=%s",
+            decision.requires_agent_planning,
+            [r.capability for r in decision.required_capabilities] if decision.required_capabilities else [],
+        )
+        print(
+            f"[SPEC] Maestro decision: requires_agent_planning={decision.requires_agent_planning}",
+            flush=True,
+        )
+
+        if decision.requires_agent_planning:
+            print(f"[SPEC] Agent planning required: {decision.justification}", flush=True)
+
+            # Delegate to Octo with full context
+            result = maestro.delegate_to_octo(
+                decision,
+                session,
+                project_dir=project_dir,
+                context=context,
+            )
+
+            if result.success and result.specs:
+                _logger.info("Octo generated %d agent specs", len(result.specs))
+                print(f"[SPEC] Octo generated {len(result.specs)} agent specs", flush=True)
+
+                # Materialize agents
+                orchestration = maestro.orchestrate_materialization(result.specs)
+                _logger.info(
+                    "Materialized %d/%d agents to .claude/agents/generated/",
+                    orchestration.succeeded,
+                    orchestration.total,
+                )
+                print(
+                    f"[SPEC] Materialized {orchestration.succeeded}/{orchestration.total} "
+                    f"agents to .claude/agents/generated/",
+                    flush=True,
+                )
+                return True
+            else:
+                _logger.warning("Octo returned no specs: %s", result.error if hasattr(result, 'error') else "unknown")
+                print(f"[SPEC] Octo returned no specs", flush=True)
+                return False
+        else:
+            _logger.info("No agent planning needed: %s", decision.justification)
+            print(f"[SPEC] No agent planning needed: {decision.justification}", flush=True)
+            return True
+
+    except Exception as e:
+        _logger.warning("Agent planning failed: %s — continuing with default agents", e)
+        print(f"[SPEC] Agent planning failed: {e} — using default agents", flush=True)
+        return False
+
+
+def _detect_tech_stack(project_dir: Path) -> list[str]:
+    """Detect tech stack from project files."""
+    tech_stack = []
+
+    # Check for Python
+    if (project_dir / "requirements.txt").exists() or (project_dir / "pyproject.toml").exists():
+        tech_stack.append("python")
+
+    # Check for Node.js
+    if (project_dir / "package.json").exists():
+        tech_stack.append("nodejs")
+        # Check for React/Vue/etc in package.json
+        try:
+            import json
+            pkg = json.loads((project_dir / "package.json").read_text())
+            deps = {**pkg.get("dependencies", {}), **pkg.get("devDependencies", {})}
+            if "react" in deps:
+                tech_stack.append("react")
+            if "vue" in deps:
+                tech_stack.append("vue")
+            if "playwright" in deps or "@playwright/test" in deps:
+                tech_stack.append("playwright")
+        except Exception:
+            pass
+
+    # Check for FastAPI
+    if (project_dir / "requirements.txt").exists():
+        try:
+            reqs = (project_dir / "requirements.txt").read_text().lower()
+            if "fastapi" in reqs:
+                tech_stack.append("fastapi")
+            if "flask" in reqs:
+                tech_stack.append("flask")
+            if "django" in reqs:
+                tech_stack.append("django")
+            if "playwright" in reqs:
+                tech_stack.append("playwright")
+        except Exception:
+            pass
+
+    # Check for Docker
+    if (project_dir / "Dockerfile").exists() or (project_dir / "docker-compose.yml").exists():
+        tech_stack.append("docker")
+
+    return tech_stack
+
+
+# =============================================================================
 # Table migration
 # =============================================================================
 
@@ -599,6 +768,10 @@ class SpecOrchestrator:
         Returns:
             Number of features processed
         """
+        # Run agent planning if needed (after initialization, before feature execution)
+        # This ensures specialized agents are generated before we start coding
+        run_agent_planning(self.project_dir, self.session)
+
         # Install signal handler for graceful shutdown
         original_sigint = signal.getsignal(signal.SIGINT)
 
