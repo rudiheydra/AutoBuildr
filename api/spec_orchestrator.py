@@ -119,7 +119,9 @@ def run_agent_planning(project_dir: Path, session: Session) -> bool:
             execution_environment="local",
         )
 
-        maestro = get_maestro()
+        # Create Maestro with project_dir for materialization support
+        from api.maestro import Maestro
+        maestro = Maestro(project_dir=project_dir, session=session)
         decision = maestro.evaluate(context)
 
         _logger.info(
@@ -143,12 +145,12 @@ def run_agent_planning(project_dir: Path, session: Session) -> bool:
                 context=context,
             )
 
-            if result.success and result.specs:
-                _logger.info("Octo generated %d agent specs", len(result.specs))
-                print(f"[SPEC] Octo generated {len(result.specs)} agent specs", flush=True)
+            if result.success and result.agent_specs:
+                _logger.info("Octo generated %d agent specs", len(result.agent_specs))
+                print(f"[SPEC] Octo generated {len(result.agent_specs)} agent specs", flush=True)
 
                 # Materialize agents
-                orchestration = maestro.orchestrate_materialization(result.specs)
+                orchestration = maestro.orchestrate_materialization(result.agent_specs)
                 _logger.info(
                     "Materialized %d/%d agents to .claude/agents/generated/",
                     orchestration.succeeded,

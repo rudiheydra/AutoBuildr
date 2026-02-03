@@ -176,6 +176,13 @@ shell: _check-running ## Open a shell in the running container
 down: ## Stop the environment (preserve data)
 	$(DC) down
 
+.PHONY: test-down
+test-down: ## Stop and reset test environment to clean slate
+	$(DC) down
+	@echo "Resetting test project snapshot..."
+	rm -rf $(TEST_PROJECT_DEST)
+	@echo "Snapshot cleared. Run 'make test-env' for a fresh environment."
+
 .PHONY: clean
 clean: ## Stop and remove all artifacts (containers, volumes, images)
 	$(DC) down -v --rmi local --remove-orphans 2>/dev/null || true
@@ -210,6 +217,8 @@ snapshot: ## Create a clean repo-concierge snapshot for Docker build
 		--exclude='features.db-wal' \
 		--exclude='assistant.db' \
 		--exclude='claude-progress.txt' \
+		--exclude='.claude/agents/generated' \
+		--exclude='reports/' \
 		$(TEST_PROJECT_SRC)/ $(TEST_PROJECT_DEST)/
 	@echo "Snapshot: $(TEST_PROJECT_DEST) ($$(du -sh $(TEST_PROJECT_DEST) | cut -f1))"
 
