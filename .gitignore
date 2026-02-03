@@ -82,7 +82,13 @@ dmypy.json
 # ===================
 .claude/settings.local.json
 .claude_settings.json
+.claude_settings.expand.*.json
 .claude_assistant_settings.json
+
+# ===================
+# Generated Reports
+# ===================
+reports/
 
 # ===================
 # SQLite Databases
