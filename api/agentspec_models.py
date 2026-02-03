@@ -86,6 +86,7 @@ EVENT_TYPES = [
     "sdk_session_completed", # SDK session executor finished
     "agent_planned",  # Feature #176/221: Maestro agent planning event
     "octo_failure",  # Feature #180: Octo failure audit event with fallback
+    "agent_materialized",  # Feature #195: Materializer records agent file creation
 ]
 
 # Artifact types - outputs from agent runs

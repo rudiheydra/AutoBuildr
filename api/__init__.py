@@ -486,9 +486,19 @@ from api.archetypes import (
 )
 from api.agent_materializer import (
     # Feature #192: Agent Materializer converts AgentSpec to Claude Code markdown
+    # Feature #195: Agent Materializer records agent_materialized audit event
+    # Feature #196: Agent Materializer validates template output
+    # Feature #197: Agent Materializer handles multiple agents in batch
     # Data classes
     MaterializationResult as AgentMaterializationResult,
     BatchMaterializationResult,
+    MaterializationAuditInfo,
+    ValidationError as MaterializerValidationError,
+    TemplateValidationResult,
+    # Type aliases
+    ProgressCallback as MaterializerProgressCallback,
+    # Exception
+    TemplateValidationError,
     # Main class
     AgentMaterializer,
     # Convenience functions
@@ -501,6 +511,51 @@ from api.agent_materializer import (
     TASK_TYPE_COLORS,
     VALID_MODELS as MATERIALIZER_VALID_MODELS,
     DESCRIPTION_MAX_LENGTH,
+    REQUIRED_MARKDOWN_SECTIONS,
+    REQUIRED_FRONTMATTER_FIELDS,
+)
+from api.scaffolding import (
+    # Feature #199: .claude directory scaffolding creates standard structure
+    # Data classes
+    DirectoryStatus,
+    ScaffoldResult,
+    ScaffoldPreview,
+    # Main class
+    ClaudeDirectoryScaffold,
+    # Convenience functions
+    scaffold_claude_directory,
+    preview_claude_directory,
+    ensure_claude_root,
+    ensure_agents_generated,
+    verify_claude_structure,
+    is_claude_scaffolded,
+    get_standard_subdirs,
+    # Constants
+    CLAUDE_ROOT_DIR,
+    STANDARD_SUBDIRS,
+    DEFAULT_DIR_PERMISSIONS,
+    PHASE_1_DIRS,
+    PHASE_2_DIRS,
+)
+from api.settings_manager import (
+    # Feature #198: Agent Materializer generates settings.local.json when needed
+    # Data classes
+    SettingsUpdateResult,
+    SettingsRequirements,
+    # Main class
+    SettingsManager,
+    # Convenience functions
+    check_settings_exist,
+    ensure_settings_for_agents,
+    detect_required_mcp_servers,
+    get_settings_manager,
+    # Constants
+    SETTINGS_LOCAL_FILE,
+    CLAUDE_DIR as SETTINGS_CLAUDE_DIR,
+    DEFAULT_SETTINGS_PERMISSIONS,
+    DEFAULT_SETTINGS,
+    MCP_SERVER_CONFIGS,
+    MCP_TOOL_PATTERNS,
 )
 
 __all__ = [
@@ -883,9 +938,16 @@ __all__ = [
     "get_archetype_for_task_type",
     "get_archetype_summary",
     # Feature #192: Agent Materializer exports
+    # Feature #195: Agent Materializer audit event exports
+    # Feature #196: Agent Materializer validates template output
     "AgentMaterializer",
     "AgentMaterializationResult",
     "BatchMaterializationResult",
+    "MaterializationAuditInfo",
+    "MaterializerValidationError",
+    "TemplateValidationResult",
+    "TemplateValidationError",
+    "MaterializerProgressCallback",  # Feature #197
     "render_agentspec_to_markdown",
     "verify_materializer_determinism",
     "MATERIALIZER_DEFAULT_OUTPUT_DIR",
@@ -894,4 +956,37 @@ __all__ = [
     "TASK_TYPE_COLORS",
     "MATERIALIZER_VALID_MODELS",
     "DESCRIPTION_MAX_LENGTH",
+    "REQUIRED_MARKDOWN_SECTIONS",
+    "REQUIRED_FRONTMATTER_FIELDS",
+    # Feature #199: .claude directory scaffolding exports
+    "DirectoryStatus",
+    "ScaffoldResult",
+    "ScaffoldPreview",
+    "ClaudeDirectoryScaffold",
+    "scaffold_claude_directory",
+    "preview_claude_directory",
+    "ensure_claude_root",
+    "ensure_agents_generated",
+    "verify_claude_structure",
+    "is_claude_scaffolded",
+    "get_standard_subdirs",
+    "CLAUDE_ROOT_DIR",
+    "STANDARD_SUBDIRS",
+    "DEFAULT_DIR_PERMISSIONS",
+    "PHASE_1_DIRS",
+    "PHASE_2_DIRS",
+    # Feature #198: Settings Manager exports
+    "SettingsUpdateResult",
+    "SettingsRequirements",
+    "SettingsManager",
+    "check_settings_exist",
+    "ensure_settings_for_agents",
+    "detect_required_mcp_servers",
+    "get_settings_manager",
+    "SETTINGS_LOCAL_FILE",
+    "SETTINGS_CLAUDE_DIR",
+    "DEFAULT_SETTINGS_PERMISSIONS",
+    "DEFAULT_SETTINGS",
+    "MCP_SERVER_CONFIGS",
+    "MCP_TOOL_PATTERNS",
 ]

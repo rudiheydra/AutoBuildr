@@ -689,6 +689,49 @@ class EventRecorder:
 
         return self.record(run_id, "octo_failure", payload=payload)
 
+    def record_agent_materialized(
+        self,
+        run_id: str,
+        agent_name: str,
+        file_path: str,
+        spec_hash: str,
+        *,
+        spec_id: str | None = None,
+        display_name: str | None = None,
+        task_type: str | None = None,
+    ) -> int:
+        """
+        Convenience method to record an 'agent_materialized' event.
+
+        Feature #195: Materializer records agent file creation for audit trail.
+        Records details of the materialized agent file including name, path, and content hash.
+
+        Args:
+            run_id: Run ID
+            agent_name: Name of the agent that was materialized
+            file_path: Path to the created agent file
+            spec_hash: SHA256 hash of the generated content (for determinism verification)
+            spec_id: Optional ID of the AgentSpec that was materialized
+            display_name: Optional human-readable display name
+            task_type: Optional task type of the agent
+
+        Returns:
+            Event ID
+        """
+        payload = {
+            "agent_name": agent_name,
+            "file_path": file_path,
+            "spec_hash": spec_hash,
+        }
+        if spec_id:
+            payload["spec_id"] = spec_id
+        if display_name:
+            payload["display_name"] = display_name
+        if task_type:
+            payload["task_type"] = task_type
+
+        return self.record(run_id, "agent_materialized", payload=payload)
+
     def clear_sequence_cache(self, run_id: str | None = None) -> None:
         """
         Clear the sequence number cache.
