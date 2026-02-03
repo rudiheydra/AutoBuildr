@@ -14799,3 +14799,120 @@ Feature #181 has been marked as passing after successful:
 - Total: 197/227 features passing (86.8%)
 
 **Session completed successfully.**
+[Testing] 2026-02-04T00:06:57+11:00 - Feature #181 regression test PASSED
+  - Feature: Maestro tracks which agents are available per project
+  - Category: functional
+  - All 4 verification steps verified:
+    Step 1: Maestro scans .claude/agents/generated/ and .claude/agents/manual/ - PASS
+    Step 2: Maestro queries database for persisted AgentSpecs - PASS
+    Step 3: Maestro reconciles file-based and DB-based agent lists - PASS
+    Step 4: Available agents influence delegation decisions - PASS
+  - Verification script: tests/verify_feature_181.py - 18/18 PASS
+  - Unit tests: tests/test_feature_181_agent_tracking.py - 25/25 PASS
+  - File-based agents detected: 7 (deep-dive, spec-builder, auditor, coder, maestro, test-runner, code-review)
+  - Default agents included: coding, testing
+  - Total reconciled agents: 9
+  - Browser automation: Unavailable (Chrome SIGTRAP in container)
+  - No regression found - feature still working correctly
+
+---
+[Testing] 2026-02-04T00:07:59+11:00 - Feature #110 regression test PASSED
+  - Feature: E2E test: Spec Name Generation (TestStep4 — 4 tests)
+  - Category: functional
+  - All 5 verification steps verified:
+    Step 1: Create test class TestStep4NameGeneration with 4 test methods - PASS
+    Step 2: Test generate_spec_name() returns URL-safe string - PASS
+    Step 3: Test name does not exceed 100 characters - PASS
+    Step 4: Test name starts with task_type prefix - PASS
+    Step 5: All 4 tests pass - PASS
+  - Test execution: tests/test_dspy_pipeline_e2e.py::TestStep4NameGeneration - 4/4 PASS (4.31s)
+  - No regression found - feature still working correctly
+
+---
+
+## Session: 2026-02-04 - Feature #203
+
+### Feature #203: Scaffolding can be triggered manually via API - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Dependencies:** None
+
+**Description:** API endpoint allows explicit triggering of scaffolding for a project.
+
+**Changes Made:**
+
+1. `server/routers/projects.py`: Added POST /api/projects/{name}/scaffold endpoint
+   - `scaffold_project()`: Main endpoint function
+   - Validates project name and path
+   - Calls `scaffold_with_claude_md()` from api/scaffolding module
+   - Converts results to response schema format
+   - Returns detailed status of all directories and files
+
+2. `server/schemas.py`: Added scaffolding schemas
+   - `DirectoryStatusResponse`: Status of a single directory
+     - path, relative_path, existed, created, error, phase
+   - `ClaudeMdStatusResponse`: Status of CLAUDE.md generation
+     - path, existed, created, skipped, error
+   - `ScaffoldResponse`: Main response schema
+     - success, project_name, project_dir, claude_root
+     - directories list, count statistics, claude_md status, message
+   - `ScaffoldRequest`: Request options
+     - include_phase2: Whether to create Phase 2 directories
+     - include_claude_md: Whether to create CLAUDE.md
+
+3. `server/schemas/__init__.py`: Added exports for Feature #203 schemas
+
+4. `tests/test_feature_203_scaffold_api.py`: 29 comprehensive tests
+   - TestStep1EndpointCreated: 5 tests for endpoint existence
+   - TestStep2EndpointRunsScaffolding: 5 tests for scaffolding execution
+   - TestStep3ReturnsStatus: 6 tests for response format
+   - TestStep4RepairResetScenarios: 4 tests for idempotency
+   - TestErrorHandling: 3 tests for error cases
+   - TestDefaultRequestValues: 1 test for defaults
+   - TestFeature203VerificationSteps: 4 comprehensive tests
+   - TestIntegration: 1 integration test
+
+5. `tests/verify_feature_203.py`: Standalone verification script
+
+**Verification Summary (All 4 Feature Steps Passed):**
+
+1. **POST /api/projects/{id}/scaffold endpoint created** - PASS
+   - Endpoint exists at /api/projects/{name}/scaffold
+   - Uses POST method
+   - Accepts ScaffoldRequest body (optional)
+   - Returns ScaffoldResponse
+
+2. **Endpoint runs scaffolding for specified project** - PASS
+   - Creates .claude directory structure
+   - Creates all subdirectories (agents/generated, agents/manual, skills, commands)
+   - Optionally creates CLAUDE.md
+   - Supports include_phase2 and include_claude_md options
+
+3. **Returns status of created/existing directories and files** - PASS
+   - Response includes success boolean
+   - directories_created, directories_existed, directories_failed counts
+   - List of DirectoryStatusResponse for each directory
+   - ClaudeMdStatusResponse for CLAUDE.md
+   - Human-readable message
+
+4. **Useful for repair/reset scenarios** - PASS
+   - Idempotent - safe to call multiple times
+   - First call creates, subsequent calls report existing
+   - Can repair missing directories
+   - Preserves existing content in directories
+   - Never overwrites existing CLAUDE.md
+
+**Test Results:**
+- tests/test_feature_203_scaffold_api.py: 29/29 tests PASS
+- tests/verify_feature_203.py: 4/4 verification steps PASS
+
+**Commit:** e5f73b3
+
+**Updated Progress:**
+- Feature #203: Scaffolding can be triggered manually via API - PASSING
+- Total: 200/227 features passing (88.1%)
+
+**Session completed successfully.**
