@@ -218,8 +218,9 @@ class TestStep3Return404IfNotFound:
         response = test_client.post(f"/api/agent-runs/{fake_id}/pause")
         assert response.status_code == 404
         data = response.json()
-        assert fake_id in data["detail"]
-        assert "not found" in data["detail"].lower()
+        # Feature #75: Error responses use 'message' field instead of 'detail'
+        assert fake_id in data["message"]
+        assert "not found" in data["message"].lower()
 
     def test_returns_404_for_invalid_uuid(self, test_client):
         """Verify 404 is returned for invalid UUID format."""
@@ -267,8 +268,9 @@ class TestStep4Return409IfNotRunning:
         response = test_client.post(f"/api/agent-runs/{paused_run.id}/pause")
         assert response.status_code == 409
         data = response.json()
-        assert "paused" in data["detail"]
-        assert "running" in data["detail"]
+        # Feature #75: Error responses use 'message' field instead of 'detail'
+        assert "paused" in data["message"]
+        assert "running" in data["message"]
 
 
 # =============================================================================
