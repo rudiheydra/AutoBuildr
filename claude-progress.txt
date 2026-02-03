@@ -17053,3 +17053,365 @@ during agent materialization). The implementation exists in:
 - Total: 220/227 features passing (96.9%)
 
 **Session completed successfully.**
+
+---
+
+## Session: 2026-02-04 03:15 - Regression Testing Feature #213
+
+### Feature #213: Playwright MCP available for E2E test agents - VERIFIED PASSING
+
+**Status:** PASSING (No regression found)
+
+**Category:** functional
+
+**Description:** When configured, Playwright MCP tools are available to agents for browser-based testing.
+
+**Verification Method:** Unit tests + Integration tests + Code review (browser automation unavailable)
+
+**Verification Results:**
+
+1. **Step 1: Playwright MCP server configurable in settings** - PASS
+   - `get_playwright_config()` correctly parses settings
+   - `PlaywrightMcpConfig` data class properly initialized
+   - MCP server config includes npx command with @anthropic/mcp-server-playwright
+   - Headless/headful modes supported
+
+2. **Step 2: Test-runner agents for E2E include Playwright tools** - PASS
+   - `is_e2e_agent()` correctly identifies E2E agents by name, capability, task_type
+   - `get_e2e_agent_tools()` returns Playwright tools when enabled
+   - `configure_playwright_for_agent()` provisions tools to E2E agents
+   - `add_playwright_tools_to_spec()` adds tools to AgentSpec dictionaries
+
+3. **Step 3: MCP connection established when agent starts** - PASS
+   - `get_mcp_server_config()` returns correct MCP server configuration
+   - `verify_mcp_connection()` validates connection can be established
+   - `ensure_playwright_in_settings()` updates settings.local.json when needed
+   - MCP_SERVER_CONFIGS in agent_materializer.py includes playwright config
+
+4. **Step 4: Playwright actions available: navigate, click, fill, assert** - PASS
+   - CORE_PLAYWRIGHT_TOOLS includes:
+     - navigate: browser_navigate
+     - click: browser_click
+     - fill: browser_fill_form, browser_type
+     - assert: browser_snapshot, browser_take_screenshot, browser_console_messages
+   - EXTENDED_PLAYWRIGHT_TOOLS adds: hover, select_option, press_key, wait_for
+   - PLAYWRIGHT_TOOLS (full) includes all 21 available Playwright MCP tools
+
+5. **Step 5: Configuration gated by project settings** - PASS
+   - `is_playwright_enabled()` returns False by default
+   - Returns False with empty settings
+   - Returns True only when explicitly enabled
+   - `configure_playwright_for_agent()` fails when disabled
+   - `should_include_playwright_tools()` requires both E2E agent AND enabled setting
+
+**Test Results:**
+- tests/test_feature_213_playwright_mcp.py: 61/61 tests PASS (6.17s)
+- Integration test script: 5/5 steps PASS
+
+**Implementation Files Verified:**
+- api/playwright_mcp_config.py: Complete Playwright MCP configuration module (860 lines)
+- api/agent_materializer.py: MCP_SERVER_CONFIGS includes playwright (line 141-145)
+- api/settings_manager.py: MCP_TOOL_PATTERNS includes playwright detection
+- api/__init__.py: All Playwright exports properly included
+
+**Browser Automation:** Unavailable (Chrome launch failure in environment)
+
+**Session completed successfully - Feature #213 still passing.**
+[Testing] Session complete - verified feature #213 (Playwright MCP available for E2E test agents) - STILL PASSING
+
+---
+
+## Session: 2026-02-04 - Feature #225
+
+### Feature #225: tests_executed audit event type created - VERIFIED PASSING
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Dependencies:** None
+
+**Description:** New event type recorded when tests are executed.
+
+**Verification Summary (All 5 Feature Steps Passed):**
+
+1. **Add 'tests_executed' to event_type enum** - PASS
+   - 'tests_executed' already present in EVENT_TYPES (api/agentspec_models.py line 91)
+   - Implemented in Feature #207
+
+2. **Event payload includes: passed, failed, skipped, duration** - PASS
+   - `record_tests_executed` method in EventRecorder includes all required fields:
+     - `passed` (bool)
+     - `passed_tests` (int)
+     - `failed_tests` (int)
+     - `skipped_tests` (int)
+     - `error_tests` (int)
+     - `duration_seconds` (float)
+
+3. **Event recorded after test execution completes** - PASS
+   - `record_tests_executed` function in api/test_runner.py (lines 824-882)
+   - Convenience method wraps TestExecutionResult and calls EventRecorder.record()
+   - Called after TestRunner.run() completes
+
+4. **Event linked to AgentRun and test artifact** - PASS
+   - Event linked to AgentRun via `run_id` parameter
+   - Event can reference AgentSpec via `spec_id` in payload
+   - Event can reference test target via `test_target` in payload
+   - AgentEvent model has `artifact_ref` field for artifact linking
+
+5. **Event queryable via existing event APIs** - PASS
+   - GET /api/agent-runs/:id/events endpoint validates against EVENT_TYPES
+   - `tests_executed` is included in EVENT_TYPES validation
+   - Events can be filtered by event_type parameter
+
+**Files Created:**
+- `tests/test_feature_225_tests_executed_event.py` - 39 comprehensive tests
+
+**Test Results:**
+- tests/test_feature_225_tests_executed_event.py: 39/39 tests PASS (13.28s)
+
+**Note:** Feature #225 was already fully implemented as part of Feature #207 (Test-runner agent executes tests and reports results). This session verified the implementation and added comprehensive acceptance tests.
+
+**Commit:** affe987
+
+**Updated Progress:**
+- Feature #225: tests_executed audit event type created - PASSING
+- Total: 223/227 features passing (98.2%)
+
+**Session completed successfully.**
+
+---
+
+## Session: 2026-02-04 03:19 - Regression Testing Feature #194
+
+### Feature #194: Agent Materializer is deterministic and idempotent - VERIFIED PASSING
+
+**Status:** PASSING (No regression found)
+
+**Category:** functional
+
+**Description:** Given the same AgentSpec, Materializer always produces identical output. Re-running is safe.
+
+**Verification Method:** Unit tests + Integration verification script (browser automation unavailable)
+
+**Verification Results:**
+
+1. **Step 1: Same AgentSpec always produces byte-identical markdown** - PASS
+   - 5 consecutive materializations produce identical content
+   - Content hash verified: 973a5b7edb71ad59...
+   - Byte-level comparison confirms identical output
+   - Different materializer instances produce same output
+
+2. **Step 2: Timestamps not included in output (determinism)** - PASS
+   - No `created_at:` in output
+   - No `modified_at:` in output
+   - No `updated_at:` in output
+   - No `generated_at:` in output
+   - No ISO timestamp patterns in frontmatter
+
+3. **Step 3: Re-materialization overwrites existing files safely** - PASS
+   - Same file path used across materializations
+   - Old content completely replaced
+   - New content correctly written
+   - No file corruption on overwrite
+
+4. **Step 4: No side effects beyond file writes** - PASS
+   - Only one new file created (the agent markdown)
+   - File created in expected output directory
+   - Environment variables unchanged
+   - No additional temp files, logs, or directories
+
+5. **Step 5: Materializer can be re-run without state concerns** - PASS
+   - Fresh materializer instances produce identical output
+   - verify_determinism() function returns True
+   - Hash matches after re-run with new instance
+   - Stateless operation confirmed
+
+**Test Results:**
+- tests/test_feature_194_materializer_deterministic.py: 40/40 tests PASS (5.57s)
+- tests/test_feature_192_agent_materializer.py: All tests PASS (no regressions)
+- tests/test_feature_193_materializer_writes_files.py: All tests PASS (no regressions)
+- tests/test_feature_195_materializer_audit_event.py: All tests PASS (no regressions)
+- Total related tests: 136 PASS
+
+**Implementation Files Verified:**
+- api/agent_materializer.py: Complete AgentMaterializer class (1974 lines)
+- Key methods verified:
+  - `render_claude_code_markdown()`: Deterministic rendering
+  - `materialize()`: Idempotent file writes
+  - `verify_determinism()`: Helper function for validation
+  - Context JSON serialization with `sort_keys=True` for determinism
+
+**Browser Automation:** Unavailable (Chrome launch failure in environment)
+
+**Session completed successfully - Feature #194 still passing.**
+[Testing] Session complete - verified feature #194 (Agent Materializer deterministic and idempotent) - STILL PASSING
+
+---
+
+## Session: 2026-02-04 - Feature #226
+
+### Feature #226: Audit events visible in run inspector - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Dependencies:** None
+
+**Description:** New audit event types appear in the Run Inspector timeline view.
+
+**Files Modified:**
+- `ui/src/lib/types.ts` - Updated AgentEventType union with 11 new event types
+- `ui/src/components/EventTimeline.tsx` - Added EVENT_TYPE_CONFIG entries and filter options
+
+**Files Created:**
+- `tests/test_feature_226_audit_events_inspector.py` - 37 comprehensive tests
+
+**Changes Made:**
+
+1. **ui/src/lib/types.ts**: Extended AgentEventType TypeScript union
+   - Added 11 new event types to match backend EVENT_TYPES
+   - Types: policy_violation, sdk_session_started, sdk_session_completed,
+     agent_planned, octo_failure, agent_materialized, tests_written,
+     tests_executed, test_result_artifact_created, sandbox_tests_executed,
+     icon_generated
+
+2. **ui/src/components/EventTimeline.tsx**: Extended event display
+   - Imported 9 new Lucide icons: ShieldAlert, Cog, Target, Bot, FileCode,
+     TestTube, Archive, Container, Palette
+   - Added EVENT_TYPE_CONFIG entries for all 11 new event types with:
+     - Appropriate icons
+     - Human-readable labels
+     - Color coding (text color and background color)
+   - Updated ALL_EVENT_TYPES array for filter dropdown
+
+**Verification Summary (All 4 Feature Steps Passed):**
+
+1. **Run Inspector fetches all event types including new ones** - PASS
+   - AgentEventType TypeScript union matches backend EVENT_TYPES (21 types)
+   - API endpoint uses EVENT_TYPES for validation
+   - EventTimeline handles all event types
+
+2. **New events rendered with appropriate icons and labels** - PASS
+   - Each event type has icon, label, color, bgColor in EVENT_TYPE_CONFIG
+   - Icons imported from lucide-react
+   - Labels are human-readable (e.g., "Policy Violation", "Agent Planned")
+
+3. **Event details expandable to show payload** - PASS (existing functionality)
+   - expandedEventId state tracks expanded event
+   - toggleEventExpansion function handles toggle
+   - formatPayload function renders JSON payload
+
+4. **Events filterable by type in inspector** - PASS
+   - ALL_EVENT_TYPES array contains all 21 event types
+   - FilterDropdown component renders all types
+   - API supports event_type query parameter filtering
+
+**Test Results:**
+- tests/test_feature_226_audit_events_inspector.py: 37/37 tests PASS (0.39s)
+
+**TypeScript Build:**
+- npm run build: SUCCESS (12.44s)
+
+**Commit:** 35ac9b5
+
+**Updated Progress:**
+- Feature #226: Audit events visible in run inspector - PASSING
+- Total: 223/227 features passing (98.2%)
+
+**Session completed successfully.**
+
+---
+
+## Session: 2026-02-04 - Feature #227
+
+### Feature #227: Audit events support replay and debugging - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Dependencies:** None
+
+**Description:** Audit events contain sufficient detail to understand and replay agent decisions.
+
+**Files Created:**
+- `api/event_replay.py` - Event replay and debugging utilities module (~650 lines)
+- `tests/test_feature_227_audit_replay_debugging.py` - 40 comprehensive tests
+- `tests/verify_feature_227.py` - Verification script for all 4 steps
+
+**Files Modified:**
+- `api/__init__.py` - Added Feature #227 exports
+
+**New Classes/Functions:**
+
+1. **ReplayableEvent** dataclass:
+   - Enriched event with full payload for replay
+   - from_event() class method
+   - to_dict() for serialization
+   - Properties: was_truncated, full_payload, artifact_ref
+
+2. **DebugContext** dataclass:
+   - Debugging context for failed/error runs
+   - Contains: failure_reason, last_event, last_tool_call, last_tool_result
+   - Tracks: turns_used, tokens_used, acceptance_results
+   - to_dict() for serialization
+
+3. **EventTimeline** dataclass:
+   - Complete reconstructed timeline with statistics
+   - Contains: events list, total_events, duration_seconds
+   - Tracks: tool_call_count, turn_count, has_failure
+
+4. **EventReplayContext** class:
+   - Main class for replaying and debugging runs
+   - get_events(): Iterate through events with optional filtering
+   - get_event_by_sequence(): Get specific event by sequence number
+   - get_timeline(): Get complete event timeline
+   - get_debug_context(): Get debugging context for failures
+   - reconstruct_event_sequence(): Build replay-ready event list
+
+5. **Helper Functions:**
+   - get_replay_context(): Factory for EventReplayContext
+   - reconstruct_run_events(): Convenience function for event reconstruction
+   - get_run_debug_context(): Convenience function for debug context
+   - verify_event_sequence_integrity(): Check sequence for gaps/errors
+
+**Verification Summary (All 4 Feature Steps Passed):**
+
+1. **Events include full context needed for replay** - PASS
+   - started events include objective
+   - tool_call events include full arguments
+   - tool_result events include complete result data
+   - failed events include error context and traceback
+
+2. **Large payloads stored as artifacts with references** - PASS
+   - Payloads exceeding 4KB create artifacts
+   - artifact_ref points to full content
+   - Full payload retrievable via replay context
+   - Content stored with SHA256 hash for integrity
+
+3. **Event sequence reconstructable from run_id + sequence** - PASS
+   - Events have sequential sequence numbers starting at 1
+   - Events queryable by run_id + sequence
+   - Order preserved in reconstruction
+   - verify_event_sequence_integrity() detects gaps
+
+4. **Events support debugging failed agent runs** - PASS
+   - DebugContext available for failed/timeout runs
+   - Includes last events for diagnosis
+   - Includes human-readable failure reason
+   - Includes resource usage (turns, tokens)
+
+**Test Results:**
+- tests/test_feature_227_audit_replay_debugging.py: 40/40 tests PASS (49.32s)
+- tests/test_feature_30_event_recorder.py: 44/44 tests PASS (no regressions)
+- tests/verify_feature_227.py: All 4 steps PASS
+
+**Commit:** 7c3f4eb
+
+**Updated Progress:**
+- Feature #227: Audit events support replay and debugging - PASSING
+- Total: 224/227 features passing (98.7%)
+
+**Session completed successfully.**
