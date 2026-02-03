@@ -172,6 +172,21 @@ status: ## Check environment health, mode, and project status
 shell: _check-running ## Open a shell in the running container
 	docker exec -it $(CONTAINER_NAME) /bin/bash
 
+.PHONY: agents
+agents: _check-running ## List generated agents in the container
+	@echo "=== Generated Agents ==="
+	@docker exec $(CONTAINER_NAME) ls -la /test-projects/repo-concierge/.claude/agents/generated/ 2>/dev/null || echo "No agents generated yet"
+
+.PHONY: agents-show
+agents-show: _check-running ## Show content of all generated agents
+	@echo "=== Generated Agents Content ==="
+	@docker exec $(CONTAINER_NAME) sh -c 'for f in /test-projects/repo-concierge/.claude/agents/generated/*.md; do echo ""; echo "========== $$f =========="; cat "$$f"; done' 2>/dev/null || echo "No agents generated yet"
+
+.PHONY: code
+code: _check-running ## List recently generated/modified code files
+	@echo "=== Recently Modified Files (last 60 min) ==="
+	@docker exec $(CONTAINER_NAME) find /test-projects/repo-concierge -path '*/.venv' -prune -o -type f \( -name "*.py" -o -name "*.md" -o -name "*.json" -o -name "*.yaml" \) -mmin -60 -print 2>/dev/null | head -30 || echo "No recent changes"
+
 .PHONY: down
 down: ## Stop the environment (preserve data)
 	$(DC) down
