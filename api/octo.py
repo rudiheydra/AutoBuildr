@@ -856,12 +856,95 @@ class TestContractAssertion:
         )
 
 
+# =============================================================================
+# TestDependency - Test Dependencies Schema (Feature #209)
+# =============================================================================
+
+# Valid dependency types for TestDependency
+DEPENDENCY_TYPES = [
+    "fixture",     # Test fixture (setup data, database state)
+    "mock",        # Mock object or stub
+    "service",     # External service dependency
+    "database",    # Database dependency (schema, data)
+    "file",        # File system dependency
+    "environment", # Environment variable or config
+    "api",         # API endpoint dependency
+    "component",   # Component or module dependency
+]
+
+
+@dataclass
+class TestDependency:
+    """
+    A single dependency required by a TestContract.
+
+    Feature #209: TestContract includes dependencies (fixtures, mocks needed).
+
+    Dependencies describe what external resources, fixtures, or mocks are
+    needed to execute the test. They are structured data that helps test
+    generators set up the necessary test environment.
+
+    Attributes:
+        name: Unique identifier for the dependency (e.g., "user_fixture", "api_mock")
+        dependency_type: Type of dependency (fixture, mock, service, database, etc.)
+        description: Human-readable description of the dependency purpose
+        setup_hints: Optional hints for how to set up the dependency
+        required: Whether this dependency is required or optional
+    """
+    name: str
+    dependency_type: str
+    description: str = ""
+    setup_hints: list[str] = field(default_factory=list)
+    required: bool = True
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for serialization."""
+        return {
+            "name": self.name,
+            "dependency_type": self.dependency_type,
+            "description": self.description,
+            "setup_hints": self.setup_hints,
+            "required": self.required,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "TestDependency":
+        """Create from dictionary."""
+        return cls(
+            name=data.get("name", ""),
+            dependency_type=data.get("dependency_type", "fixture"),
+            description=data.get("description", ""),
+            setup_hints=data.get("setup_hints", []),
+            required=data.get("required", True),
+        )
+
+    def validate(self) -> list[str]:
+        """
+        Validate the TestDependency structure.
+
+        Returns:
+            List of validation error messages (empty if valid)
+        """
+        errors: list[str] = []
+
+        if not self.name or not self.name.strip():
+            errors.append("dependency name is required")
+
+        if not self.dependency_type:
+            errors.append("dependency_type is required")
+        elif self.dependency_type not in DEPENDENCY_TYPES:
+            errors.append(f"dependency_type must be one of: {', '.join(DEPENDENCY_TYPES)}")
+
+        return errors
+
+
 @dataclass
 class TestContract:
     """
     Structured test specification for testable agent responsibilities.
 
     Feature #184: Octo generates TestContract alongside AgentSpec when applicable.
+    Feature #209: TestContract schema defined and documented.
 
     TestContract specifies WHAT should be tested, not HOW to test it.
     It is structured data (not test code) that can be used by:
@@ -869,21 +952,39 @@ class TestContract:
     - Acceptance validators to verify agent output
     - Documentation to describe expected behavior
 
-    Attributes:
-        agent_name: Name of the agent this contract is linked to (matches AgentSpec.name)
-        test_type: Type of testing (unit, integration, e2e, api, performance, security)
-        assertions: List of assertions that must hold true
+    Schema Fields (Feature #209):
+        test_name: Human-readable name for this test contract
+        test_type: Type of testing (unit, integration, e2e, api, performance, security, etc.)
+        subject: What is being tested (component, function, feature, endpoint)
+        assertions: List of assertions that describe expected behaviors
         pass_criteria: Conditions that determine test success
         fail_criteria: Conditions that indicate test failure
+        dependencies: List of fixtures, mocks, and other dependencies needed
+
+    Additional Fields:
+        agent_name: Name of the agent this contract is linked to (matches AgentSpec.name)
         description: Human-readable description of what is being tested
         priority: Priority level (1=critical, 2=high, 3=medium, 4=low)
         tags: Optional tags for categorization
+        contract_id: Unique identifier for the contract
     """
+    # Required fields (Feature #209)
     agent_name: str
     test_type: str
+
+    # Feature #209: New required fields
+    test_name: str = ""  # Human-readable name for the test
+    subject: str = ""    # What is being tested
+
+    # Assertions and criteria
     assertions: list[TestContractAssertion] = field(default_factory=list)
     pass_criteria: list[str] = field(default_factory=list)
     fail_criteria: list[str] = field(default_factory=list)
+
+    # Feature #209: Dependencies (fixtures, mocks needed)
+    dependencies: list[TestDependency] = field(default_factory=list)
+
+    # Metadata
     description: str = ""
     priority: int = 3  # 1=critical, 2=high, 3=medium, 4=low
     tags: list[str] = field(default_factory=list)
@@ -893,11 +994,14 @@ class TestContract:
         """Convert to dictionary for serialization."""
         return {
             "contract_id": self.contract_id,
+            "test_name": self.test_name,
             "agent_name": self.agent_name,
             "test_type": self.test_type,
+            "subject": self.subject,
             "assertions": [a.to_dict() for a in self.assertions],
             "pass_criteria": self.pass_criteria,
             "fail_criteria": self.fail_criteria,
+            "dependencies": [d.to_dict() for d in self.dependencies],
             "description": self.description,
             "priority": self.priority,
             "tags": self.tags,
@@ -910,12 +1014,19 @@ class TestContract:
             TestContractAssertion.from_dict(a)
             for a in data.get("assertions", [])
         ]
+        dependencies = [
+            TestDependency.from_dict(d)
+            for d in data.get("dependencies", [])
+        ]
         return cls(
             agent_name=data.get("agent_name", ""),
             test_type=data.get("test_type", "unit"),
+            test_name=data.get("test_name", ""),
+            subject=data.get("subject", ""),
             assertions=assertions,
             pass_criteria=data.get("pass_criteria", []),
             fail_criteria=data.get("fail_criteria", []),
+            dependencies=dependencies,
             description=data.get("description", ""),
             priority=data.get("priority", 3),
             tags=data.get("tags", []),
@@ -926,11 +1037,14 @@ class TestContract:
         """
         Validate the TestContract structure.
 
+        Feature #209: Schema documented and validated.
+
         Returns:
             List of validation error messages (empty if valid)
         """
         errors: list[str] = []
 
+        # Required field validations
         if not self.agent_name or not self.agent_name.strip():
             errors.append("agent_name is required")
 
@@ -939,11 +1053,19 @@ class TestContract:
         elif self.test_type not in TEST_TYPES:
             errors.append(f"test_type must be one of: {', '.join(TEST_TYPES)}")
 
+        # Assertions or pass_criteria required
         if not self.assertions and not self.pass_criteria:
             errors.append("TestContract must have either assertions or pass_criteria")
 
+        # Priority validation
         if self.priority not in (1, 2, 3, 4):
             errors.append("priority must be 1 (critical), 2 (high), 3 (medium), or 4 (low)")
+
+        # Validate dependencies (Feature #209)
+        for i, dep in enumerate(self.dependencies):
+            dep_errors = dep.validate()
+            for err in dep_errors:
+                errors.append(f"dependencies[{i}]: {err}")
 
         return errors
 
@@ -1151,13 +1273,23 @@ def generate_test_contract(
     # Step 4: Generate pass/fail criteria
     pass_criteria, fail_criteria = _generate_criteria(capability, agent_spec)
 
-    # Step 5: Build the TestContract
+    # Step 5: Generate test name and subject (Feature #209)
+    test_name = _generate_test_name(capability, agent_spec)
+    subject = _generate_subject(capability, agent_spec)
+
+    # Step 6: Generate dependencies (Feature #209)
+    dependencies = _generate_dependencies(capability, agent_spec, project_context)
+
+    # Step 7: Build the TestContract
     contract = TestContract(
         agent_name=agent_spec.name,
         test_type=test_type,
+        test_name=test_name,
+        subject=subject,
         assertions=assertions,
         pass_criteria=pass_criteria,
         fail_criteria=fail_criteria,
+        dependencies=dependencies,
         description=f"Test contract for {agent_spec.display_name}: verifies {capability} responsibilities",
         priority=_infer_priority(capability, agent_spec.task_type),
         tags=_generate_tags(capability, agent_spec),
@@ -1364,6 +1496,196 @@ def _infer_priority(capability: str, task_type: str) -> int:
 
     # Low priority
     return 4
+
+
+def _generate_test_name(capability: str, agent_spec: AgentSpec) -> str:
+    """
+    Generate a human-readable test name for the TestContract.
+
+    Feature #209: TestContract includes test_name.
+
+    Args:
+        capability: The capability this test is for
+        agent_spec: The AgentSpec being tested
+
+    Returns:
+        Human-readable test name
+    """
+    capability_lower = capability.lower().replace("_", " ").replace("-", " ")
+
+    # Use display name if available, otherwise format agent name
+    agent_display = agent_spec.display_name or agent_spec.name.replace("-", " ").title()
+
+    return f"{agent_display} - {capability_lower.title()} Tests"
+
+
+def _generate_subject(capability: str, agent_spec: AgentSpec) -> str:
+    """
+    Generate the test subject (what is being tested).
+
+    Feature #209: TestContract includes subject (what to test).
+
+    Args:
+        capability: The capability this test is for
+        agent_spec: The AgentSpec being tested
+
+    Returns:
+        Description of what is being tested
+    """
+    capability_lower = capability.lower()
+
+    # API-related subjects
+    if "api" in capability_lower:
+        return "API endpoint functionality and response handling"
+
+    # E2E/UI subjects
+    if "e2e" in capability_lower or "ui" in capability_lower:
+        return "User interface interactions and page workflows"
+
+    # Security subjects
+    if "security" in capability_lower:
+        return "Security controls and vulnerability protection"
+
+    # Performance subjects
+    if "performance" in capability_lower or "load" in capability_lower:
+        return "System performance under load"
+
+    # Testing capability subjects
+    if "unit" in capability_lower:
+        return "Individual component behavior in isolation"
+    if "integration" in capability_lower:
+        return "Component interactions and integration points"
+
+    # Coding/refactoring subjects
+    if capability_lower in ("coding", "refactoring", "feature_implementation"):
+        context = agent_spec.context or {}
+        if "feature_id" in context:
+            return f"Feature #{context['feature_id']} implementation"
+        return "Code implementation correctness and quality"
+
+    # Default based on objective
+    if agent_spec.objective:
+        # Extract first sentence or 100 chars from objective
+        objective = agent_spec.objective.split(".")[0]
+        if len(objective) > 100:
+            objective = objective[:100] + "..."
+        return objective
+
+    return "Agent responsibilities and output quality"
+
+
+def _generate_dependencies(
+    capability: str,
+    agent_spec: AgentSpec,
+    project_context: dict[str, Any] | None,
+) -> list[TestDependency]:
+    """
+    Generate dependencies (fixtures, mocks) needed for the test.
+
+    Feature #209: TestContract includes dependencies (fixtures, mocks needed).
+
+    Args:
+        capability: The capability this test is for
+        agent_spec: The AgentSpec being tested
+        project_context: Optional project context for richer dependencies
+
+    Returns:
+        List of TestDependency objects
+    """
+    dependencies: list[TestDependency] = []
+    capability_lower = capability.lower()
+
+    # API-related dependencies
+    if "api" in capability_lower:
+        dependencies.append(TestDependency(
+            name="api_server",
+            dependency_type="service",
+            description="Running API server instance",
+            setup_hints=["Start development server", "Configure test database connection"],
+            required=True,
+        ))
+        dependencies.append(TestDependency(
+            name="test_database",
+            dependency_type="database",
+            description="Test database with seed data",
+            setup_hints=["Run migrations", "Load test fixtures"],
+            required=True,
+        ))
+
+    # E2E/UI dependencies
+    if "e2e" in capability_lower or "ui" in capability_lower:
+        dependencies.append(TestDependency(
+            name="browser_automation",
+            dependency_type="service",
+            description="Browser automation framework (Playwright/Selenium)",
+            setup_hints=["Install browser binaries", "Configure browser options"],
+            required=True,
+        ))
+        dependencies.append(TestDependency(
+            name="frontend_server",
+            dependency_type="service",
+            description="Running frontend development server",
+            setup_hints=["npm run dev", "Wait for compilation"],
+            required=True,
+        ))
+
+    # Security testing dependencies
+    if "security" in capability_lower:
+        dependencies.append(TestDependency(
+            name="security_scanner",
+            dependency_type="service",
+            description="Security scanning tool",
+            setup_hints=["Configure security scanner", "Set up vulnerability database"],
+            required=True,
+        ))
+
+    # Performance testing dependencies
+    if "performance" in capability_lower or "load" in capability_lower:
+        dependencies.append(TestDependency(
+            name="load_testing_tool",
+            dependency_type="service",
+            description="Load testing framework",
+            setup_hints=["Configure load parameters", "Set up monitoring"],
+            required=True,
+        ))
+
+    # Unit testing dependencies
+    if "unit" in capability_lower or capability_lower in ("coding", "refactoring"):
+        dependencies.append(TestDependency(
+            name="test_framework",
+            dependency_type="service",
+            description="Unit testing framework (pytest/jest)",
+            setup_hints=["Install test dependencies", "Configure test runner"],
+            required=True,
+        ))
+
+    # Add common dependencies based on project context
+    if project_context:
+        tech_stack = project_context.get("tech_stack", [])
+
+        # Python-specific dependencies
+        if "python" in tech_stack or "fastapi" in tech_stack or "django" in tech_stack:
+            if not any(d.name == "test_framework" for d in dependencies):
+                dependencies.append(TestDependency(
+                    name="pytest_fixtures",
+                    dependency_type="fixture",
+                    description="Common pytest fixtures",
+                    setup_hints=["Create conftest.py", "Define fixtures"],
+                    required=False,
+                ))
+
+        # JavaScript/TypeScript dependencies
+        if any(t in tech_stack for t in ["node", "react", "vue", "typescript", "javascript"]):
+            if not any(d.name == "test_framework" for d in dependencies):
+                dependencies.append(TestDependency(
+                    name="jest_config",
+                    dependency_type="fixture",
+                    description="Jest test configuration",
+                    setup_hints=["Create jest.config.js", "Configure test environment"],
+                    required=False,
+                ))
+
+    return dependencies
 
 
 def _generate_tags(capability: str, agent_spec: AgentSpec) -> list[str]:
