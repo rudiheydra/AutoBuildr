@@ -87,6 +87,8 @@ EVENT_TYPES = [
     "agent_planned",  # Feature #176/221: Maestro agent planning event
     "octo_failure",  # Feature #180: Octo failure audit event with fallback
     "agent_materialized",  # Feature #195: Materializer records agent file creation
+    "tests_written",  # Feature #206: Test-runner writes test code from TestContract
+    "tests_executed",  # Feature #207: Test-runner executes tests and reports results
 ]
 
 # Artifact types - outputs from agent runs

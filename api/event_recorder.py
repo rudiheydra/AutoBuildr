@@ -732,6 +732,125 @@ class EventRecorder:
 
         return self.record(run_id, "agent_materialized", payload=payload)
 
+    def record_tests_written(
+        self,
+        run_id: str,
+        contract_id: str,
+        agent_name: str,
+        test_files: list[str],
+        *,
+        test_type: str | None = None,
+        test_framework: str | None = None,
+        test_directory: str | None = None,
+        assertions_count: int | None = None,
+    ) -> int:
+        """
+        Convenience method to record a 'tests_written' event.
+
+        Feature #206: Test-runner agent writes test code from TestContract.
+        Records details of test files written including paths, framework, and contract link.
+
+        Args:
+            run_id: Run ID
+            contract_id: ID of the TestContract used to generate tests
+            agent_name: Name of the test-runner agent that wrote the tests
+            test_files: List of test file paths that were written
+            test_type: Type of test (unit, integration, e2e, api, etc.)
+            test_framework: Testing framework used (pytest, jest, etc.)
+            test_directory: Directory where tests were written
+            assertions_count: Number of test assertions generated
+
+        Returns:
+            Event ID
+        """
+        payload = {
+            "contract_id": contract_id,
+            "agent_name": agent_name,
+            "test_files": test_files,
+        }
+        if test_type:
+            payload["test_type"] = test_type
+        if test_framework:
+            payload["test_framework"] = test_framework
+        if test_directory:
+            payload["test_directory"] = test_directory
+        if assertions_count is not None:
+            payload["assertions_count"] = assertions_count
+
+        return self.record(run_id, "tests_written", payload=payload)
+
+    def record_tests_executed(
+        self,
+        run_id: str,
+        agent_name: str,
+        command: str,
+        passed: bool,
+        *,
+        exit_code: int | None = None,
+        total_tests: int = 0,
+        passed_tests: int = 0,
+        failed_tests: int = 0,
+        skipped_tests: int = 0,
+        error_tests: int = 0,
+        duration_seconds: float | None = None,
+        test_framework: str | None = None,
+        test_target: str | None = None,
+        failures: list[dict] | None = None,
+        error_message: str | None = None,
+    ) -> int:
+        """
+        Convenience method to record a 'tests_executed' event.
+
+        Feature #207: Test-runner agent executes tests and reports results.
+        Records details of test execution including pass/fail status, counts,
+        and failure details.
+
+        Args:
+            run_id: Run ID
+            agent_name: Name of the test-runner agent that executed the tests
+            command: Test command that was executed
+            passed: Whether all tests passed (exit code matched expected)
+            exit_code: Exit code from test framework
+            total_tests: Total number of tests run
+            passed_tests: Number of tests that passed
+            failed_tests: Number of tests that failed
+            skipped_tests: Number of tests that were skipped
+            error_tests: Number of tests that errored
+            duration_seconds: How long the test execution took
+            test_framework: Testing framework used (pytest, unittest, jest, etc.)
+            test_target: What was being tested (e.g., "feature-207")
+            failures: List of failure details (max 10 items, truncated messages)
+            error_message: Error message if execution failed
+
+        Returns:
+            Event ID
+        """
+        payload = {
+            "agent_name": agent_name,
+            "command": command,
+            "passed": passed,
+            "total_tests": total_tests,
+            "passed_tests": passed_tests,
+            "failed_tests": failed_tests,
+            "skipped_tests": skipped_tests,
+            "error_tests": error_tests,
+        }
+        if exit_code is not None:
+            payload["exit_code"] = exit_code
+        if duration_seconds is not None:
+            payload["duration_seconds"] = duration_seconds
+        if test_framework:
+            payload["test_framework"] = test_framework
+        if test_target:
+            payload["test_target"] = test_target
+        if failures:
+            # Truncate to max 10 failures for payload size
+            payload["failures"] = failures[:10]
+        if error_message:
+            payload["error_message"] = error_message
+
+        return self.record(run_id, "tests_executed", payload=payload)
+
     def clear_sequence_cache(self, run_id: str | None = None) -> None:
         """
         Clear the sequence number cache.

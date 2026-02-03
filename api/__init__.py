@@ -454,11 +454,13 @@ from api.octo_schemas import (
     AGENT_SPEC_SCHEMA,
     TEST_CONTRACT_SCHEMA,
     TEST_CONTRACT_ASSERTION_SCHEMA,
+    TEST_DEPENDENCY_SCHEMA,  # Feature #209
     # Constants
     VALID_TASK_TYPES as OCTO_SCHEMA_VALID_TASK_TYPES,
     VALID_TEST_TYPES as OCTO_SCHEMA_VALID_TEST_TYPES,
     VALID_GATE_MODES as OCTO_SCHEMA_VALID_GATE_MODES,
     VALID_ASSERTION_OPERATORS,
+    VALID_DEPENDENCY_TYPES,  # Feature #209
 )
 from api.archetypes import (
     # Feature #191: Octo uses agent archetypes for common patterns
@@ -597,6 +599,92 @@ from api.settings_manager import (
     DEFAULT_SETTINGS,
     MCP_SERVER_CONFIGS,
     MCP_TOOL_PATTERNS,
+)
+from api.test_code_writer import (
+    # Feature #206: Test-runner agent writes test code from TestContract
+    # Data classes
+    TestCodeWriteResult,
+    TestCodeWriterAuditInfo,
+    FrameworkDetectionResult,
+    # Main class
+    TestCodeWriter,
+    # Convenience functions
+    get_test_code_writer,
+    reset_test_code_writer_cache,
+    write_tests_from_contract,
+    detect_test_framework,
+    # Constants
+    TEST_FRAMEWORKS,
+    DEFAULT_FRAMEWORKS,
+    TEST_DIR_PATTERNS,
+    TEST_FILE_EXTENSIONS,
+)
+from api.test_runner import (
+    # Feature #207: Test-runner agent executes tests and reports results
+    # Data classes
+    TestFailure,
+    TestExecutionResult,
+    # Parsers
+    PytestResultParser,
+    UnittestResultParser,
+    JestResultParser,
+    # Main class
+    TestRunner,
+    # Convenience functions
+    record_tests_executed,
+    run_tests,
+)
+from api.test_contract_gate import (
+    # Feature #210: Feature cannot pass without tests passing
+    # Enums
+    TestGateStatus,
+    # Data classes
+    TestGateConfiguration,
+    AssertionCoverage,
+    TestContractCoverage,
+    TestGateResult,
+    # Main class
+    TestContractGate,
+    # Convenience functions
+    get_test_contract_gate,
+    reset_test_contract_gate,
+    evaluate_test_gate,
+    check_tests_required,
+    get_blocking_test_issues,
+    # Constants
+    DEFAULT_ENFORCE_TEST_GATE,
+    DEFAULT_REQUIRE_ALL_ASSERTIONS,
+    DEFAULT_MIN_TEST_COVERAGE,
+    DEFAULT_ALLOW_SKIP_FOR_NO_CONTRACT,
+)
+from api.test_framework import (
+    # Feature #208: Test-runner agent supports multiple test frameworks
+    # Enum
+    TestFramework,
+    # Data classes
+    TestFrameworkDetectionResult,
+    TestCommand,
+    TestResult,
+    FrameworkPreference,
+    # Detection functions
+    detect_framework,
+    # Command generation functions
+    generate_test_command,
+    get_available_options,
+    # Result parsing functions
+    parse_test_output,
+    # Settings functions
+    get_framework_preference,
+    set_framework_preference,
+    get_supported_frameworks,
+    get_framework_info,
+    # Constants
+    FRAMEWORK_MARKERS,
+    FRAMEWORK_LANGUAGES,
+    DEFAULT_TEST_COMMANDS,
+    TEST_COMMAND_OPTIONS,
+    SETTINGS_FRAMEWORK_KEY,
+    SETTINGS_TEST_SECTION,
 )
 
 __all__ = [
@@ -956,10 +1044,12 @@ __all__ = [
     "AGENT_SPEC_SCHEMA",
     "TEST_CONTRACT_SCHEMA",
     "TEST_CONTRACT_ASSERTION_SCHEMA",
+    "TEST_DEPENDENCY_SCHEMA",  # Feature #209
     "OCTO_SCHEMA_VALID_TASK_TYPES",
     "OCTO_SCHEMA_VALID_TEST_TYPES",
     "OCTO_SCHEMA_VALID_GATE_MODES",
     "VALID_ASSERTION_OPERATORS",
+    "VALID_DEPENDENCY_TYPES",  # Feature #209
     # Feature #191: Octo uses agent archetypes for common patterns
     "AgentArchetype",
     "ArchetypeMatchResult",
@@ -1052,4 +1142,62 @@ __all__ = [
     "DEFAULT_SETTINGS",
     "MCP_SERVER_CONFIGS",
     "MCP_TOOL_PATTERNS",
+    # Feature #206: Test Code Writer exports
+    "TestCodeWriteResult",
+    "TestCodeWriterAuditInfo",
+    "FrameworkDetectionResult",
+    "TestCodeWriter",
+    "get_test_code_writer",
+    "reset_test_code_writer_cache",
+    "write_tests_from_contract",
+    "detect_test_framework",
+    "TEST_FRAMEWORKS",
+    "DEFAULT_FRAMEWORKS",
+    "TEST_DIR_PATTERNS",
+    "TEST_FILE_EXTENSIONS",
+    # Feature #207: Test Runner exports
+    "TestFailure",
+    "TestExecutionResult",
+    "PytestResultParser",
+    "UnittestResultParser",
+    "JestResultParser",
+    "TestRunner",
+    "record_tests_executed",
+    "run_tests",
+    # Feature #208: Test Framework Support exports
+    "TestFramework",
+    "TestFrameworkDetectionResult",
+    "TestCommand",
+    "TestResult",
+    "FrameworkPreference",
+    "detect_framework",
+    "generate_test_command",
+    "get_available_options",
+    "parse_test_output",
+    "get_framework_preference",
+    "set_framework_preference",
+    "get_supported_frameworks",
+    "get_framework_info",
+    "FRAMEWORK_MARKERS",
+    "FRAMEWORK_LANGUAGES",
+    "DEFAULT_TEST_COMMANDS",
+    "TEST_COMMAND_OPTIONS",
+    "SETTINGS_FRAMEWORK_KEY",
+    "SETTINGS_TEST_SECTION",
+    # Feature #210: Test Contract Gate exports
+    "TestGateStatus",
+    "TestGateConfiguration",
+    "AssertionCoverage",
+    "TestContractCoverage",
+    "TestGateResult",
+    "TestContractGate",
+    "get_test_contract_gate",
+    "reset_test_contract_gate",
+    "evaluate_test_gate",
+    "check_tests_required",
+    "get_blocking_test_issues",
+    "DEFAULT_ENFORCE_TEST_GATE",
+    "DEFAULT_REQUIRE_ALL_ASSERTIONS",
+    "DEFAULT_MIN_TEST_COVERAGE",
+    "DEFAULT_ALLOW_SKIP_FOR_NO_CONTRACT",
 ]
