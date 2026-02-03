@@ -139,14 +139,19 @@ class TestStep2DefaultAttributes:
         assert any("implement" in r.lower() for r in coder.responsibilities)
 
     def test_test_runner_has_limited_tools(self):
-        """Test-runner archetype has limited tools (no Write/Edit)."""
+        """Test-runner archetype has limited tools (no Edit for production code).
+
+        Note: Feature #205 updated test-runner to include Write tool for writing
+        test files. Edit is still excluded to prevent modifying production code.
+        """
         runner = get_archetype("test-runner")
         assert runner is not None
         # Should have test-related tools
         assert "Read" in runner.default_tools
         assert "Bash" in runner.default_tools
-        # Should NOT have write tools (least-privilege)
-        assert "Write" in runner.excluded_tools
+        # Feature #205: Write is allowed for writing test files
+        assert "Write" in runner.default_tools
+        # Edit is excluded to prevent production code modification
         assert "Edit" in runner.excluded_tools
 
     def test_test_runner_has_testing_skills(self):

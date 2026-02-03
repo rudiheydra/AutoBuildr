@@ -256,34 +256,47 @@ AGENT_ARCHETYPES: dict[str, AgentArchetype] = {
     ),
 
     # ==========================================================================
-    # TEST-RUNNER Archetype
+    # TEST-RUNNER Archetype (Feature #205)
     # ==========================================================================
     "test-runner": AgentArchetype(
         name="test-runner",
         display_name="Test Runner Agent",
         description=(
-            "A testing agent specialized in running and validating tests. "
-            "Can execute test suites, analyze results, and report coverage. "
-            "Uses sonnet model for reliable test execution and analysis."
+            "A testing agent specialized in writing, running and validating tests. "
+            "Can write test cases, execute test suites, analyze results, and report coverage. "
+            "Uses sonnet model for balanced speed and capability in test execution and analysis."
         ),
         default_tools=[
-            "Read", "Glob", "Grep", "Bash",
+            # Feature #205 Step 1: Test-runner archetype includes tools: Bash, Read, Write, Glob, Grep
+            "Bash", "Read", "Write", "Glob", "Grep",
+            # Feature tracking tools for test result reporting
             "feature_get_by_id", "feature_mark_passing", "feature_mark_failing",
         ],
         default_skills=[
+            # Feature #205 Step 2: Default skills: pytest, unittest, test discovery
+            "pytest",
+            "unittest",
+            "test discovery",
+            # Additional testing skills
             "test execution",
             "test analysis",
             "coverage reporting",
             "test framework usage",
             "CI/CD integration",
+            "test-driven development",
         ],
         responsibilities=[
-            "Execute test suites and report results",
+            # Feature #205 Step 3: Responsibilities: write tests, run tests, report results
+            "Write test cases following project patterns and best practices",
+            "Run tests and execute test suites",
+            "Report test results and status",
+            # Additional responsibilities
             "Analyze test failures and identify root causes",
             "Generate coverage reports",
             "Validate acceptance criteria",
             "Report test status to feature tracking system",
         ],
+        # Feature #205 Step 4: Model: sonnet (balanced speed/capability)
         recommended_model="sonnet",
         task_type="testing",
         icon="🧪",
@@ -291,8 +304,11 @@ AGENT_ARCHETYPES: dict[str, AgentArchetype] = {
             "test", "testing", "test-runner", "test_runner", "qa", "quality",
             "validation", "verify", "check", "runner", "execute", "unit_test",
             "unit_testing", "integration_test", "integration_testing",
+            "pytest", "unittest", "write_tests", "write_test", "tdd",
         ],
-        excluded_tools=["Write", "Edit"],  # Test runners shouldn't modify production code
+        # Note: Test-runner CAN write test files but not production code
+        # Edit excluded to prevent modifying production code
+        excluded_tools=["Edit"],
         max_turns=50,
         timeout_seconds=900,
     ),
