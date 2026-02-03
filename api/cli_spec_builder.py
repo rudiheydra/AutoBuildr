@@ -136,8 +136,7 @@ def _parse_spec_from_response(
     context: dict[str, Any],
 ) -> Optional[Any]:
     """Parse AgentSpec from CLI response."""
-    from api.agentspec_models import AgentSpec, generate_uuid
-    from api.tool_policy import create_tool_policy
+    from api.agentspec_models import AgentSpec, create_tool_policy, generate_uuid
 
     # Try to extract JSON from response
     json_match = re.search(r'\{[\s\S]*\}', response)
