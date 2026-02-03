@@ -16508,3 +16508,169 @@ Feature #181 has been marked as passing after successful:
 - Total: 216/227 features passing (95.2%)
 
 **Session completed successfully.**
+
+---
+
+## Session: 2026-02-04 03:08 - Regression Testing Feature #204
+
+### Feature #204: Scaffolding respects .gitignore patterns - VERIFIED PASSING
+
+**Status:** PASSING (No regression found)
+
+**Category:** functional
+
+**Description:** Scaffolding adds appropriate entries to .gitignore for generated files.
+
+**Verification Method:** Unit tests + End-to-end testing
+
+**Verification Results:**
+
+1. **Check if .gitignore exists** - PASS
+   - gitignore_exists() returns False when missing
+   - gitignore_exists() returns True when present
+
+2. **Add .claude/agents/generated/ to .gitignore if not present** - PASS
+   - Pattern added to new .gitignore
+   - Pattern not re-added when already present
+   - Handles patterns with/without trailing slash
+
+3. **Keep .claude/agents/manual/ tracked** - PASS
+   - NOT in GITIGNORE_GENERATED_PATTERNS
+   - IS in GITIGNORE_TRACKED_PATTERNS
+   - NOT added to .gitignore
+
+4. **Keep CLAUDE.md tracked** - PASS
+   - NOT in GITIGNORE_GENERATED_PATTERNS
+   - IS in GITIGNORE_TRACKED_PATTERNS
+   - NOT added to .gitignore
+
+5. **Preserve existing .gitignore content** - PASS
+   - Original patterns preserved
+   - Comments preserved
+   - Empty lines preserved
+
+**Test Results:**
+- tests/test_feature_204_gitignore.py: 53/53 tests PASS (5.75s)
+- tests/verify_feature_204.py: 5/5 steps PASS
+
+**End-to-end Test:**
+- Created temp directory with scaffold_with_gitignore()
+- .claude/agents/generated/ added to .gitignore
+- .claude/agents/manual/ NOT in .gitignore
+- CLAUDE.md NOT in .gitignore
+
+**Session completed successfully - Feature #204 still passing.**
+
+---
+
+## Session: 2026-02-04 - Feature #219
+
+### Feature #219: Generated icons stored and retrievable - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Dependencies:** None
+
+**Description:** Icons are stored persistently and retrievable by agent ID for UI display.
+
+**Changes Made:**
+
+1. `api/icon_storage.py`: New module implementing icon storage system (~700 lines)
+   - **Constants:**
+     - `ICON_INLINE_MAX_SIZE`: 16KB threshold for inline vs file storage
+     - `ICON_FORMAT_MIME_TYPES`: Mapping of formats to MIME types
+     - `DEFAULT_PLACEHOLDER_PROVIDER`: "local_placeholder"
+   - **Data Classes:**
+     - `StoredIconResult`: Result from storing an icon (success, icon_id, hash, size, etc.)
+     - `RetrievedIcon`: Result from retrieving an icon (found, data, format, content_type, etc.)
+   - **Database Model:**
+     - `AgentIcon`: SQLAlchemy model for icon storage
+       - `id`: UUID primary key
+       - `agent_spec_id`: Foreign key to agent_specs (unique, one icon per spec)
+       - `icon_format`: Format string (svg, png, jpeg, webp)
+       - `content_hash`: SHA256 hash for deduplication
+       - `size_bytes`: Size of icon data
+       - `content_inline`: Text field for small icons (<= 16KB)
+       - `content_ref`: File path for large icons (> 16KB)
+       - `provider_name`: Name of provider that generated the icon
+       - `icon_metadata`: JSON field for additional metadata
+   - **IconStorage Class:**
+     - `store_icon()`: Store icon with content-addressable routing
+     - `retrieve_icon()`: Retrieve stored icon or generate placeholder
+     - `delete_icon()`: Delete icon for an AgentSpec
+     - `get_icon_info()`: Get metadata without content
+   - **Helper Functions:**
+     - `get_mime_type_for_format()`: Get MIME type for icon format
+     - `store_icon_from_result()`: Store from IconResult
+     - `get_icon_storage()`: Factory function
+
+2. `api/database.py`: Added migration for agent_icons table
+   - `_migrate_add_agent_icons_table()`: Creates table if not exists
+   - Called during database initialization
+
+3. `server/routers/agent_specs.py`: Updated GET /{spec_id}/icon endpoint
+   - Now uses IconStorage to retrieve stored icons first
+   - Falls back to placeholder generation if no stored icon
+   - Returns appropriate Content-Type header based on format
+   - Includes X-Icon-Is-Placeholder header
+   - Includes X-Icon-Format header
+
+4. `api/__init__.py`: Exported Feature #219 components
+   - Constants, data classes, model, class, and helper functions
+
+5. `tests/test_feature_219_icon_storage.py`: 41 comprehensive tests
+   - TestStep1IconDataStorage: 6 tests
+   - TestStep2IconLinkedToAgentSpec: 4 tests
+   - TestStep3IconEndpoint: 3 tests
+   - TestStep4IconFormatHeaders: 6 tests
+   - TestStep5MissingIconPlaceholder: 4 tests
+   - TestDataClasses: 4 tests
+   - TestApiPackageExports: 6 tests
+   - TestFeature219VerificationSteps: 5 tests
+   - TestEdgeCases: 4 tests
+
+**Verification Summary (All 5 Feature Steps Passed):**
+
+1. **Icon data stored in database or filesystem** - PASS
+   - Small icons (<= 16KB) stored inline in database content_inline field
+   - Large icons (> 16KB) stored in .autobuildr/icons/{hash}.{ext}
+   - SHA256 content hash computed for deduplication
+   - Size in bytes tracked
+
+2. **Icon linked to AgentSpec by agent_spec_id** - PASS
+   - AgentIcon.agent_spec_id foreign key to agent_specs.id
+   - Unique constraint: one icon per AgentSpec
+   - CASCADE delete when AgentSpec deleted
+   - Retrieval by agent_spec_id
+
+3. **GET /api/agents/{id}/icon endpoint returns icon** - PASS
+   - IconStorage.retrieve_icon() returns stored icon data
+   - Endpoint returns image bytes
+   - Supports inline and file-based icons
+
+4. **Icon format header set appropriately (image/svg+xml, image/png)** - PASS
+   - SVG: image/svg+xml
+   - PNG: image/png
+   - JPEG: image/jpeg
+   - WebP: image/webp
+   - Content-Type header set from ICON_FORMAT_MIME_TYPES
+
+5. **Missing icon returns default placeholder** - PASS
+   - generate_placeholder=True triggers LocalPlaceholderIconProvider
+   - Placeholder has is_placeholder=True flag
+   - Placeholder uses agent name for color/initials
+   - Returns SVG with image/svg+xml content type
+
+**Test Results:**
+- tests/test_feature_219_icon_storage.py: 41/41 tests PASS (38.18s)
+- tests/test_feature_215_icon_provider.py: 85/85 tests PASS (no regressions)
+
+**Commit:** d1b1b20
+
+**Updated Progress:**
+- Feature #219: Generated icons stored and retrievable - PASSING
+- Total: 216/227 features passing (95.2%)
+
+**Session completed successfully.**
