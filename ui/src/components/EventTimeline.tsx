@@ -32,6 +32,15 @@ import {
   Loader2,
   RefreshCw,
   AlertCircle,
+  ShieldAlert,
+  Cog,
+  Target,
+  Bot,
+  FileCode,
+  TestTube,
+  Archive,
+  Container,
+  Palette,
 } from 'lucide-react'
 import type { AgentEvent, AgentEventType, AgentEventListResponse } from '../lib/types'
 
@@ -64,6 +73,7 @@ interface EventTypeConfig {
 }
 
 const EVENT_TYPE_CONFIG: Record<AgentEventType, EventTypeConfig> = {
+  // Core execution events
   started: {
     icon: Play,
     label: 'Started',
@@ -118,16 +128,94 @@ const EVENT_TYPE_CONFIG: Record<AgentEventType, EventTypeConfig> = {
     color: 'text-cyan-600 dark:text-cyan-400',
     bgColor: 'bg-cyan-100 dark:bg-cyan-900/30',
   },
+  // Security & Policy events (Feature #44)
+  policy_violation: {
+    icon: ShieldAlert,
+    label: 'Policy Violation',
+    color: 'text-red-600 dark:text-red-400',
+    bgColor: 'bg-red-100 dark:bg-red-900/30',
+  },
+  // Timeout events (Feature #134)
   timeout: {
     icon: Timer,
     label: 'Timeout',
     color: 'text-orange-600 dark:text-orange-400',
     bgColor: 'bg-orange-100 dark:bg-orange-900/30',
   },
+  // SDK session events
+  sdk_session_started: {
+    icon: Cog,
+    label: 'SDK Started',
+    color: 'text-indigo-600 dark:text-indigo-400',
+    bgColor: 'bg-indigo-100 dark:bg-indigo-900/30',
+  },
+  sdk_session_completed: {
+    icon: Cog,
+    label: 'SDK Completed',
+    color: 'text-indigo-600 dark:text-indigo-400',
+    bgColor: 'bg-indigo-100 dark:bg-indigo-900/30',
+  },
+  // Maestro planning events (Feature #176/221)
+  agent_planned: {
+    icon: Target,
+    label: 'Agent Planned',
+    color: 'text-violet-600 dark:text-violet-400',
+    bgColor: 'bg-violet-100 dark:bg-violet-900/30',
+  },
+  // Octo events (Feature #180)
+  octo_failure: {
+    icon: Bot,
+    label: 'Octo Failure',
+    color: 'text-red-600 dark:text-red-400',
+    bgColor: 'bg-red-100 dark:bg-red-900/30',
+  },
+  // Materializer events (Feature #195)
+  agent_materialized: {
+    icon: FileCode,
+    label: 'Agent Materialized',
+    color: 'text-teal-600 dark:text-teal-400',
+    bgColor: 'bg-teal-100 dark:bg-teal-900/30',
+  },
+  // Test events (Features #206, #207)
+  tests_written: {
+    icon: TestTube,
+    label: 'Tests Written',
+    color: 'text-sky-600 dark:text-sky-400',
+    bgColor: 'bg-sky-100 dark:bg-sky-900/30',
+  },
+  tests_executed: {
+    icon: TestTube,
+    label: 'Tests Executed',
+    color: 'text-sky-600 dark:text-sky-400',
+    bgColor: 'bg-sky-100 dark:bg-sky-900/30',
+  },
+  // Artifact events (Feature #212)
+  test_result_artifact_created: {
+    icon: Archive,
+    label: 'Test Artifact',
+    color: 'text-slate-600 dark:text-slate-400',
+    bgColor: 'bg-slate-100 dark:bg-slate-900/30',
+  },
+  // Sandbox events (Feature #214)
+  sandbox_tests_executed: {
+    icon: Container,
+    label: 'Sandbox Tests',
+    color: 'text-emerald-600 dark:text-emerald-400',
+    bgColor: 'bg-emerald-100 dark:bg-emerald-900/30',
+  },
+  // Icon events (Feature #218)
+  icon_generated: {
+    icon: Palette,
+    label: 'Icon Generated',
+    color: 'text-pink-600 dark:text-pink-400',
+    bgColor: 'bg-pink-100 dark:bg-pink-900/30',
+  },
 }
 
 // All valid event types for the filter dropdown
+// Kept in sync with api/agentspec_models.py EVENT_TYPES
 const ALL_EVENT_TYPES: AgentEventType[] = [
+  // Core execution events
   'started',
   'tool_call',
   'tool_result',
@@ -137,7 +225,28 @@ const ALL_EVENT_TYPES: AgentEventType[] = [
   'failed',
   'paused',
   'resumed',
+  // Security & Policy events
+  'policy_violation',
+  // Timeout events
   'timeout',
+  // SDK session events
+  'sdk_session_started',
+  'sdk_session_completed',
+  // Maestro planning events
+  'agent_planned',
+  // Octo events
+  'octo_failure',
+  // Materializer events
+  'agent_materialized',
+  // Test events
+  'tests_written',
+  'tests_executed',
+  // Artifact events
+  'test_result_artifact_created',
+  // Sandbox events
+  'sandbox_tests_executed',
+  // Icon events
+  'icon_generated',
 ]
 
 // =============================================================================

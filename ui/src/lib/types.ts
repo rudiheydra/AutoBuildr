@@ -742,6 +742,7 @@ export interface NextRunResponse {
 // ============================================================================
 
 // Event types from the backend AgentEvent model
+// Kept in sync with api/agentspec_models.py EVENT_TYPES
 export type AgentEventType =
   | 'started'
   | 'tool_call'
@@ -752,7 +753,18 @@ export type AgentEventType =
   | 'failed'
   | 'paused'
   | 'resumed'
-  | 'timeout'
+  | 'policy_violation'         // Feature #44: Tool policy violation logging
+  | 'timeout'                  // Feature #134: Kernel timeout event recording
+  | 'sdk_session_started'      // SDK session executor began
+  | 'sdk_session_completed'    // SDK session executor finished
+  | 'agent_planned'            // Feature #176/221: Maestro agent planning event
+  | 'octo_failure'             // Feature #180: Octo failure audit event with fallback
+  | 'agent_materialized'       // Feature #195: Materializer records agent file creation
+  | 'tests_written'            // Feature #206: Test-runner writes test code from TestContract
+  | 'tests_executed'           // Feature #207: Test-runner executes tests and reports results
+  | 'test_result_artifact_created'  // Feature #212: Test result stored as artifact
+  | 'sandbox_tests_executed'   // Feature #214: Test-runner runs tests in sandbox environment
+  | 'icon_generated'           // Feature #218: Icon generation triggered during agent materialization
 
 // Single event in the timeline
 export interface AgentEvent {
