@@ -612,6 +612,83 @@ class EventRecorder:
 
         return self.record(run_id, "resumed", payload=payload or None)
 
+    def record_agent_planned(
+        self,
+        run_id: str,
+        agent_name: str,
+        *,
+        display_name: str | None = None,
+        task_type: str | None = None,
+        capabilities: list[str] | None = None,
+        rationale: str | None = None,
+    ) -> int:
+        """
+        Convenience method to record an 'agent_planned' event.
+
+        Feature #176/221: Maestro agent planning audit event.
+
+        Args:
+            run_id: Run ID
+            agent_name: Name of the planned agent
+            display_name: Human-friendly display name
+            task_type: Task type (coding, testing, etc.)
+            capabilities: List of capabilities the agent provides
+            rationale: Explanation for why this agent was planned
+
+        Returns:
+            Event ID
+        """
+        payload = {"agent_name": agent_name}
+        if display_name:
+            payload["display_name"] = display_name
+        if task_type:
+            payload["task_type"] = task_type
+        if capabilities:
+            payload["capabilities"] = capabilities
+        if rationale:
+            payload["rationale"] = rationale
+
+        return self.record(run_id, "agent_planned", payload=payload)
+
+    def record_octo_failure(
+        self,
+        run_id: str,
+        error: str,
+        *,
+        error_type: str | None = None,
+        required_capabilities: list[str] | None = None,
+        fallback_agents: list[str] | None = None,
+        context: dict[str, Any] | None = None,
+    ) -> int:
+        """
+        Convenience method to record an 'octo_failure' event.
+
+        Feature #180: Maestro handles Octo failures gracefully.
+        Records the failure details and fallback action for audit trail.
+
+        Args:
+            run_id: Run ID
+            error: Error message describing the failure
+            error_type: Type of error (e.g., "connection", "timeout", "validation")
+            required_capabilities: Capabilities that were requested from Octo
+            fallback_agents: List of agents being used as fallback
+            context: Additional context about the failure
+
+        Returns:
+            Event ID
+        """
+        payload = {"error": error}
+        if error_type:
+            payload["error_type"] = error_type
+        if required_capabilities:
+            payload["required_capabilities"] = required_capabilities
+        if fallback_agents:
+            payload["fallback_agents"] = fallback_agents
+        if context:
+            payload["context"] = context
+
+        return self.record(run_id, "octo_failure", payload=payload)
+
     def clear_sequence_cache(self, run_id: str | None = None) -> None:
         """
         Clear the sequence number cache.

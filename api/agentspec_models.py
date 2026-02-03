@@ -23,6 +23,7 @@ from typing import Any
 _logger = logging.getLogger(__name__)
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     Column,
     DateTime,
@@ -83,6 +84,8 @@ EVENT_TYPES = [
     "timeout",  # Feature #134: Kernel timeout event recording
     "sdk_session_started",   # SDK session executor began
     "sdk_session_completed", # SDK session executor finished
+    "agent_planned",  # Feature #176/221: Maestro agent planning event
+    "octo_failure",  # Feature #180: Octo failure audit event with fallback
 ]
 
 # Artifact types - outputs from agent runs
@@ -715,6 +718,83 @@ class AgentEvent(Base):
 
 
 # =============================================================================
+# AgentPlanningDecisionRecord - Persisted Decision Audit Trail
+# =============================================================================
+
+class AgentPlanningDecisionRecord(Base):
+    """
+    Persisted agent-planning decision for auditability and UI display.
+
+    Feature #179: Maestro persists agent-planning decisions to database.
+
+    This table stores decisions made by Maestro about whether new agents
+    are needed for a project. Each record captures:
+    - The project context that triggered the decision
+    - Required capabilities that existing agents cannot handle
+    - Recommended agent types to create
+    - Timestamp and links to triggering features
+
+    These records enable:
+    - Audit trail of agent-planning decisions
+    - UI display of planning history
+    - Analysis of agent coverage gaps across projects
+    """
+    __tablename__ = "agent_planning_decisions"
+
+    __table_args__ = (
+        Index('ix_planning_decision_project', 'project_name'),
+        Index('ix_planning_decision_created', 'created_at'),
+        Index('ix_planning_decision_requires_planning', 'requires_agent_planning'),
+    )
+
+    # Identity
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    project_name = Column(String(100), nullable=False, index=True)
+
+    # Decision outcome
+    requires_agent_planning = Column(Boolean, nullable=False, default=False)
+
+    # Decision rationale (human-readable justification)
+    justification = Column(Text, nullable=False)
+
+    # Required capabilities (JSON array of CapabilityRequirement dicts)
+    # Each: {capability, source, keywords_matched, confidence}
+    required_capabilities = Column(JSON, nullable=False, default=list)
+
+    # Existing capabilities that agents already handle (JSON array of strings)
+    existing_capabilities = Column(JSON, nullable=False, default=list)
+
+    # Recommended agent types (JSON array of strings like "playwright_e2e")
+    recommended_agent_types = Column(JSON, nullable=False, default=list)
+
+    # Project context snapshot (JSON dict for reproducibility)
+    # Contains: tech_stack, execution_environment, existing_agents
+    project_context_snapshot = Column(JSON, nullable=True)
+
+    # Link to triggering feature(s) (JSON array of feature IDs)
+    # These are the features whose requirements triggered the decision
+    triggering_feature_ids = Column(JSON, nullable=True)
+
+    # Metadata
+    created_at = Column(DateTime, nullable=False, default=_utc_now)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "id": self.id,
+            "project_name": self.project_name,
+            "requires_agent_planning": self.requires_agent_planning,
+            "justification": self.justification,
+            "required_capabilities": self.required_capabilities or [],
+            "existing_capabilities": self.existing_capabilities or [],
+            "recommended_agent_types": self.recommended_agent_types or [],
+            "project_context_snapshot": self.project_context_snapshot,
+            "triggering_feature_ids": self.triggering_feature_ids or [],
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+# =============================================================================
 # Helper Functions
 # =============================================================================
 
@@ -727,6 +807,14 @@ def create_tool_policy(
     """
     Create a versioned tool policy dictionary.
 
+    Automatically expands short tool names to include their MCP-prefixed
+    equivalents so that tool policy enforcement works regardless of whether
+    the executor reports tools with or without the MCP prefix.
+
+    Prefix mapping:
+        feature_*  → mcp__features__feature_*
+        browser_*  → mcp__playwright__browser_*
+
     Args:
         allowed_tools: List of MCP tool names the agent can use
         forbidden_patterns: Regex patterns to block in tool arguments
@@ -736,12 +824,53 @@ def create_tool_policy(
     Returns:
         Tool policy dictionary ready for storage
     """
+    expanded = _expand_mcp_tool_names(allowed_tools)
     return {
         "policy_version": policy_version,
-        "allowed_tools": allowed_tools,
+        "allowed_tools": expanded,
         "forbidden_patterns": forbidden_patterns or [],
         "tool_hints": tool_hints or {},
     }
+
+
+# MCP prefix mapping: short prefix → full MCP prefix
+_MCP_PREFIX_MAP: dict[str, str] = {
+    "feature_": "mcp__features__",
+    "browser_": "mcp__playwright__",
+}
+
+
+def _expand_mcp_tool_names(tools: list[str]) -> list[str]:
+    """
+    Expand tool names to include MCP-prefixed equivalents.
+
+    For each tool matching a known short prefix (e.g. ``feature_get_by_id``),
+    adds the corresponding MCP-prefixed version (``mcp__features__feature_get_by_id``).
+    Also works in reverse: an MCP-prefixed name adds the short version.
+
+    This ensures tool policy enforcement matches regardless of how the
+    executor reports tool names.
+    """
+    seen: set[str] = set(tools)
+    expanded: list[str] = list(tools)
+
+    for tool in tools:
+        for short_prefix, mcp_prefix in _MCP_PREFIX_MAP.items():
+            full_prefix = mcp_prefix + short_prefix
+            if tool.startswith(short_prefix) and not tool.startswith(mcp_prefix):
+                # Short name → add MCP-prefixed version
+                prefixed = f"{mcp_prefix}{tool}"
+                if prefixed not in seen:
+                    expanded.append(prefixed)
+                    seen.add(prefixed)
+            elif tool.startswith(full_prefix):
+                # MCP-prefixed name → add short version
+                unprefixed = tool[len(mcp_prefix):]
+                if unprefixed not in seen:
+                    expanded.append(unprefixed)
+                    seen.add(unprefixed)
+
+    return expanded
 
 
 def create_validator(

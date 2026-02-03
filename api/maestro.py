@@ -1109,6 +1109,1139 @@ class Maestro:
 
         return "\n".join(lines)
 
+    # -------------------------------------------------------------------------
+    # Feature #175: OctoRequestPayload Construction
+    # -------------------------------------------------------------------------
+
+    def construct_octo_payload(
+        self,
+        decision: AgentPlanningDecision,
+        context: ProjectContext,
+        session: Optional[Session] = None,
+    ) -> "OctoPayloadConstructionResult":
+        """
+        Construct a structured OctoRequestPayload from planning decision and context.
+
+        Feature #175: Maestro produces structured Octo request payload
+
+        This method gathers all context Octo needs to generate AgentSpecs:
+        1. Gathers project discovery artifacts (app spec, README)
+        2. Detects tech stack from project files
+        3. Identifies execution environment (web, desktop, backend)
+        4. Fetches feature backlog from database
+        5. Constructs and validates OctoRequestPayload
+
+        Args:
+            decision: AgentPlanningDecision from evaluate()
+            context: ProjectContext with project information
+            session: Optional SQLAlchemy session for database queries
+
+        Returns:
+            OctoPayloadConstructionResult with payload or error info
+        """
+        from api.octo import OctoRequestPayload
+
+        warnings: list[str] = []
+
+        _logger.info(
+            "Constructing OctoRequestPayload for project: %s",
+            context.project_name,
+        )
+
+        try:
+            # Step 1: Gather project discovery artifacts
+            _logger.debug("Step 1: Gathering project discovery artifacts")
+            discovery = self._gather_discovery_artifacts(context.project_dir)
+
+            # Step 2: Detect tech stack from project files
+            _logger.debug("Step 2: Detecting tech stack")
+            tech_stack = self._detect_tech_stack_from_files(context.project_dir)
+            # Merge with context tech_stack
+            for tech in context.tech_stack:
+                if tech not in tech_stack:
+                    tech_stack.append(tech)
+
+            # Step 3: Identify execution environment
+            _logger.debug("Step 3: Identifying execution environment")
+            execution_env = self._identify_execution_environment(
+                tech_stack, context.project_dir
+            )
+
+            # Step 4: Fetch feature backlog if session provided
+            feature_backlog: list[dict[str, Any]] = []
+            total_features = 0
+            passing_features = 0
+            if session:
+                _logger.debug("Step 4: Fetching feature backlog")
+                feature_backlog, total_features, passing_features = (
+                    self._fetch_feature_backlog(session, limit=20)
+                )
+            else:
+                warnings.append("No database session - skipping feature backlog")
+
+            # Step 5: Build project context for Octo
+            project_context = {
+                "name": context.project_name,
+                "path": str(context.project_dir) if context.project_dir else None,
+                "tech_stack": tech_stack,
+                "execution_environment": execution_env,
+                "app_spec_content": discovery.get("app_spec_content"),
+                "app_spec_summary": discovery.get("app_spec_summary"),
+                "readme_content": discovery.get("readme_content"),
+                "directory_structure": discovery.get("directory_structure", []),
+                "config_files": context.config_files,
+                "feature_backlog": feature_backlog,
+                "total_features": total_features,
+                "passing_features": passing_features,
+            }
+
+            # Step 6: Build required capabilities from decision
+            required_caps = [req.capability for req in decision.required_capabilities]
+
+            # Step 7: Build constraints
+            constraints = {
+                "max_agents": len(required_caps),
+                "existing_agent_count": len(decision.existing_capabilities),
+            }
+
+            # Step 8: Construct OctoRequestPayload
+            payload = OctoRequestPayload(
+                project_context=project_context,
+                required_capabilities=required_caps,
+                existing_agents=decision.existing_capabilities,
+                constraints=constraints,
+            )
+
+            # Step 9: Validate payload
+            validation_errors = payload.validate()
+            if validation_errors:
+                _logger.warning(
+                    "Payload validation failed: %s", validation_errors
+                )
+                return OctoPayloadConstructionResult(
+                    success=False,
+                    error="Payload validation failed",
+                    validation_errors=validation_errors,
+                    warnings=warnings,
+                )
+
+            _logger.info(
+                "OctoRequestPayload constructed: %d capabilities, env=%s",
+                len(required_caps),
+                execution_env,
+            )
+
+            return OctoPayloadConstructionResult(
+                success=True,
+                payload=payload,
+                warnings=warnings,
+            )
+
+        except Exception as e:
+            _logger.exception("Failed to construct OctoRequestPayload")
+            return OctoPayloadConstructionResult(
+                success=False,
+                error=f"Failed to construct payload: {e}",
+                warnings=warnings,
+            )
+
+    def _gather_discovery_artifacts(
+        self,
+        project_dir: Optional[Path],
+    ) -> dict[str, Any]:
+        """
+        Gather project discovery artifacts from the project directory.
+
+        Collects:
+        - app_spec.txt content and summary
+        - README content
+        - Top-level directory structure
+
+        Args:
+            project_dir: Path to project root
+
+        Returns:
+            Dictionary with discovery artifacts
+        """
+        artifacts: dict[str, Any] = {
+            "app_spec_content": None,
+            "app_spec_summary": None,
+            "readme_content": None,
+            "directory_structure": [],
+        }
+
+        if not project_dir or not Path(project_dir).exists():
+            return artifacts
+
+        project_path = Path(project_dir)
+
+        # Load app_spec.txt
+        spec_paths = ["app_spec.txt", "app_spec.md", "spec.txt", "SPEC.md"]
+        for spec_name in spec_paths:
+            spec_path = project_path / spec_name
+            if spec_path.exists():
+                try:
+                    content = spec_path.read_text(encoding="utf-8")
+                    artifacts["app_spec_content"] = content
+                    # Summary is first 500 chars
+                    artifacts["app_spec_summary"] = (
+                        content[:500] if len(content) > 500 else content
+                    )
+                    break
+                except Exception as e:
+                    _logger.warning("Failed to read %s: %s", spec_name, e)
+
+        # Load README
+        readme_paths = ["README.md", "readme.md", "README", "README.txt"]
+        for readme_name in readme_paths:
+            readme_path = project_path / readme_name
+            if readme_path.exists():
+                try:
+                    content = readme_path.read_text(encoding="utf-8")
+                    # Limit to 2000 chars
+                    artifacts["readme_content"] = (
+                        content[:2000] if len(content) > 2000 else content
+                    )
+                    break
+                except Exception as e:
+                    _logger.warning("Failed to read %s: %s", readme_name, e)
+
+        # Get directory structure
+        try:
+            entries = []
+            for item in sorted(project_path.iterdir()):
+                if item.name.startswith('.'):
+                    continue  # Skip hidden files
+                if item.is_dir():
+                    entries.append(f"{item.name}/")
+                else:
+                    entries.append(item.name)
+            artifacts["directory_structure"] = entries[:50]  # Limit to 50 entries
+        except Exception as e:
+            _logger.warning("Failed to list directory: %s", e)
+
+        return artifacts
+
+    def _detect_tech_stack_from_files(
+        self,
+        project_dir: Optional[Path],
+    ) -> list[str]:
+        """
+        Detect technology stack from project configuration files.
+
+        Examines:
+        - package.json (Node.js/JavaScript)
+        - requirements.txt, pyproject.toml (Python)
+        - go.mod (Go)
+        - Cargo.toml (Rust)
+        - Gemfile (Ruby)
+
+        Args:
+            project_dir: Path to project root
+
+        Returns:
+            List of detected technologies
+        """
+        tech_stack: list[str] = []
+
+        if not project_dir or not Path(project_dir).exists():
+            return tech_stack
+
+        project_path = Path(project_dir)
+
+        # Check for package.json (Node.js)
+        package_json = project_path / "package.json"
+        if package_json.exists():
+            try:
+                data = json.loads(package_json.read_text())
+                tech_stack.append("Node.js")
+
+                deps = {**data.get("dependencies", {}), **data.get("devDependencies", {})}
+
+                # Detect frameworks
+                if "react" in deps:
+                    tech_stack.append("React")
+                if "vue" in deps:
+                    tech_stack.append("Vue")
+                if "angular" in deps or "@angular/core" in deps:
+                    tech_stack.append("Angular")
+                if "express" in deps:
+                    tech_stack.append("Express")
+                if "next" in deps:
+                    tech_stack.append("Next.js")
+                if "typescript" in deps:
+                    tech_stack.append("TypeScript")
+
+                # Detect testing
+                if "jest" in deps:
+                    tech_stack.append("Jest")
+                if "playwright" in deps or "@playwright/test" in deps:
+                    tech_stack.append("Playwright")
+                if "vitest" in deps:
+                    tech_stack.append("Vitest")
+
+            except Exception as e:
+                _logger.warning("Failed to parse package.json: %s", e)
+
+        # Check for Python files
+        requirements_txt = project_path / "requirements.txt"
+        pyproject_toml = project_path / "pyproject.toml"
+
+        if requirements_txt.exists() or pyproject_toml.exists():
+            tech_stack.append("Python")
+
+            # Read requirements for framework detection
+            reqs_content = ""
+            if requirements_txt.exists():
+                try:
+                    reqs_content = requirements_txt.read_text().lower()
+                except Exception:
+                    pass
+
+            if "fastapi" in reqs_content:
+                tech_stack.append("FastAPI")
+            if "django" in reqs_content:
+                tech_stack.append("Django")
+            if "flask" in reqs_content:
+                tech_stack.append("Flask")
+            if "sqlalchemy" in reqs_content:
+                tech_stack.append("SQLAlchemy")
+            if "pytest" in reqs_content:
+                tech_stack.append("pytest")
+            if "dspy" in reqs_content:
+                tech_stack.append("DSPy")
+
+        # Check for Go
+        if (project_path / "go.mod").exists():
+            tech_stack.append("Go")
+
+        # Check for Rust
+        if (project_path / "Cargo.toml").exists():
+            tech_stack.append("Rust")
+
+        # Check for Ruby
+        if (project_path / "Gemfile").exists():
+            tech_stack.append("Ruby")
+
+        # Check for databases
+        for db_file in project_path.glob("*.db"):
+            if "SQLite" not in tech_stack:
+                tech_stack.append("SQLite")
+            break
+
+        return tech_stack
+
+    def _identify_execution_environment(
+        self,
+        tech_stack: list[str],
+        project_dir: Optional[Path],
+    ) -> str:
+        """
+        Identify execution environment from tech stack and project structure.
+
+        Args:
+            tech_stack: Detected technology stack
+            project_dir: Path to project root
+
+        Returns:
+            Execution environment: "web", "desktop", "backend", "mobile", "cli", "unknown"
+        """
+        tech_lower = set(t.lower() for t in tech_stack)
+
+        # Web indicators
+        web_frameworks = {"react", "vue", "angular", "next.js", "fastapi", "express", "django", "flask"}
+        if tech_lower & web_frameworks:
+            return "web"
+
+        # CLI indicators
+        if project_dir:
+            project_path = Path(project_dir)
+            cli_files = ["cli.py", "cli.ts", "__main__.py", "main.go"]
+            for cli_file in cli_files:
+                if (project_path / cli_file).exists():
+                    return "cli"
+
+        # Mobile indicators
+        mobile_indicators = {"react native", "flutter", "ionic"}
+        if tech_lower & mobile_indicators:
+            return "mobile"
+
+        # Desktop indicators
+        desktop_indicators = {"electron", "tauri"}
+        if tech_lower & desktop_indicators:
+            return "desktop"
+
+        # Backend default if server files exist
+        if project_dir:
+            project_path = Path(project_dir)
+            backend_files = ["server.py", "app.py", "main.py", "server.ts", "app.ts"]
+            for backend_file in backend_files:
+                if (project_path / backend_file).exists():
+                    return "backend"
+
+        return "unknown"
+
+    def _fetch_feature_backlog(
+        self,
+        session: Session,
+        limit: int = 20,
+    ) -> tuple[list[dict[str, Any]], int, int]:
+        """
+        Fetch feature backlog from database.
+
+        Args:
+            session: SQLAlchemy session
+            limit: Maximum features to return
+
+        Returns:
+            Tuple of (feature_list, total_count, passing_count)
+        """
+        from api.database import Feature
+        from sqlalchemy import func, case
+
+        try:
+            # Get counts
+            counts = session.query(
+                func.count(Feature.id).label('total'),
+                func.sum(case((Feature.passes == True, 1), else_=0)).label('passing')
+            ).first()
+
+            total = counts.total or 0
+            passing = int(counts.passing or 0)
+
+            # Get features ordered by priority
+            features = session.query(Feature).order_by(Feature.priority).limit(limit).all()
+
+            feature_list = []
+            for f in features:
+                status = "passing" if f.passes else ("in_progress" if f.in_progress else "pending")
+                feature_list.append({
+                    "id": f.id,
+                    "name": f.name,
+                    "category": f.category,
+                    "status": status,
+                    "dependencies": f.dependencies or [],
+                })
+
+            return feature_list, total, passing
+
+        except Exception as e:
+            _logger.warning("Failed to fetch feature backlog: %s", e)
+            return [], 0, 0
+
+    # -------------------------------------------------------------------------
+    # Feature #176: Octo Delegation
+    # -------------------------------------------------------------------------
+
+    def delegate_to_octo(
+        self,
+        decision: AgentPlanningDecision,
+        session: Session,
+        project_dir: Path | str | None = None,
+        *,
+        run_id: str | None = None,
+        context: Optional[ProjectContext] = None,
+    ) -> "OctoDelegationResult":
+        """
+        Delegate to Octo service for AgentSpec generation.
+
+        Feature #175: Maestro produces structured Octo request payload
+        Feature #176: Maestro delegates to Octo for agent generation
+
+        This method:
+        1. Builds OctoRequestPayload from the planning decision using construct_octo_payload
+        2. Calls Octo service with the payload
+        3. Awaits Octo's response containing AgentSpecs
+        4. Validates returned AgentSpecs against schema
+        5. Records agent_planned audit event for each valid spec
+
+        Args:
+            decision: AgentPlanningDecision from evaluate()
+            session: SQLAlchemy database session
+            project_dir: Project directory for context
+            run_id: Optional run_id for recording audit events
+            context: Optional ProjectContext for full payload construction (Feature #175)
+
+        Returns:
+            OctoDelegationResult with generated specs and event IDs
+        """
+        # Lazy import to avoid circular dependency
+        from api.octo import Octo, OctoRequestPayload, OctoResponse, get_octo
+
+        _logger.info(
+            "Delegating to Octo: %d capabilities requested",
+            len(decision.required_capabilities),
+        )
+
+        # Feature #175: Use construct_octo_payload when context is provided
+        if context is not None:
+            _logger.info("Using construct_octo_payload with ProjectContext (Feature #175)")
+            payload_result = self.construct_octo_payload(decision, context, session)
+
+            if not payload_result.success:
+                _logger.warning(
+                    "Payload construction failed: %s",
+                    payload_result.error,
+                )
+                return OctoDelegationResult(
+                    success=False,
+                    error=payload_result.error or "Payload construction failed",
+                    warnings=payload_result.warnings + payload_result.validation_errors,
+                )
+
+            payload = payload_result.payload
+        else:
+            # Fallback: Build minimal OctoRequestPayload from decision (legacy behavior)
+            _logger.debug("Using minimal payload construction (no ProjectContext)")
+            required_caps = [req.capability for req in decision.required_capabilities]
+
+            project_context = {
+                "name": "unknown",
+                "tech_stack": [],
+                "execution_environment": "local",
+            }
+
+            # Enhance context if project_dir is provided
+            if project_dir:
+                project_path = Path(project_dir)
+                project_context["name"] = project_path.name
+                project_context["path"] = str(project_path)
+
+                # Detect tech stack from files
+                tech_stack = self._detect_tech_stack_from_files(project_path)
+                project_context["tech_stack"] = tech_stack
+
+                # Identify execution environment
+                execution_env = self._identify_execution_environment(tech_stack, project_path)
+                project_context["execution_environment"] = execution_env
+
+                # Gather discovery artifacts
+                discovery = self._gather_discovery_artifacts(project_path)
+                project_context.update({
+                    "app_spec_content": discovery.get("app_spec_content"),
+                    "app_spec_summary": discovery.get("app_spec_summary"),
+                    "readme_content": discovery.get("readme_content"),
+                    "directory_structure": discovery.get("directory_structure", []),
+                })
+
+            payload = OctoRequestPayload(
+                project_context=project_context,
+                required_capabilities=required_caps,
+                existing_agents=decision.existing_capabilities,
+                constraints={},
+            )
+
+        # Step 1: Call Octo service
+        try:
+            octo = get_octo()
+            response: OctoResponse = octo.generate_specs(payload)
+        except Exception as e:
+            _logger.exception("Octo invocation failed")
+            return OctoDelegationResult(
+                success=False,
+                error=f"Octo invocation failed: {e}",
+            )
+
+        if not response.success:
+            _logger.warning("Octo returned error: %s", response.error)
+            return OctoDelegationResult(
+                success=False,
+                error=response.error,
+                warnings=response.warnings,
+            )
+
+        # Step 2: Validate each returned AgentSpec
+        valid_specs: list[AgentSpec] = []
+        validation_results: list[SpecValidationResult] = []
+        warnings: list[str] = list(response.warnings)
+
+        for spec in response.agent_specs:
+            result = validate_spec(spec)
+            validation_results.append(result)
+
+            if result.is_valid:
+                valid_specs.append(spec)
+            else:
+                warnings.append(
+                    f"Spec '{spec.name}' failed validation: {result.errors}"
+                )
+
+        # Step 3: Record agent_planned events for each valid spec
+        event_ids: list[int] = []
+        if run_id and session:
+            event_recorder = get_event_recorder(session, project_dir)
+            for spec in valid_specs:
+                event_id = self._record_agent_planned_event(
+                    event_recorder, run_id, spec
+                )
+                if event_id:
+                    event_ids.append(event_id)
+
+        _logger.info(
+            "Delegation complete: %d/%d specs valid, %d events recorded",
+            len(valid_specs),
+            len(response.agent_specs),
+            len(event_ids),
+        )
+
+        return OctoDelegationResult(
+            success=len(valid_specs) > 0,
+            agent_specs=valid_specs,
+            validation_results=validation_results,
+            event_ids=event_ids,
+            warnings=warnings,
+            error=None if valid_specs else "No valid specs generated",
+        )
+
+    def _record_agent_planned_event(
+        self,
+        event_recorder: EventRecorder,
+        run_id: str,
+        spec: AgentSpec,
+    ) -> int | None:
+        """
+        Record an agent_planned audit event.
+
+        Feature #176: Maestro records agent_planned audit event for each spec
+        Feature #221: agent_planned audit event type
+
+        Args:
+            event_recorder: EventRecorder instance
+            run_id: Run ID to associate event with
+            spec: AgentSpec that was planned
+
+        Returns:
+            Event ID if recorded, None if failed
+        """
+        try:
+            payload = {
+                "agent_name": spec.name,
+                "display_name": spec.display_name,
+                "task_type": spec.task_type,
+                "capabilities": spec.tags or [],
+                "rationale": f"Generated by Octo for {spec.task_type} tasks",
+            }
+
+            event_id = event_recorder.record(
+                run_id,
+                "agent_planned",
+                payload=payload,
+            )
+
+            _logger.debug(
+                "Recorded agent_planned event: run=%s, spec=%s, event=%d",
+                run_id,
+                spec.name,
+                event_id,
+            )
+
+            return event_id
+
+        except Exception as e:
+            _logger.exception("Failed to record agent_planned event")
+            return None
+
+    def record_agent_planned(
+        self,
+        session: Session,
+        run_id: str,
+        spec: AgentSpec,
+        project_dir: Path | str | None = None,
+        *,
+        rationale: str | None = None,
+        capabilities: list[str] | None = None,
+    ) -> int | None:
+        """
+        Public method to record agent_planned event with custom rationale.
+
+        Feature #176: Maestro records agent_planned audit event for each spec
+
+        Args:
+            session: SQLAlchemy database session
+            run_id: Run ID to associate event with
+            spec: AgentSpec that was planned
+            project_dir: Project directory for event recorder
+            rationale: Optional custom rationale
+            capabilities: Optional capability list
+
+        Returns:
+            Event ID if recorded, None if failed
+        """
+        try:
+            event_recorder = get_event_recorder(session, project_dir)
+
+            payload = {
+                "agent_name": spec.name,
+                "display_name": spec.display_name,
+                "task_type": spec.task_type,
+                "capabilities": capabilities or spec.tags or [],
+                "rationale": rationale or f"Agent planned for {spec.task_type}",
+            }
+
+            event_id = event_recorder.record(
+                run_id,
+                "agent_planned",
+                payload=payload,
+            )
+
+            return event_id
+
+        except Exception as e:
+            _logger.exception("Failed to record agent_planned event")
+            return None
+
+    # -------------------------------------------------------------------------
+    # Feature #177: Materialization Orchestration
+    # -------------------------------------------------------------------------
+
+    def receive_specs_from_octo(
+        self,
+        specs: list[AgentSpec],
+        *,
+        validate: bool = True,
+    ) -> list[AgentSpec]:
+        """
+        Receive and optionally validate AgentSpecs from Octo.
+
+        Step 1 of Feature #177: Maestro receives validated AgentSpecs from Octo
+
+        Args:
+            specs: List of AgentSpecs received from Octo
+            validate: Whether to validate specs against schema
+
+        Returns:
+            List of validated AgentSpecs
+        """
+        if not specs:
+            _logger.warning("Received empty AgentSpec list from Octo")
+            return []
+
+        _logger.info("Received %d AgentSpecs from Octo", len(specs))
+
+        if validate:
+            validated = []
+            for spec in specs:
+                if self._validate_spec_for_materialization(spec):
+                    validated.append(spec)
+                else:
+                    _logger.warning(
+                        "AgentSpec '%s' (id=%s) failed validation, skipping",
+                        getattr(spec, 'name', 'unknown'),
+                        getattr(spec, 'id', 'unknown'),
+                    )
+            return validated
+
+        return specs
+
+    def _validate_spec_for_materialization(self, spec: AgentSpec) -> bool:
+        """
+        Validate a single AgentSpec for materialization.
+
+        Checks:
+        - Required fields are present (id, name, task_type)
+        - Name is valid (alphanumeric with hyphens/underscores)
+
+        Args:
+            spec: AgentSpec to validate
+
+        Returns:
+            True if valid, False otherwise
+        """
+        # Check required fields
+        if not getattr(spec, 'id', None):
+            _logger.error("AgentSpec missing id")
+            return False
+
+        if not getattr(spec, 'name', None):
+            _logger.error("AgentSpec %s missing name", spec.id)
+            return False
+
+        if not getattr(spec, 'task_type', None):
+            _logger.error("AgentSpec %s missing task_type", spec.id)
+            return False
+
+        # Validate name format (alphanumeric, hyphens, underscores)
+        if not re.match(r'^[a-zA-Z0-9_-]+$', spec.name):
+            _logger.error(
+                "AgentSpec %s has invalid name format: %s",
+                spec.id, spec.name,
+            )
+            return False
+
+        return True
+
+    def invoke_materializer(
+        self,
+        specs: list[AgentSpec],
+    ) -> list[MaterializationResult]:
+        """
+        Invoke the AgentMaterializer to create agent files.
+
+        Step 2 of Feature #177: Maestro invokes Agent Materializer with AgentSpecs
+
+        Args:
+            specs: List of AgentSpecs to materialize
+
+        Returns:
+            List of MaterializationResults
+
+        Raises:
+            RuntimeError: If no materializer is configured
+        """
+        if not self.materializer:
+            raise RuntimeError(
+                "No materializer configured. Initialize Maestro with project_dir "
+                "or materializer parameter to enable materialization."
+            )
+
+        _logger.info(
+            "Invoking AgentMaterializer for %d specs at %s",
+            len(specs), self.materializer.output_path,
+        )
+
+        results = []
+        for spec in specs:
+            result = self.materializer.materialize(spec)
+            results.append(result)
+
+        succeeded = sum(1 for r in results if r.success)
+        _logger.info(
+            "Materialization complete: %d/%d succeeded",
+            succeeded, len(specs),
+        )
+
+        return results
+
+    async def await_materialization(
+        self,
+        specs: list[AgentSpec],
+    ) -> list[MaterializationResult]:
+        """
+        Async version: await materialization completion.
+
+        Step 3 of Feature #177: Maestro awaits materialization completion
+
+        Args:
+            specs: List of AgentSpecs to materialize
+
+        Returns:
+            List of MaterializationResults
+        """
+        # For now, materialization is synchronous, but this provides
+        # the async interface for future async file I/O
+        return self.invoke_materializer(specs)
+
+    def verify_agent_files(
+        self,
+        specs: list[AgentSpec],
+    ) -> dict[str, bool]:
+        """
+        Verify agent files exist in .claude/agents/generated/.
+
+        Step 4 of Feature #177: Maestro verifies agent files exist
+
+        Args:
+            specs: List of AgentSpecs to verify
+
+        Returns:
+            Dictionary mapping spec_id to existence status
+
+        Raises:
+            RuntimeError: If no materializer is configured
+        """
+        if not self.materializer:
+            raise RuntimeError(
+                "No materializer configured. Initialize Maestro with project_dir "
+                "or materializer parameter to enable materialization."
+            )
+
+        _logger.info(
+            "Verifying agent files in %s",
+            self.materializer.output_path,
+        )
+
+        verification = self.materializer.verify_all(specs)
+
+        verified_count = sum(1 for v in verification.values() if v)
+        _logger.info(
+            "Verification complete: %d/%d files exist",
+            verified_count, len(specs),
+        )
+
+        return verification
+
+    def orchestrate_materialization(
+        self,
+        specs: list[AgentSpec],
+        *,
+        validate: bool = True,
+    ) -> OrchestrationResult:
+        """
+        Full orchestration flow: receive -> materialize -> verify.
+
+        This is the main entry point for Feature #177, implementing the
+        complete flow after Octo completes spec generation.
+
+        Args:
+            specs: List of AgentSpecs from Octo
+            validate: Whether to validate specs before processing
+
+        Returns:
+            OrchestrationResult with complete status
+        """
+        _logger.info("Starting materialization orchestration for %d specs", len(specs))
+        audit_events: list[str] = []
+
+        # Step 1: Receive and validate specs from Octo
+        validated_specs = self.receive_specs_from_octo(specs, validate=validate)
+
+        if not validated_specs:
+            _logger.warning("No valid specs to materialize")
+            return OrchestrationResult(
+                total=len(specs),
+                succeeded=0,
+                failed=len(specs),
+                verified=False,
+            )
+
+        # Step 2 & 3: Invoke materializer
+        results = self.invoke_materializer(validated_specs)
+
+        # Step 4: Verify files exist
+        verification = self.verify_agent_files(validated_specs)
+
+        # Calculate stats
+        succeeded = sum(1 for r in results if r.success)
+        failed = len(results) - succeeded
+        all_verified = all(verification.values()) if verification else False
+
+        orchestration_result = OrchestrationResult(
+            total=len(validated_specs),
+            succeeded=succeeded,
+            failed=failed,
+            results=results,
+            verified=all_verified,
+            audit_events=audit_events,
+        )
+
+        _logger.info(
+            "Materialization orchestration complete: %d/%d succeeded, verified=%s",
+            succeeded, len(validated_specs), all_verified,
+        )
+
+        return orchestration_result
+
+    # -------------------------------------------------------------------------
+    # Feature #179: Decision Persistence
+    # -------------------------------------------------------------------------
+
+    def persist_decision(
+        self,
+        decision: AgentPlanningDecision,
+        project_name: str,
+        session: Session,
+        *,
+        project_context: ProjectContext | None = None,
+        triggering_feature_ids: list[int] | None = None,
+    ) -> "PersistDecisionResult":
+        """
+        Persist an agent-planning decision to the database.
+
+        Feature #179: Maestro persists agent-planning decisions to database
+
+        This method:
+        1. Creates an AgentPlanningDecisionRecord from the decision
+        2. Stores decision rationale, required capabilities, and timestamp
+        3. Links decision to project and triggering feature(s)
+        4. Commits to database for auditability
+
+        Args:
+            decision: AgentPlanningDecision to persist
+            project_name: Name of the project this decision is for
+            session: SQLAlchemy database session
+            project_context: Optional ProjectContext for snapshot storage
+            triggering_feature_ids: Optional list of feature IDs that triggered this decision
+
+        Returns:
+            PersistDecisionResult with the created record ID and success status
+        """
+        from api.agentspec_models import AgentPlanningDecisionRecord
+
+        _logger.info(
+            "Persisting agent-planning decision for project '%s' (requires_planning=%s)",
+            project_name, decision.requires_agent_planning,
+        )
+
+        try:
+            # Build the record from the decision
+            record = AgentPlanningDecisionRecord(
+                id=generate_uuid(),
+                project_name=project_name,
+                requires_agent_planning=decision.requires_agent_planning,
+                justification=decision.justification,
+                required_capabilities=[
+                    req.to_dict() for req in decision.required_capabilities
+                ],
+                existing_capabilities=decision.existing_capabilities,
+                recommended_agent_types=decision.recommended_agent_types,
+                project_context_snapshot=(
+                    project_context.to_dict() if project_context else None
+                ),
+                triggering_feature_ids=triggering_feature_ids,
+            )
+
+            session.add(record)
+            session.commit()
+
+            _logger.info(
+                "Successfully persisted decision id=%s for project '%s'",
+                record.id, project_name,
+            )
+
+            return PersistDecisionResult(
+                success=True,
+                decision_id=record.id,
+                record=record,
+            )
+
+        except Exception as e:
+            session.rollback()
+            _logger.exception(
+                "Failed to persist decision for project '%s': %s",
+                project_name, e,
+            )
+            return PersistDecisionResult(
+                success=False,
+                error=str(e),
+            )
+
+    def evaluate_and_persist(
+        self,
+        context: ProjectContext,
+        session: Session,
+        *,
+        triggering_feature_ids: list[int] | None = None,
+    ) -> tuple[AgentPlanningDecision, "PersistDecisionResult"]:
+        """
+        Convenience method to evaluate and persist in one call.
+
+        Feature #179: Combined evaluate + persist workflow
+
+        Args:
+            context: ProjectContext to evaluate
+            session: SQLAlchemy database session
+            triggering_feature_ids: Optional list of feature IDs
+
+        Returns:
+            Tuple of (decision, persist_result)
+        """
+        decision = self.evaluate(context)
+        persist_result = self.persist_decision(
+            decision=decision,
+            project_name=context.project_name,
+            session=session,
+            project_context=context,
+            triggering_feature_ids=triggering_feature_ids,
+        )
+        return decision, persist_result
+
+
+# =============================================================================
+# Feature #179: Persist Decision Result
+# =============================================================================
+
+@dataclass
+class PersistDecisionResult:
+    """
+    Result of persisting an agent-planning decision.
+
+    Feature #179: Maestro persists agent-planning decisions to database
+    """
+    success: bool
+    decision_id: str | None = None
+    record: Any | None = None  # AgentPlanningDecisionRecord
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for serialization."""
+        return {
+            "success": self.success,
+            "decision_id": self.decision_id,
+            "record": self.record.to_dict() if self.record else None,
+            "error": self.error,
+        }
+
+
+# =============================================================================
+# Feature #175: Octo Payload Construction Result
+# =============================================================================
+
+@dataclass
+class OctoPayloadConstructionResult:
+    """
+    Result of constructing an OctoRequestPayload.
+
+    Feature #175: Maestro produces structured Octo request payload
+
+    Attributes:
+        success: Whether payload construction succeeded
+        payload: The constructed OctoRequestPayload (if successful)
+        error: Error message (if failed)
+        validation_errors: List of validation errors
+        warnings: List of warnings (non-fatal issues)
+    """
+    success: bool
+    payload: Any = None  # OctoRequestPayload, using Any to avoid circular import
+    error: str | None = None
+    validation_errors: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for serialization."""
+        return {
+            "success": self.success,
+            "payload": self.payload.to_dict() if self.payload else None,
+            "error": self.error,
+            "validation_errors": self.validation_errors,
+            "warnings": self.warnings,
+        }
+
+
+# =============================================================================
+# Feature #176: Octo Delegation Result
+# =============================================================================
+
+@dataclass
+class OctoDelegationResult:
+    """
+    Result of delegating to Octo for AgentSpec generation.
+
+    Captures the outcome including generated specs, validation results,
+    and audit event IDs.
+
+    Feature #176: Maestro delegates to Octo for agent generation
+    """
+    success: bool
+    agent_specs: list[AgentSpec] = field(default_factory=list)
+    validation_results: list[SpecValidationResult] = field(default_factory=list)
+    event_ids: list[int] = field(default_factory=list)
+    error: str | None = None
+    warnings: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for serialization."""
+        return {
+            "success": self.success,
+            "agent_specs": [spec.to_dict() for spec in self.agent_specs],
+            "validation_results": [
+                r.to_dict() if hasattr(r, 'to_dict') else {"is_valid": r.is_valid, "errors": r.errors}
+                for r in self.validation_results
+            ],
+            "event_ids": self.event_ids,
+            "error": self.error,
+            "warnings": self.warnings,
+        }
+
 
 # =============================================================================
 # Module-Level Convenience Functions
