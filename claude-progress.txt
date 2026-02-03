@@ -14317,3 +14317,177 @@ Feature #181 has been marked as passing after successful:
 - Total passing features: 194/227 (85.5%)
 
 **Session completed successfully.**
+
+---
+
+## Session: 2026-02-03 - Feature #199
+
+### Feature #199: .claude directory scaffolding creates standard structure - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Dependencies:** None
+
+**Description:** Scaffolding ensures the standard .claude directory structure exists in project repos.
+
+**Changes Made:**
+
+1. `api/scaffolding.py`: New module implementing directory scaffolding (615 lines)
+   - **Constants:**
+     - CLAUDE_ROOT_DIR = ".claude"
+     - STANDARD_SUBDIRS = ("agents/generated", "agents/manual", "skills", "commands")
+     - DEFAULT_DIR_PERMISSIONS = 0o755
+     - PHASE_1_DIRS, PHASE_2_DIRS for phase separation
+   - **Data Classes:**
+     - DirectoryStatus: Status of a single directory (path, existed, created, error, phase)
+     - ScaffoldResult: Full result of scaffolding operation
+     - ScaffoldPreview: Dry-run preview of what would be created
+   - **ClaudeDirectoryScaffold Class:**
+     - create_structure(): Creates full .claude directory structure
+     - ensure_root_exists(): Creates only root directory
+     - ensure_agents_generated_exists(): Creates agents/generated path
+     - preview_structure(): Dry-run preview
+     - verify_structure(): Check directory existence
+     - is_scaffolded(): Check if fully scaffolded
+   - **Convenience Functions:**
+     - scaffold_claude_directory(): Main scaffolding function
+     - preview_claude_directory(): Preview mode
+     - ensure_claude_root(): Root-only creation
+     - ensure_agents_generated(): Generated agents path
+     - verify_claude_structure(): Verification
+     - is_claude_scaffolded(): Quick check
+     - get_standard_subdirs(): Get subdirectory list
+
+2. `api/__init__.py`: Added exports for Feature #199
+   - DirectoryStatus, ScaffoldResult, ScaffoldPreview
+   - ClaudeDirectoryScaffold
+   - scaffold_claude_directory, preview_claude_directory, ensure_claude_root
+   - ensure_agents_generated, verify_claude_structure, is_claude_scaffolded
+   - get_standard_subdirs, CLAUDE_ROOT_DIR, STANDARD_SUBDIRS
+   - DEFAULT_DIR_PERMISSIONS, PHASE_1_DIRS, PHASE_2_DIRS
+
+3. `tests/test_feature_199_scaffolding.py`: 72 comprehensive tests
+   - TestStep1CreateClaudeRoot: 5 tests
+   - TestStep2CreateAgentsGenerated: 5 tests
+   - TestStep3CreateAgentsManual: 5 tests
+   - TestStep4CreateSkills: 5 tests (Phase 2)
+   - TestStep5CreateCommands: 5 tests (Phase 2)
+   - TestScaffoldResult: 6 tests
+   - TestDirectoryStatus: 2 tests
+   - TestScaffoldPreview: 4 tests
+   - TestClaudeDirectoryScaffold: 8 tests
+   - TestConvenienceFunctions: 7 tests
+   - TestConstants: 5 tests
+   - TestIdempotency: 3 tests
+   - TestEdgeCases: 4 tests
+   - TestIntegration: 3 tests
+   - TestFeature199VerificationSteps: 5 tests
+
+4. `tests/verify_feature_199.py`: Standalone verification script
+
+**Verification Summary (All 5 Feature Steps Passed):**
+
+1. **Create .claude/ root directory if missing** - PASS
+   - Directory created with mkdir(parents=True, exist_ok=True)
+   - Permissions set to 0755
+   - Existing directories preserved
+
+2. **Create .claude/agents/generated/ subdirectory** - PASS
+   - Directory created for auto-generated agents
+   - Parent agents/ directory also created
+   - Correct permissions (0755)
+
+3. **Create .claude/agents/manual/ subdirectory (empty)** - PASS
+   - Directory created for manually-created agents
+   - Initially empty
+   - Marked as Phase 1
+
+4. **Create .claude/skills/ subdirectory (empty, Phase 2)** - PASS
+   - Directory created for custom skills
+   - Initially empty
+   - Marked as Phase 2
+   - Optional (include_phase2=False excludes it)
+
+5. **Create .claude/commands/ subdirectory (empty, Phase 2)** - PASS
+   - Directory created for custom commands
+   - Initially empty
+   - Marked as Phase 2
+   - Optional (include_phase2=False excludes it)
+
+**Test Results:**
+- tests/test_feature_199_scaffolding.py: 72/72 tests PASS (5.24s)
+- tests/verify_feature_199.py: 5/5 verification steps PASS
+
+**Commit:** bcea535
+
+**Updated Progress:**
+- Feature #199: .claude directory scaffolding creates standard structure - PASSING
+- Total: 195/227 features passing (85.9%)
+
+**Session completed successfully.**
+
+[Testing] 2026-02-04T00:00:11+11:00 - Feature #89 regression test PASSED
+  - Feature: Core validate_dependency_graph function detects missing dependency targets
+  - Category: error-handling
+  - All 4 verification steps verified:
+    Step 1: Create feature A (id=1) with dependencies=[999] (non-existent) - PASS
+    Step 2: Call validate_dependency_graph() with this feature - PASS
+    Step 3: Verify the result includes missing_targets dict with {1: [999]} - PASS
+    Step 4: Verify the function returns structured ValidationResult with all issue types - PASS
+  - Verification script: tests/verify_feature_89.py - 4/4 PASS
+  - Unit tests: tests/test_validate_dependency_graph_missing_targets.py - 21/21 PASS
+  - Related tests: tests/test_validate_dependency_graph.py - 14/14 PASS
+  - API endpoint: /api/projects/{project}/features/dependency-health - Working correctly
+  - Browser automation: Unavailable (Chrome SIGTRAP in container)
+  - No regression found - feature still working correctly
+
+---
+
+## Session: 2026-02-04 - Feature #197
+
+### Feature #197: Agent Materializer handles multiple agents in batch - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Dependencies:** None
+
+**Description:** Materializer can process multiple AgentSpecs in a single invocation for efficiency.
+
+**Changes Made:**
+
+1. `api/agent_materializer.py`: Enhanced batch materialization
+   - Added `ProgressCallback` type alias for progress reporting
+   - Updated `BatchMaterializationResult` with `atomic`, `rolled_back`, `batch_audit_info` fields
+   - Updated `materialize_batch()` to support atomic mode, progress callbacks, and audit events
+   - Added `_materialize_batch_atomic()` for all-or-nothing batch operations with rollback
+
+2. `api/__init__.py`: Exported new type alias `MaterializerProgressCallback`
+
+3. `tests/test_feature_197_batch_materialization.py`: 41 comprehensive tests
+
+4. `tests/verify_feature_197.py`: Verification script for all 5 steps
+
+**Verification Summary (All 5 Feature Steps Passed):**
+
+1. **Materializer accepts list of AgentSpecs** - PASS
+2. **Each spec processed and written individually** - PASS
+3. **Batch operation is atomic: all succeed or none written** - PASS
+4. **Progress reported for each agent** - PASS
+5. **Single audit event or per-agent events recorded** - PASS
+
+**Test Results:**
+- tests/test_feature_197_batch_materialization.py: 41/41 tests PASS
+- tests/verify_feature_197.py: All 5 steps PASS
+
+**Commit:** aeffe48
+
+**Updated Progress:**
+- Feature #197: Agent Materializer handles multiple agents in batch - PASSING
+- Total: 194/227 features passing (85.5%)
+
+**Session completed successfully.**
+
