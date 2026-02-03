@@ -368,12 +368,14 @@ class MaterializationResult:
         success: Whether materialization succeeded
         file_path: Path to the created agent file (if successful)
         error: Error message (if failed)
+        content_hash: SHA256 hash of the generated content (for determinism verification)
     """
     spec_id: str
     spec_name: str
     success: bool
     file_path: Path | None = None
     error: str | None = None
+    content_hash: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
@@ -383,6 +385,7 @@ class MaterializationResult:
             "success": self.success,
             "file_path": str(self.file_path) if self.file_path else None,
             "error": self.error,
+            "content_hash": self.content_hash,
         }
 
 
@@ -500,15 +503,19 @@ class AgentMaterializer:
             filename = f"{spec.name}.md"
             filepath = output_dir / filename
 
-            # Build file content
+            # Build file content (deterministic - no timestamps, sorted keys)
             content = self._build_file_content(spec)
+
+            # Compute content hash for determinism verification (Feature #194)
+            import hashlib
+            content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
 
             # Write the file
             filepath.write_text(content, encoding="utf-8")
 
             _logger.info(
-                "Materialized AgentSpec '%s' to %s",
-                spec.name, filepath,
+                "Materialized AgentSpec '%s' to %s (hash: %s)",
+                spec.name, filepath, content_hash[:16],
             )
 
             return MaterializationResult(
@@ -516,6 +523,7 @@ class AgentMaterializer:
                 spec_name=spec.name,
                 success=True,
                 file_path=filepath,
+                content_hash=content_hash,
             )
 
         except Exception as e:
@@ -561,7 +569,9 @@ class AgentMaterializer:
         if spec.tags:
             lines.append(f"tags: {json.dumps(spec.tags)}")
 
-        lines.append(f"created_at: {datetime.now(timezone.utc).isoformat()}")
+        # NOTE: created_at timestamp is intentionally NOT included to ensure
+        # deterministic output (Feature #194). The same AgentSpec must always
+        # produce byte-identical markdown.
         lines.append("---")
         lines.append("")
 
@@ -642,7 +652,8 @@ class AgentMaterializer:
             lines.append("## Context")
             lines.append("")
             lines.append("```json")
-            lines.append(json.dumps(spec.context, indent=2))
+            # NOTE: sort_keys=True ensures deterministic JSON output (Feature #194)
+            lines.append(json.dumps(spec.context, indent=2, sort_keys=True))
             lines.append("```")
             lines.append("")
 
