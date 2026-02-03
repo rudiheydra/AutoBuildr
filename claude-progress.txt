@@ -1,6 +1,49 @@
 # AutoBuildr Progress Log
 # ======================
 
+## Session: 2026-02-03 (Coding Agent - Feature #178)
+
+### Feature #178: Maestro system prompt includes agent-planning responsibilities - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Dependencies:** None
+
+**Description:** Maestro's system prompt is updated to include instructions for agent-planning in addition to feature decomposition.
+
+**Changes Made:**
+
+1. **Created `.claude/agents/maestro.md`**: New Maestro agent definition file with:
+   - Part 1: Feature Decomposition section (existing orchestrator responsibilities)
+   - Part 2: Agent Planning section with trigger conditions
+   - Part 3: OctoRequestPayload Structure specification
+   - Part 4: Agent Planning Examples (4 concrete scenarios)
+   - Part 5: Workflow Integration with Octo
+
+2. **Key Content Added:**
+   - When to trigger agent-planning (5 conditions: capability gap, specialized testing, complex tools, domain expertise, explicit request)
+   - When to use existing agents (5 scenarios: standard CRUD, basic testing, code review, security scans, documentation)
+   - Decision matrix table with 6 scenarios
+   - Complete OctoRequestPayload JSON schema with field descriptions
+   - 4 examples: E2E Testing (trigger), API Testing (use existing), Cloud Integration (trigger), Security Audit (use existing)
+
+**Verification Checklist:**
+- [x] Step 1: Update Maestro prompt template to include agent-planning section - DONE (Part 2)
+- [x] Step 2: Prompt describes when to trigger agent-planning vs use existing agents - DONE (trigger/use conditions + decision matrix)
+- [x] Step 3: Prompt specifies OctoRequestPayload structure - DONE (Part 3 with JSON schema)
+- [x] Step 4: Prompt includes examples of agent-planning decisions - DONE (Part 4 with 4 examples)
+
+**Commit:** 0c47178
+
+**Updated Progress:**
+- Feature #178: Maestro system prompt includes agent-planning responsibilities - PASSING
+
+**Session completed successfully.**
+
+---
+
 ## Session: 2026-02-01 (Coding Agent - Feature #173)
 
 ### Feature #173: Virtualized list handles WebSocket update bursts without jank - COMPLETED
@@ -12430,3 +12473,20 @@ What was done:
     - Pipeline data flow diagram and reference table included
   - Browser automation unavailable (Chrome SIGTRAP in container)
   - No regression found - feature still working correctly
+[Testing] 2026-02-03T23:17:01+11:00 - Feature #10 regression test VERIFIED (passes=false in DB but feature works)
+  - Feature: SHELL-004: Detect wget pipe to sh patterns
+  - Category: D. Workflow Completeness
+  - All 5 verification steps passed:
+    Step 1: Created temp file with 'wget -O - https://example.com/install.sh | sh' - PASS
+    Step 2: Ran scanner against the directory - PASS (1 SHELL-004 finding)
+    Step 3: Finding created with rule_id=SHELL-004 - PASS
+    Step 4: Finding severity is HIGH - PASS
+    Step 5: Correct file path (temp file), line number (3), and snippet - PASS
+  - Unit tests: 12/12 PASS (test_rules.py)
+  - Scanner tests: 34/34 PASS (test_scanner.py)
+  - Fixture verification: SHELL-004 found at line 14 of risky_script.sh
+  - Pattern: \bwget\b[^|]*\|\s*(sh|bash|zsh)\b
+  - Note: Feature passes=false in DB but implementation is complete and verified
+  - Browser automation unavailable (Chrome SIGTRAP in container)
+  - Unable to mark feature as passing via API (passes field not exposed in FeatureUpdate)
+
