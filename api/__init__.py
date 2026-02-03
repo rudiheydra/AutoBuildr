@@ -166,6 +166,7 @@ from api.validators import (
     FileExistsValidator,
     GateResult,
     LintCleanValidator,
+    TestEnforcementValidator,  # Feature #211
     Validator,
     ValidatorResult,
     VALIDATOR_REGISTRY,
@@ -686,6 +687,125 @@ from api.test_framework import (
     SETTINGS_FRAMEWORK_KEY,
     SETTINGS_TEST_SECTION,
 )
+from api.sandbox_test_runner import (
+    # Feature #214: Test-runner agent can run in sandbox environment
+    # Data classes
+    SandboxConfiguration,
+    DependencyInstallResult,
+    SandboxExecutionResult,
+    # Main class
+    SandboxTestRunner,
+    # Convenience functions
+    run_tests_in_sandbox,
+    is_sandbox_available,
+    get_default_sandbox_config,
+    record_sandbox_tests_executed,
+    # Constants
+    DEFAULT_SANDBOX_IMAGE,
+    DEFAULT_PROJECT_MOUNT,
+    DEFAULT_SANDBOX_TIMEOUT,
+    DEFAULT_INSTALL_TIMEOUT,
+    DEPENDENCY_FILES,
+)
+from api.test_result_artifact import (
+    # Feature #212: Test results persisted as artifacts
+    # Constants
+    ARTIFACT_TYPE_TEST_RESULT,
+    MAX_FAILURES_IN_METADATA,
+    # Data classes
+    TestResultArtifactMetadata,
+    StoreTestResultResult,
+    RetrievedTestResult,
+    # Functions
+    build_test_result_metadata,
+    serialize_test_result,
+    deserialize_test_result,
+    store_test_result_artifact,
+    get_store_result as get_test_result_store_result,
+    retrieve_test_result_from_artifact,
+    get_test_result_artifacts_for_run,
+    get_latest_test_result_artifact,
+    get_test_summary_from_artifact,
+    record_test_result_artifact_created,
+)
+from api.playwright_mcp_config import (
+    # Feature #213: Playwright MCP available for E2E test agents
+    # Enums
+    PlaywrightMode,
+    PlaywrightToolSet,
+    # Data classes
+    PlaywrightMcpConfig,
+    PlaywrightAgentConfigResult,
+    McpConnectionResult,
+    # Configuration functions
+    get_playwright_config,
+    is_playwright_enabled,
+    enable_playwright,
+    disable_playwright,
+    # Tool selection functions
+    get_playwright_tools,
+    configure_playwright_for_agent,
+    add_playwright_tools_to_spec,
+    is_e2e_agent,
+    # MCP connection functions
+    get_mcp_server_config,
+    verify_mcp_connection,
+    ensure_playwright_in_settings,
+    # Agent integration functions
+    get_e2e_agent_tools,
+    should_include_playwright_tools,
+    # Cache functions
+    get_cached_playwright_config,
+    reset_playwright_config_cache,
+    # Constants
+    PLAYWRIGHT_TOOLS,
+    CORE_PLAYWRIGHT_TOOLS,
+    EXTENDED_PLAYWRIGHT_TOOLS,
+    PLAYWRIGHT_TOOL_SETS,
+    SUPPORTED_BROWSERS,
+    DEFAULT_BROWSER,
+    DEFAULT_TIMEOUT_MS,
+    DEFAULT_VIEWPORT,
+    DEFAULT_PLAYWRIGHT_MCP_CONFIG,
+    HEADFUL_PLAYWRIGHT_MCP_CONFIG,
+    SETTINGS_PLAYWRIGHT_SECTION,
+)
+from api.icon_provider import (
+    # Feature #215: Icon provider interface defined
+    # Exceptions
+    IconProviderError,
+    IconGenerationError,
+    ProviderNotFoundError as IconProviderNotFoundError,
+    ProviderAlreadyRegisteredError as IconProviderAlreadyRegisteredError,
+    InvalidIconFormatError,
+    # Enums
+    IconFormat,
+    IconTone,
+    ProviderStatus as IconProviderStatus,
+    # Data classes
+    IconResult,
+    IconProviderCapabilities,
+    IconGenerationRequest,
+    # Abstract base class
+    IconProvider,
+    # Default implementation
+    DefaultIconProvider,
+    # Registry
+    IconProviderRegistry,
+    # Convenience functions
+    get_icon_registry,
+    reset_icon_registry,
+    register_icon_provider,
+    generate_icon,
+    get_default_icon_provider,
+    configure_icon_provider_from_settings,
+    # Configuration functions
+    get_active_provider_from_config,
+    set_active_provider_in_config,
+    # Constants
+    ICON_PROVIDER_CONFIG_KEY,
+    DEFAULT_PROVIDER_NAME as DEFAULT_ICON_PROVIDER_NAME,
+)
 
 __all__ = [
     "Feature",
@@ -829,6 +949,7 @@ __all__ = [
     "FileExistsValidator",
     "GateResult",
     "LintCleanValidator",
+    "TestEnforcementValidator",  # Feature #211
     "Validator",
     "ValidatorResult",
     "VALIDATOR_REGISTRY",
@@ -1184,6 +1305,20 @@ __all__ = [
     "TEST_COMMAND_OPTIONS",
     "SETTINGS_FRAMEWORK_KEY",
     "SETTINGS_TEST_SECTION",
+    # Feature #214: Sandbox Test Runner exports
+    "SandboxConfiguration",
+    "DependencyInstallResult",
+    "SandboxExecutionResult",
+    "SandboxTestRunner",
+    "run_tests_in_sandbox",
+    "is_sandbox_available",
+    "get_default_sandbox_config",
+    "record_sandbox_tests_executed",
+    "DEFAULT_SANDBOX_IMAGE",
+    "DEFAULT_PROJECT_MOUNT",
+    "DEFAULT_SANDBOX_TIMEOUT",
+    "DEFAULT_INSTALL_TIMEOUT",
+    "DEPENDENCY_FILES",
     # Feature #210: Test Contract Gate exports
     "TestGateStatus",
     "TestGateConfiguration",
@@ -1200,4 +1335,77 @@ __all__ = [
     "DEFAULT_REQUIRE_ALL_ASSERTIONS",
     "DEFAULT_MIN_TEST_COVERAGE",
     "DEFAULT_ALLOW_SKIP_FOR_NO_CONTRACT",
+    # Feature #212: Test Result Artifact exports
+    "ARTIFACT_TYPE_TEST_RESULT",
+    "MAX_FAILURES_IN_METADATA",
+    "TestResultArtifactMetadata",
+    "StoreTestResultResult",
+    "RetrievedTestResult",
+    "build_test_result_metadata",
+    "serialize_test_result",
+    "deserialize_test_result",
+    "store_test_result_artifact",
+    "get_test_result_store_result",
+    "retrieve_test_result_from_artifact",
+    "get_test_result_artifacts_for_run",
+    "get_latest_test_result_artifact",
+    "get_test_summary_from_artifact",
+    "record_test_result_artifact_created",
+    # Feature #213: Playwright MCP Configuration exports
+    "PlaywrightMode",
+    "PlaywrightToolSet",
+    "PlaywrightMcpConfig",
+    "PlaywrightAgentConfigResult",
+    "McpConnectionResult",
+    "get_playwright_config",
+    "is_playwright_enabled",
+    "enable_playwright",
+    "disable_playwright",
+    "get_playwright_tools",
+    "configure_playwright_for_agent",
+    "add_playwright_tools_to_spec",
+    "is_e2e_agent",
+    "get_mcp_server_config",
+    "verify_mcp_connection",
+    "ensure_playwright_in_settings",
+    "get_e2e_agent_tools",
+    "should_include_playwright_tools",
+    "get_cached_playwright_config",
+    "reset_playwright_config_cache",
+    "PLAYWRIGHT_TOOLS",
+    "CORE_PLAYWRIGHT_TOOLS",
+    "EXTENDED_PLAYWRIGHT_TOOLS",
+    "PLAYWRIGHT_TOOL_SETS",
+    "SUPPORTED_BROWSERS",
+    "DEFAULT_BROWSER",
+    "DEFAULT_TIMEOUT_MS",
+    "DEFAULT_VIEWPORT",
+    "DEFAULT_PLAYWRIGHT_MCP_CONFIG",
+    "HEADFUL_PLAYWRIGHT_MCP_CONFIG",
+    "SETTINGS_PLAYWRIGHT_SECTION",
+    # Feature #215: Icon Provider Interface exports
+    "IconProviderError",
+    "IconGenerationError",
+    "IconProviderNotFoundError",
+    "IconProviderAlreadyRegisteredError",
+    "InvalidIconFormatError",
+    "IconFormat",
+    "IconTone",
+    "IconProviderStatus",
+    "IconResult",
+    "IconProviderCapabilities",
+    "IconGenerationRequest",
+    "IconProvider",
+    "DefaultIconProvider",
+    "IconProviderRegistry",
+    "get_icon_registry",
+    "reset_icon_registry",
+    "register_icon_provider",
+    "generate_icon",
+    "get_default_icon_provider",
+    "configure_icon_provider_from_settings",
+    "get_active_provider_from_config",
+    "set_active_provider_in_config",
+    "ICON_PROVIDER_CONFIG_KEY",
+    "DEFAULT_ICON_PROVIDER_NAME",
 ]
