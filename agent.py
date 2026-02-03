@@ -151,6 +151,19 @@ async def run_autonomous_agent(
     # Create project directory
     project_dir.mkdir(parents=True, exist_ok=True)
 
+    # Feature #202: Ensure scaffolding completes before agent execution
+    # This creates the .claude directory structure if missing
+    from api.scaffolding import ensure_project_scaffolded
+    scaffolding_result = ensure_project_scaffolded(project_dir)
+    if scaffolding_result.success:
+        if scaffolding_result.scaffold_result:
+            dirs_created = scaffolding_result.scaffold_result.directories_created
+            if dirs_created > 0:
+                print(f"Scaffolding: Created {dirs_created} directories in .claude/")
+    else:
+        # Log warning but continue - scaffolding failure shouldn't block agent execution
+        print(f"Warning: Scaffolding check failed: {scaffolding_result.scaffolding_status.error if scaffolding_result.scaffolding_status else 'unknown error'}")
+
     # Determine agent type if not explicitly set
     if agent_type is None:
         # Auto-detect based on whether we have features
