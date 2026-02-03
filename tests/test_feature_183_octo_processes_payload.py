@@ -706,7 +706,8 @@ class TestEdgeCases:
         response = octo.generate_specs(payload)
 
         assert response.success is False
-        assert "must be a non-empty string" in str(response.validation_errors)
+        # Feature #190: Error message format changed to be more specific
+        assert "empty string" in str(response.validation_errors) or "non-empty string" in str(response.validation_errors)
 
 
 # =============================================================================

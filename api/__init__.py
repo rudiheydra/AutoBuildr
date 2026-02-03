@@ -484,6 +484,24 @@ from api.archetypes import (
     get_archetype_for_task_type,
     get_archetype_summary,
 )
+from api.agent_materializer import (
+    # Feature #192: Agent Materializer converts AgentSpec to Claude Code markdown
+    # Data classes
+    MaterializationResult as AgentMaterializationResult,
+    BatchMaterializationResult,
+    # Main class
+    AgentMaterializer,
+    # Convenience functions
+    render_agentspec_to_markdown,
+    verify_determinism as verify_materializer_determinism,
+    # Constants
+    DEFAULT_OUTPUT_DIR as MATERIALIZER_DEFAULT_OUTPUT_DIR,
+    DEFAULT_MODEL as MATERIALIZER_DEFAULT_MODEL,
+    DEFAULT_COLOR as MATERIALIZER_DEFAULT_COLOR,
+    TASK_TYPE_COLORS,
+    VALID_MODELS as MATERIALIZER_VALID_MODELS,
+    DESCRIPTION_MAX_LENGTH,
+)
 
 __all__ = [
     "Feature",
@@ -864,4 +882,16 @@ __all__ = [
     "create_agent_from_archetype",
     "get_archetype_for_task_type",
     "get_archetype_summary",
+    # Feature #192: Agent Materializer exports
+    "AgentMaterializer",
+    "AgentMaterializationResult",
+    "BatchMaterializationResult",
+    "render_agentspec_to_markdown",
+    "verify_materializer_determinism",
+    "MATERIALIZER_DEFAULT_OUTPUT_DIR",
+    "MATERIALIZER_DEFAULT_MODEL",
+    "MATERIALIZER_DEFAULT_COLOR",
+    "TASK_TYPE_COLORS",
+    "MATERIALIZER_VALID_MODELS",
+    "DESCRIPTION_MAX_LENGTH",
 ]
