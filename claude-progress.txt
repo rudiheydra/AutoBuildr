@@ -14598,3 +14598,93 @@ Feature #181 has been marked as passing after successful:
 - Total: 194/227 features passing (85.5%)
 
 **Session completed successfully.**
+[Testing] 2026-02-04T00:03:44+11:00 - Feature #178 regression test PASSED
+  - Feature: Maestro system prompt includes agent-planning responsibilities
+  - Category: functional
+  - All 4 verification steps verified:
+    Step 1: Maestro prompt template includes agent-planning section - PASS (Part 2: Agent Planning, lines 47-79)
+    Step 2: Prompt describes when to trigger vs use existing agents - PASS (lines 49-67, includes decision matrix)
+    Step 3: Prompt specifies OctoRequestPayload structure - PASS (Part 3, lines 82-129, with full JSON schema)
+    Step 4: Prompt includes examples of agent-planning decisions - PASS (Part 4, lines 162-234, 4 examples)
+  - Location: .claude/agents/maestro.md
+  - Related tests: tests/test_feature_174_maestro_agent_detection.py - 42/42 PASS
+  - Browser automation: Unavailable (Chrome SIGTRAP in container)
+  - No regression found - feature still working correctly
+
+---
+
+## Session: 2026-02-04 - Feature #201
+
+### Feature #201: Scaffolding is idempotent and safe to re-run - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Dependencies:** None
+
+**Description:** Running scaffolding multiple times produces consistent results without data loss.
+
+**Changes Made:**
+
+1. `tests/test_feature_201_scaffolding_idempotent.py`: 38 comprehensive tests
+   - TestStep1ChecksExistingDirectories: 5 tests
+   - TestStep2ManualFilesNeverTouched: 4 tests
+   - TestStep3GeneratedFilesOverwritable: 3 tests
+   - TestStep4SettingsMergedNotReplaced: 6 tests
+   - TestStep5NoErrorsOnRerun: 6 tests
+   - TestIdempotencyIntegration: 3 tests
+   - TestEdgeCases: 4 tests
+   - TestFeature201VerificationSteps: 5 tests
+   - TestApiPackageExports: 2 tests
+
+2. `tests/verify_feature_201.py`: Standalone verification script for all 5 steps
+
+**Verification Summary (All 5 Feature Steps Passed):**
+
+1. **Scaffolding checks for existing directories before creating** - PASS
+   - Uses mkdir(parents=True, exist_ok=True) for safety
+   - Reports existing directories correctly
+   - Only creates missing directories
+   - DirectoryStatus tracks existed vs created
+
+2. **Existing files in manual/ never touched** - PASS
+   - Files in agents/manual/ preserved on re-scaffold
+   - File content unchanged
+   - File permissions unchanged
+   - File timestamps unchanged
+
+3. **Generated files may be overwritten by Materializer** - PASS
+   - Files in agents/generated/ can be overwritten
+   - Scaffold doesn't protect generated files
+   - External overwrites (Materializer) work correctly
+   - Scaffold doesn't restore original content
+
+4. **Settings merged, not replaced** - PASS
+   - Custom fields preserved on update
+   - Existing MCP servers preserved
+   - Existing permissions preserved
+   - Updates are additive (never remove data)
+   - No duplicate servers on multiple updates
+
+5. **No errors on re-run of scaffolded project** - PASS
+   - Multiple scaffolds all succeed
+   - No exceptions raised
+   - Structure remains complete
+   - Works after settings updates
+   - Works after file operations
+
+**Test Results:**
+- tests/test_feature_201_scaffolding_idempotent.py: 38/38 tests PASS (5.16s)
+- tests/test_feature_199_scaffolding.py: 72/72 tests PASS (no regressions)
+- tests/test_feature_198_settings_manager.py: 52/52 tests PASS (no regressions)
+- tests/verify_feature_201.py: 5/5 verification steps PASS
+
+**Commit:** 626cf42
+
+**Updated Progress:**
+- Feature #201: Scaffolding is idempotent and safe to re-run - PASSING
+- Total: 200/227 features passing (88.1%)
+
+**Session completed successfully.**
+
