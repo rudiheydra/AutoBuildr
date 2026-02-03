@@ -144,6 +144,23 @@ from api.display_derivation import (
     TASK_TYPE_ICONS,
     DEFAULT_ICON,
 )
+# Feature #186: Octo selects appropriate tools for each agent
+from api.tool_selection import (
+    AVAILABLE_TOOLS,
+    ROLE_TOOL_CATEGORIES,
+    ROLE_TOOL_OVERRIDES,
+    ToolSelectionResult,
+    get_all_tool_categories,
+    get_browser_tools,
+    get_test_runner_tools,
+    get_tool_info,
+    get_tools_by_category,
+    get_tools_by_privilege,
+    get_ui_agent_tools,
+    is_browser_tool,
+    select_tools_for_capability,
+    select_tools_for_role,
+)
 from api.validators import (
     AcceptanceGate,
     FileExistsValidator,
@@ -379,6 +396,59 @@ from api.agentspec_models import (
     # Feature #179: Agent Planning Decision Record (persisted to DB)
     AgentPlanningDecisionRecord,
 )
+from api.octo import (
+    # Feature #187: Octo Model Selection
+    VALID_MODELS as OCTO_VALID_MODELS,
+    DEFAULT_MODEL as OCTO_DEFAULT_MODEL,
+    HAIKU_CAPABILITIES,
+    OPUS_CAPABILITIES,
+    TASK_TYPE_MODEL_DEFAULTS,
+    COMPLEXITY_INDICATORS,
+    select_model_for_capability,
+    validate_model,
+    get_model_characteristics,
+)
+from api.constraints import (
+    # Feature #185: Constraint Satisfaction for AgentSpec Generation
+    ConstraintDefinition,
+    ConstraintValidator,
+    ConstraintValidationResult,
+    ConstraintViolation,
+    ToolAvailabilityConstraint,
+    ModelLimitConstraint,
+    SandboxConstraint,
+    ForbiddenPatternConstraint,
+    create_constraints_from_payload,
+    create_default_constraints,
+    # Constants
+    DEFAULT_MAX_TURNS_LIMIT,
+    DEFAULT_TIMEOUT_LIMIT,
+    MODEL_LIMITS as CONSTRAINT_MODEL_LIMITS,
+    STANDARD_TOOLS as CONSTRAINT_STANDARD_TOOLS,
+)
+from api.octo_schemas import (
+    # Feature #188: Octo outputs are strictly typed and schema-validated
+    # Exceptions
+    OctoSchemaValidationError,
+    SchemaValidationError as OctoSchemaValidationErrorDetail,
+    SchemaValidationResult as OctoSchemaValidationResult,
+    # Validation functions
+    validate_agent_spec_schema,
+    validate_test_contract_schema,
+    validate_octo_outputs,
+    validate_agent_spec_schema_or_raise,
+    validate_test_contract_schema_or_raise,
+    get_schema,
+    # Schemas
+    AGENT_SPEC_SCHEMA,
+    TEST_CONTRACT_SCHEMA,
+    TEST_CONTRACT_ASSERTION_SCHEMA,
+    # Constants
+    VALID_TASK_TYPES as OCTO_SCHEMA_VALID_TASK_TYPES,
+    VALID_TEST_TYPES as OCTO_SCHEMA_VALID_TEST_TYPES,
+    VALID_GATE_MODES as OCTO_SCHEMA_VALID_GATE_MODES,
+    VALID_ASSERTION_OPERATORS,
+)
 
 __all__ = [
     "Feature",
@@ -502,6 +572,21 @@ __all__ = [
     "MASCOT_POOL",
     "TASK_TYPE_ICONS",
     "DEFAULT_ICON",
+    # Feature #186: Tool Selection exports
+    "AVAILABLE_TOOLS",
+    "ROLE_TOOL_CATEGORIES",
+    "ROLE_TOOL_OVERRIDES",
+    "ToolSelectionResult",
+    "get_all_tool_categories",
+    "get_browser_tools",
+    "get_test_runner_tools",
+    "get_tool_info",
+    "get_tools_by_category",
+    "get_tools_by_privilege",
+    "get_ui_agent_tools",
+    "is_browser_tool",
+    "select_tools_for_capability",
+    "select_tools_for_role",
     # Validators exports (Feature #35: AcceptanceGate, Feature #140: LintCleanValidator)
     "AcceptanceGate",
     "FileExistsValidator",
@@ -696,4 +781,31 @@ __all__ = [
     "AgentPlanningDecisionRecord",
     # Feature #180: Octo Delegation With Fallback
     "OctoDelegationWithFallbackResult",
+    # Feature #187: Octo Model Selection exports
+    "OCTO_VALID_MODELS",
+    "OCTO_DEFAULT_MODEL",
+    "HAIKU_CAPABILITIES",
+    "OPUS_CAPABILITIES",
+    "TASK_TYPE_MODEL_DEFAULTS",
+    "COMPLEXITY_INDICATORS",
+    "select_model_for_capability",
+    "validate_model",
+    "get_model_characteristics",
+    # Feature #188: Octo Schema Validation exports
+    "OctoSchemaValidationError",
+    "OctoSchemaValidationErrorDetail",
+    "OctoSchemaValidationResult",
+    "validate_agent_spec_schema",
+    "validate_test_contract_schema",
+    "validate_octo_outputs",
+    "validate_agent_spec_schema_or_raise",
+    "validate_test_contract_schema_or_raise",
+    "get_schema",
+    "AGENT_SPEC_SCHEMA",
+    "TEST_CONTRACT_SCHEMA",
+    "TEST_CONTRACT_ASSERTION_SCHEMA",
+    "OCTO_SCHEMA_VALID_TASK_TYPES",
+    "OCTO_SCHEMA_VALID_TEST_TYPES",
+    "OCTO_SCHEMA_VALID_GATE_MODES",
+    "VALID_ASSERTION_OPERATORS",
 ]
