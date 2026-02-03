@@ -14491,3 +14491,110 @@ Feature #181 has been marked as passing after successful:
 
 **Session completed successfully.**
 
+
+---
+
+## Session: 2026-02-04 - Feature #198
+
+### Feature #198: Agent Materializer generates settings.local.json when needed - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Dependencies:** None
+
+**Description:** Materializer ensures required settings file exists with necessary permissions and MCP configuration.
+
+**Changes Made:**
+
+1. `api/settings_manager.py`: New module implementing settings management (617 lines)
+   - **Constants:**
+     - SETTINGS_LOCAL_FILE = "settings.local.json"
+     - CLAUDE_DIR = ".claude"
+     - DEFAULT_SETTINGS_PERMISSIONS = 0o644
+     - DEFAULT_SETTINGS: Default settings structure
+     - MCP_SERVER_CONFIGS: Pre-defined MCP server configurations
+     - MCP_TOOL_PATTERNS: Tool patterns to detect MCP server requirements
+   - **Data Classes:**
+     - SettingsUpdateResult: Result of settings update operation
+     - SettingsRequirements: Requirements extracted from AgentSpecs
+   - **SettingsManager Class:**
+     - settings_exist(): Check if settings file exists
+     - get_settings_info(): Get file info (exists, path, permissions, size)
+     - ensure_claude_dir(): Ensure .claude directory exists
+     - create_default_settings(): Create settings with defaults
+     - detect_mcp_requirements(): Detect MCP servers from specs/tools
+     - get_mcp_server_config(): Get config for known MCP server
+     - load_settings(): Load existing settings
+     - merge_settings(): Merge requirements while preserving existing
+     - update_settings(): Main entry point for updates
+     - ensure_settings_for_specs(): Convenience for spec-based update
+   - **Module-level Functions:**
+     - check_settings_exist(): Check if settings exist
+     - ensure_settings_for_agents(): Ensure settings configured
+     - detect_required_mcp_servers(): Detect required MCP servers
+     - get_settings_manager(): Get manager instance
+
+2. `api/__init__.py`: Added exports for Feature #198
+   - SettingsUpdateResult, SettingsRequirements
+   - SettingsManager, check_settings_exist, ensure_settings_for_agents
+   - detect_required_mcp_servers, get_settings_manager
+   - SETTINGS_LOCAL_FILE, DEFAULT_SETTINGS_PERMISSIONS, DEFAULT_SETTINGS
+   - MCP_SERVER_CONFIGS, MCP_TOOL_PATTERNS
+
+3. `tests/test_feature_198_settings_manager.py`: 52 comprehensive tests
+   - TestStep1SettingsExist: 7 tests
+   - TestStep2CreateWithDefaults: 6 tests
+   - TestStep3McpConfiguration: 9 tests
+   - TestStep4PreserveExisting: 7 tests
+   - TestStep5EnableExecution: 6 tests
+   - TestIntegration: 2 tests
+   - TestEdgeCases: 4 tests
+   - TestApiPackageExports: 6 tests
+   - TestFeature198VerificationSteps: 5 tests
+
+4. `tests/verify_feature_198.py`: Standalone verification script
+
+**Verification Summary (All 5 Feature Steps Passed):**
+
+1. **Check if .claude/settings.local.json exists** - PASS
+   - settings_exist() returns True/False correctly
+   - get_settings_info() returns path, permissions, size
+   - Module function check_settings_exist() works
+
+2. **If missing, create with default permissions** - PASS
+   - create_default_settings() creates file
+   - Permissions set to 0o644 (rw-r--r--)
+   - Default structure: {"permissions": {"allow": []}}
+
+3. **Include MCP server configuration if agents require it** - PASS
+   - detect_mcp_requirements() finds MCP tools from specs
+   - Detects features server from mcp__features__ tools
+   - Detects playwright server from mcp__playwright__ tools
+   - get_mcp_server_config() returns server configurations
+
+4. **Preserve existing settings when updating** - PASS
+   - load_settings() reads existing file
+   - merge_settings() preserves existing keys
+   - Custom fields preserved across updates
+   - Existing permissions not overwritten
+
+5. **Settings enable agent execution via Claude CLI** - PASS
+   - Structure matches Claude Code requirements
+   - permissions.allow is always a list
+   - mcpServers contains valid command/args configs
+   - File readable by Claude CLI
+
+**Test Results:**
+- tests/test_feature_198_settings_manager.py: 52/52 tests PASS (4.98s)
+- tests/verify_feature_198.py: 5/5 verification steps PASS
+- Related materializer tests: 155/155 PASS (no regressions)
+
+**Commit:** (Part of session - files already tracked)
+
+**Updated Progress:**
+- Feature #198: Agent Materializer generates settings.local.json when needed - PASSING
+- Total: 194/227 features passing (85.5%)
+
+**Session completed successfully.**
