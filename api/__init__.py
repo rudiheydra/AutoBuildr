@@ -202,6 +202,17 @@ from api.event_recorder import (
     get_event_recorder,
     clear_recorder_cache,
 )
+from api.event_replay import (
+    # Feature #227: Audit events support replay and debugging
+    ReplayableEvent,
+    DebugContext,
+    EventTimeline,
+    EventReplayContext,
+    get_replay_context,
+    reconstruct_run_events,
+    get_run_debug_context,
+    verify_event_sequence_integrity,
+)
 from api.dspy_signatures import (
     SpecGenerationSignature,
     get_spec_generator,

@@ -172,6 +172,7 @@ class TestCodeWriteResult:
         test_files: List of test file paths written
         test_framework: Framework used (pytest, jest, etc.)
         test_directory: Directory where tests were written
+        test_count: Number of test functions/cases generated (Feature #224)
         assertions_count: Number of assertions generated
         error: Error message if failed
         content_hash: Hash of generated content for determinism verification
@@ -183,6 +184,7 @@ class TestCodeWriteResult:
     test_files: list[Path] = field(default_factory=list)
     test_framework: str = "pytest"
     test_directory: Path | None = None
+    test_count: int = 0
     assertions_count: int = 0
     error: str | None = None
     content_hash: str | None = None
@@ -197,6 +199,7 @@ class TestCodeWriteResult:
             "test_files": [str(p) for p in self.test_files],
             "test_framework": self.test_framework,
             "test_directory": str(self.test_directory) if self.test_directory else None,
+            "test_count": self.test_count,
             "assertions_count": self.assertions_count,
             "error": self.error,
             "content_hash": self.content_hash,
@@ -696,7 +699,7 @@ class TestCodeWriter:
             content_hash = hashlib.sha256(code.encode("utf-8")).hexdigest()
 
             _logger.info(
-                "Test file written: %s (framework=%s, assertions=%d)",
+                "Test file written: %s (framework=%s, test_count=%d)",
                 test_file,
                 actual_framework,
                 assertion_count,
@@ -709,6 +712,7 @@ class TestCodeWriter:
                 test_files=[test_file],
                 test_framework=actual_framework,
                 test_directory=test_dir,
+                test_count=assertion_count,  # Feature #224: Number of test functions written
                 assertions_count=assertion_count,
                 content_hash=content_hash,
             )
@@ -786,6 +790,7 @@ class TestCodeWriter:
                 contract_id=result.contract_id,
                 agent_name=result.agent_name,
                 test_files=[str(f) for f in result.test_files],
+                test_count=result.test_count,  # Feature #224: Number of test functions written
                 test_type=None,  # Could be extracted from contract if needed
                 test_framework=result.test_framework,
                 test_directory=str(result.test_directory) if result.test_directory else None,
