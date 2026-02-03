@@ -15662,3 +15662,416 @@ Feature #181 has been marked as passing after successful:
 - Total: 206/227 features passing (90.7%)
 
 **Session completed successfully.**
+
+---
+
+## Session: 2026-02-04 - Feature #103 Regression Test
+
+### Feature #103: Optional UI banner shows when dependency issues detected at startup - VERIFIED
+
+**Status:** STILL PASSING (No Regression)
+
+**Category:** style
+
+**Description:** When the orchestrator detects dependency issues at startup, an optional warning banner can be shown in the UI with issue count.
+
+**Verification Method:** Code review + Unit tests (browser automation unavailable)
+
+**Verification Summary (All 5 Feature Steps Verified):**
+
+1. **Add dependency_health endpoint to API that returns issue summary** - PASS
+   - Endpoint at /api/projects/{project_name}/features/dependency-health
+   - Located in server/routers/features.py (lines 386-437)
+   - Returns: has_issues, count, is_valid, self_references, cycles, missing_targets, summary
+
+2. **If issues requiring attention exist, return {has_issues: true, count: N}** - PASS
+   - API tested via curl: returns proper JSON response
+   - Example: {"has_issues":false,"count":0,"is_valid":true,...}
+
+3. **UI can optionally display banner** - PASS
+   - DependencyHealthBanner component in ui/src/components/DependencyHealthBanner.tsx
+   - Message: "Warning: N dependency issue(s) detected - see logs"
+   - Integrated in App.tsx
+
+4. **Banner should be dismissible** - PASS
+   - X button with dismiss handler (handleDismiss)
+   - Uses sessionStorage to remember dismissal per project
+   - Key format: dependency-health-dismissed-{projectName}
+
+5. **Banner style: yellow/orange warning color, not blocking UI** - PASS
+   - Amber color scheme (bg-amber-100, border-amber-500)
+   - AlertTriangle icon from lucide-react
+   - Non-blocking: returns null when no issues
+
+**Test Results:**
+- tests/test_feature_103_dependency_health_banner.py: 27/27 tests PASS (13.55s)
+
+**Conclusion:** No regression found - feature still working correctly.
+
+**Session completed successfully.**
+
+
+---
+
+## Session: 2026-02-04 - Feature #213
+
+### Feature #213: Playwright MCP available for E2E test agents - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Dependencies:** None
+
+**Description:** When configured, Playwright MCP tools are available to agents for browser-based testing.
+
+**Changes Made:**
+
+1. `api/playwright_mcp_config.py`: New comprehensive module for Playwright MCP configuration (550+ lines)
+   - **PlaywrightMode** enum: headless, headful modes
+   - **PlaywrightToolSet** enum: core, extended, full tool sets
+   - **PlaywrightMcpConfig** dataclass: Full Playwright configuration
+     - enabled, headless, browser, timeout_ms, viewport, tool_set
+     - Validation for browser, timeout bounds, viewport dimensions
+     - MCP server config with command and args
+   - **PlaywrightAgentConfigResult** dataclass: Agent configuration results
+   - **McpConnectionResult** dataclass: MCP connection verification results
+   - Configuration functions:
+     - get_playwright_config(): Parse settings
+     - is_playwright_enabled(): Check if enabled
+     - enable_playwright()/disable_playwright(): Toggle settings
+   - Tool selection functions:
+     - get_playwright_tools(): Get tools by set (core/extended/full)
+     - configure_playwright_for_agent(): Configure agent for E2E
+     - add_playwright_tools_to_spec(): Add tools to AgentSpec
+     - is_e2e_agent(): Detect E2E agent by name/capability/task
+   - MCP connection functions:
+     - get_mcp_server_config(): Get MCP server configuration
+     - verify_mcp_connection(): Pre-flight connection check
+     - ensure_playwright_in_settings(): Update settings file
+   - Agent integration functions:
+     - get_e2e_agent_tools(): Complete tool list for E2E agents
+     - should_include_playwright_tools(): Check if tools should be added
+   - Constants:
+     - PLAYWRIGHT_TOOLS: All 22 Playwright MCP tools
+     - CORE_PLAYWRIGHT_TOOLS: 7 essential tools (navigate, click, fill, assert)
+     - EXTENDED_PLAYWRIGHT_TOOLS: Additional interaction/navigation tools
+     - DEFAULT_PLAYWRIGHT_MCP_CONFIG: Default headless config
+     - SUPPORTED_BROWSERS: chromium, firefox, webkit
+
+2. `api/__init__.py`: Added Feature #213 exports
+   - All enums, data classes, functions, and constants
+
+3. `tests/test_feature_213_playwright_mcp.py`: 61 comprehensive tests
+   - TestStep1PlaywrightConfig: 8 tests (settings configuration)
+   - TestStep2E2EAgentTools: 9 tests (E2E agent tool provisioning)
+   - TestStep3McpConnection: 7 tests (MCP connection establishment)
+   - TestStep4PlaywrightActions: 8 tests (action availability)
+   - TestStep5ConfigurationGating: 6 tests (settings gating)
+   - TestDataClasses: 8 tests (serialization/deserialization)
+   - TestApiPackageExports: 6 tests (API exports)
+   - TestFeature213VerificationSteps: 5 comprehensive acceptance tests
+   - TestEdgeCases: 5 tests (validation and edge cases)
+
+**Verification Summary (All 5 Feature Steps Passed):**
+
+1. **Playwright MCP server configurable in settings** - PASS
+   - Settings at "playwright" section with enabled, headless, browser keys
+   - Also enabled when "playwright" appears in mcpServers section
+   - Full configuration including timeout, viewport, tool_set
+   - MCP server config: npx @anthropic/mcp-server-playwright --headless
+
+2. **Test-runner agents for E2E include Playwright tools** - PASS
+   - is_e2e_agent() detects E2E agents by name, capability, or task type
+   - Keywords: e2e, browser, ui_testing, playwright, frontend_testing
+   - get_e2e_agent_tools() combines base test tools with Playwright tools
+   - add_playwright_tools_to_spec() adds tools to AgentSpec dictionary
+
+3. **MCP connection established when agent starts** - PASS
+   - get_mcp_server_config() returns correct npx command and args
+   - verify_mcp_connection() performs pre-flight check
+   - ensure_playwright_in_settings() updates settings.local.json
+   - Connection uses default config when explicit config missing
+
+4. **Playwright actions available: navigate, click, fill, assert** - PASS
+   - navigate: mcp__playwright__browser_navigate
+   - click: mcp__playwright__browser_click
+   - fill: mcp__playwright__browser_fill_form, browser_type
+   - assert: browser_snapshot, browser_take_screenshot, browser_console_messages
+   - All 7 core actions available in CORE_PLAYWRIGHT_TOOLS
+
+5. **Configuration gated by project settings** - PASS
+   - is_playwright_enabled() returns False by default
+   - Tools only added when explicitly enabled in settings
+   - Agents respect configuration gating
+   - enable_playwright()/disable_playwright() for programmatic control
+
+**Test Results:**
+- tests/test_feature_213_playwright_mcp.py: 61/61 tests PASS (7.09s)
+- tests/test_feature_198_settings_manager.py: 45/45 tests PASS (no regression)
+- tests/test_feature_191_archetypes.py: 72/72 tests PASS (no regression)
+- tests/test_feature_186_tool_selection.py: 56/56 tests PASS (no regression)
+
+**Note:** Browser automation verification skipped due to Chrome SIGTRAP in container environment. All unit tests and integration tests pass successfully.
+
+**Commit:** 2f829ac
+
+**Updated Progress:**
+- Feature #213: Playwright MCP available for E2E test agents - PASSING
+- Total: 211/227 features passing (93.0%)
+
+**Session completed successfully.**
+
+---
+
+## Session: 2026-02-04 - Feature #212
+
+### Feature #212: Test results persisted as artifacts - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Dependencies:** None
+
+**Description:** Test execution results stored as artifacts for auditability and UI display.
+
+**Changes Made:**
+
+1. `api/test_result_artifact.py`: New module implementing test result artifact storage (450+ lines)
+   - `TestResultArtifactMetadata` dataclass: Metadata schema for test_result artifacts
+     - passed, pass_count, fail_count, skip_count, error_count, total_count
+     - success_rate, command, framework, duration_seconds, timestamp
+     - failure_summary, content_type, has_output_log, output_truncated
+     - to_dict() and from_dict() for serialization
+   - `StoreTestResultResult` dataclass: Result of storing test artifact
+     - artifact_id, run_id, content_hash, size_bytes, stored_inline, metadata
+   - `RetrievedTestResult` dataclass: Result of retrieving test artifact
+     - artifact_id, execution_result, metadata, raw_content, parse_error
+   - `build_test_result_metadata()`: Build metadata from TestExecutionResult
+   - `serialize_test_result()`: Serialize TestExecutionResult to JSON
+   - `deserialize_test_result()`: Deserialize JSON to TestExecutionResult
+   - `store_test_result_artifact()`: Main function - stores result as artifact
+     - Uses ArtifactStorage for content-hash based storage
+     - Links artifact to AgentRun via run_id
+     - Includes metadata with pass/fail counts
+   - `retrieve_test_result_from_artifact()`: Retrieve and deserialize result
+   - `get_test_result_artifacts_for_run()`: Query artifacts by run_id
+   - `get_latest_test_result_artifact()`: Get most recent artifact for run
+   - `get_test_summary_from_artifact()`: Extract summary from metadata
+   - `record_test_result_artifact_created()`: Record audit event
+   - Constants: ARTIFACT_TYPE_TEST_RESULT, MAX_FAILURES_IN_METADATA, metadata keys
+
+2. `api/agentspec_models.py`: Added event type
+   - Added "test_result_artifact_created" to EVENT_TYPES
+
+3. `api/__init__.py`: Exported Feature #212 components
+   - Constants, data classes, and all functions
+
+4. `tests/test_feature_212_test_result_artifact.py`: 47 comprehensive tests
+   - TestStep1TestOutputCaptured: 5 tests
+   - TestStep2ArtifactTypeTestResult: 3 tests
+   - TestStep3IncludesPassFailOutput: 10 tests
+   - TestStep4ArtifactLinkedToAgentRun: 3 tests
+   - TestStep5LargeOutputsStoredByContentHash: 3 tests
+   - TestTestResultArtifactMetadata: 3 tests
+   - TestStoreTestResultResult: 1 test
+   - TestRetrievedTestResult: 2 tests
+   - TestGetStoreResult: 1 test
+   - TestRetrieveTestResultFromArtifact: 3 tests
+   - TestGetTestSummaryFromArtifact: 2 tests
+   - TestRecordTestResultArtifactCreated: 1 test
+   - TestEventTypeRegistered: 1 test
+   - TestApiPackageExports: 3 tests
+   - TestFeature212VerificationSteps: 5 acceptance tests
+   - TestIntegration: 1 full cycle test
+
+5. `tests/verify_feature_212.py`: Standalone verification script (6/6 steps)
+
+**Verification Summary (All 5 Feature Steps Passed):**
+
+1. **Test output captured as artifact** - PASS
+   - serialize_test_result() creates valid JSON
+   - All TestExecutionResult fields preserved
+   - stdout, stderr, failures included
+   - deserialize_test_result() reconstructs result
+
+2. **Artifact type: test_result** - PASS
+   - ARTIFACT_TYPE_TEST_RESULT = "test_result"
+   - "test_result" in ARTIFACT_TYPES
+   - store_test_result_artifact uses correct type
+
+3. **Includes: pass count, fail count, output log** - PASS
+   - pass_count from TestExecutionResult.passed_tests
+   - fail_count from TestExecutionResult.failed_tests
+   - has_output_log indicates stdout/stderr presence
+   - failure_summary with truncated details
+   - All metadata serializable via to_dict()
+
+4. **Artifact linked to AgentRun** - PASS
+   - run_id passed to ArtifactStorage.store()
+   - Artifact.run_id = foreign key to agent_runs
+   - Query functions filter by run_id
+
+5. **Large outputs stored by content hash** - PASS
+   - ArtifactStorage handles size-based routing
+   - Content <= 4KB stored inline
+   - Content > 4KB stored in file with SHA256 hash
+   - Deduplication via content_hash
+
+**Test Results:**
+- tests/test_feature_212_test_result_artifact.py: 47/47 tests PASS (11.33s)
+- tests/verify_feature_212.py: 6/6 verification steps PASS
+- tests/test_artifact_storage.py: 33/33 tests PASS (no regressions)
+- tests/test_feature_207_test_runner.py: 66/66 tests PASS (no regressions)
+
+**Commit:** 5a58809
+
+**Updated Progress:**
+- Feature #212: Test results persisted as artifacts - PASSING
+- Total: 210/227 features passing (92.5%)
+
+**Session completed successfully.**
+
+---
+
+## Session: 2026-02-04 - Feature #55 Regression Test
+
+### Feature #55: Validator Generation from Feature Steps - VERIFIED
+
+**Status:** STILL PASSING (No Regression)
+
+**Category:** D. Workflow Completeness
+
+**Description:** Generate AcceptanceSpec validators from feature verification steps by parsing step text.
+
+**Verification Method:** Unit tests + Verification script + Integration tests (browser automation unavailable)
+
+**Test Results:**
+- tests/test_feature_55_validator_generator.py: 52/52 tests PASS (0.47s)
+- tests/verify_feature_55.py: All 7 steps PASS
+
+**Verification Summary (All 7 Feature Steps Verified):**
+
+1. **Analyze each feature step for validator hints** - PASS
+   - analyze_step() returns execute/file/forbidden hints
+   - Correctly identifies step semantics
+
+2. **If step contains run/execute, create test_pass validator** - PASS
+   - Run/execute keywords trigger test_pass validator
+   - Command extracted and included in config
+
+3. **If step mentions file/path, create file_exists validator** - PASS
+   - File/path keywords trigger file_exists validator
+   - Path extracted from step text
+
+4. **If step mentions should not/must not, create forbidden_patterns** - PASS
+   - Negation keywords trigger forbidden_patterns validator
+   - Patterns extracted from step text
+   - 'should not exist' correctly creates file_exists with should_exist=False
+
+5. **Extract command or path from step text** - PASS
+   - Commands extracted from backticks, quotes, and natural language
+   - Paths extracted with extension detection
+
+6. **Set appropriate timeout for test_pass validators** - PASS
+   - pytest: 120s
+   - build: 180s
+   - lint: 30s
+   - Default: 60s
+
+7. **Return array of validator configs** - PASS
+   - Returns list of dicts with type, config, weight, required
+
+**Conclusion:** No regression found - Feature #55 still working correctly.
+
+**Session completed successfully.**
+
+---
+
+## Session: 2026-02-04 - Feature #211
+
+### Feature #211: Test enforcement gate added to acceptance validators - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Dependencies:** None
+
+**Description:** Add a test_enforcement validator that checks test execution status.
+
+**Changes Made:**
+
+1. `api/validators.py`: Added TestEnforcementValidator class (lines 1351-1720)
+   - New validator type: "test_enforcement"
+   - Checks tests_exist: verifies test files match glob pattern
+   - Checks tests_ran: verifies tests_executed event or context test_results
+   - Checks tests_passed: verifies all executed tests passed
+   - Supports required vs optional configuration
+   - Integrates with AcceptanceGate for feature completion blocking
+   - _check_tests_exist() helper method for glob pattern matching
+   - _check_tests_ran_from_events() helper to parse tests_executed events
+
+2. `api/agentspec_models.py`: Updated VALIDATOR_TYPES
+   - Added "test_enforcement" to VALIDATOR_TYPES list (line 100)
+
+3. `api/__init__.py`: Updated exports
+   - Added TestEnforcementValidator to imports from api.validators
+   - Added TestEnforcementValidator to __all__ list
+
+4. `tests/test_feature_211_test_enforcement.py`: 41 comprehensive tests
+   - TestStep1ValidatorTypeCreated: 6 tests
+   - TestStep2ValidatorChecks: 9 tests (tests exist, ran, passed)
+   - TestStep3RequiredOrOptional: 4 tests
+   - TestStep4ResultInAcceptanceResults: 3 tests
+   - TestStep5FailedTestsBlockCompletion: 4 tests
+   - TestEdgeCases: 5 tests
+   - TestApiPackageExports: 3 tests
+   - TestFeature211VerificationSteps: 5 comprehensive tests
+   - TestIntegration: 2 integration tests
+
+5. `tests/verify_feature_211.py`: Standalone verification script
+
+**Verification Summary (All 5 Feature Steps Passed):**
+
+1. **Create test_enforcement validator type** - PASS
+   - TestEnforcementValidator class exists
+   - validator_type = "test_enforcement"
+   - Registered in VALIDATOR_REGISTRY
+   - Added to VALIDATOR_TYPES list
+   - Exported from api package
+
+2. **Validator checks: tests exist, tests ran, tests passed** - PASS
+   - tests_exist: Verifies test files match glob pattern
+   - tests_ran: Verifies via context test_results or tests_executed events
+   - tests_passed: Verifies all executed tests passed
+
+3. **Validator can be required or optional per feature** - PASS
+   - Required validators block AcceptanceGate when failing
+   - Optional validators are advisory only
+
+4. **Validator result included in acceptance_results** - PASS
+   - Result includes type, passed, message, details
+   - Result contains enforcement_status in details
+   - ValidatorResult.to_dict() is JSON serializable
+
+5. **Failed tests block feature completion when required** - PASS
+   - Failed tests block gate (verdict=failed)
+   - Passing tests allow completion (verdict=passed)
+   - Missing test files block when require_tests_exist=True
+   - Not executed tests block when require_tests_ran=True
+
+**Test Results:**
+- tests/test_feature_211_test_enforcement.py: 41/41 tests PASS (5.43s)
+- tests/verify_feature_211.py: 5/5 verification steps PASS
+- tests/test_feature_35_acceptance_gate.py: 36/36 tests PASS (no regressions)
+
+**Commit:** ef161e2
+
+**Updated Progress:**
+- Feature #211: Test enforcement gate added to acceptance validators - PASSING
+- Total: 210/227 features passing (92.5%)
+
+**Session completed successfully.**
+
