@@ -14916,3 +14916,193 @@ Feature #181 has been marked as passing after successful:
 - Total: 200/227 features passing (88.1%)
 
 **Session completed successfully.**
+
+## Session: 2026-02-04 - Feature #204
+
+### Feature #204: Scaffolding respects .gitignore patterns - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Dependencies:** None
+
+**Description:** Scaffolding adds appropriate entries to .gitignore for generated files.
+
+**Changes Made:**
+
+1. `api/scaffolding.py`: Added gitignore management functionality (lines 1490-1854)
+   - GITIGNORE_FILE constant (".gitignore")
+   - GITIGNORE_GENERATED_PATTERNS tuple with patterns to ignore (.claude/agents/generated/)
+   - GITIGNORE_TRACKED_PATTERNS frozenset with patterns that should be tracked
+   - GitignoreUpdateResult dataclass for tracking update operations
+   - gitignore_exists() function to check if .gitignore exists
+   - _parse_gitignore() helper to parse gitignore content
+   - _pattern_is_present() helper to check for pattern equivalents
+   - update_gitignore() main function to update .gitignore with patterns
+   - ensure_gitignore_patterns() convenience function
+   - verify_gitignore_patterns() function to verify pattern presence
+   - scaffold_with_gitignore() combined scaffolding function
+
+2. `api/__init__.py`: Added Feature #204 exports
+   - GitignoreUpdateResult dataclass
+   - gitignore_exists, update_gitignore, ensure_gitignore_patterns
+   - verify_gitignore_patterns, scaffold_with_gitignore
+   - GITIGNORE_FILE, GITIGNORE_GENERATED_PATTERNS, GITIGNORE_TRACKED_PATTERNS
+
+3. `tests/test_feature_204_gitignore.py`: 53 comprehensive tests
+   - TestStep1GitignoreExists: 5 tests
+   - TestStep2AddGeneratedPattern: 6 tests
+   - TestStep3ManualDirectoryTracked: 4 tests
+   - TestStep4ClaudeMdTracked: 4 tests
+   - TestStep5PreserveExistingContent: 6 tests
+   - TestGitignoreUpdateResult: 3 tests
+   - TestVerifyGitignorePatterns: 2 tests
+   - TestEnsureGitignorePatterns: 2 tests
+   - TestScaffoldWithGitignore: 3 tests
+   - TestIntegration: 2 tests
+   - TestFeature204VerificationSteps: 5 tests
+   - TestEdgeCases: 4 tests
+   - TestApiPackageExports: 7 tests
+
+4. `tests/verify_feature_204.py`: Standalone verification script
+
+**Verification Summary (All 5 Feature Steps Passed):**
+
+1. **Check if .gitignore exists** - PASS
+   - gitignore_exists() function works correctly
+   - Returns False when missing, True when present
+   - update_gitignore reports existed status
+
+2. **Add .claude/agents/generated/ to .gitignore if not present** - PASS
+   - Pattern added to new or existing .gitignore
+   - Creates .gitignore if missing (configurable)
+   - Handles pattern with/without trailing slash
+   - Does not re-add if already present
+
+3. **Keep .claude/agents/manual/ tracked** - PASS
+   - Pattern NOT in GITIGNORE_GENERATED_PATTERNS
+   - Pattern IS in GITIGNORE_TRACKED_PATTERNS
+   - update_gitignore does not add it to .gitignore
+
+4. **Keep CLAUDE.md tracked** - PASS
+   - CLAUDE.md NOT in GITIGNORE_GENERATED_PATTERNS
+   - CLAUDE.md IS in GITIGNORE_TRACKED_PATTERNS
+   - update_gitignore does not add it to .gitignore
+
+5. **Preserve existing .gitignore content** - PASS
+   - All existing patterns preserved
+   - Comments preserved
+   - Empty lines preserved
+   - Header comment added before new patterns
+
+**Test Results:**
+- tests/test_feature_204_gitignore.py: 53/53 tests PASS (5.17s)
+- tests/verify_feature_204.py: 5/5 verification steps PASS
+- tests/test_feature_199_scaffolding.py: 72/72 tests PASS (no regression)
+
+**Note:** Code was committed as part of Feature #203 commit (e5f73b3).
+
+**Updated Progress:**
+- Feature #204: Scaffolding respects .gitignore patterns - PASSING
+- Total: 204/227 features passing (89.9%)
+
+**Session completed successfully.**
+
+---
+
+## Session: 2026-02-04 - Feature #202
+
+### Feature #202: Scaffolding triggered automatically on project initialization - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Dependencies:** None
+
+**Description:** When a project is initialized or first processed, scaffolding runs automatically.
+
+**Changes Made:**
+
+1. `api/scaffolding.py`: Added project initialization functionality (already in codebase)
+   - `ScaffoldingStatus` dataclass for tracking scaffolding state
+   - `ProjectInitializationResult` dataclass for initialization results
+   - `get_scaffolding_status()`: Read status from project metadata
+   - `needs_scaffolding()`: Check if project needs scaffolding
+   - `initialize_project_scaffolding()`: Main initialization function
+   - `ensure_project_scaffolded()`: Ensure scaffolding before agent execution
+   - `is_project_initialized()`: Quick check for completion status
+   - Constants: SCAFFOLDING_METADATA_KEY, SCAFFOLDING_TIMESTAMP_KEY, etc.
+
+2. `server/routers/projects.py`: Trigger scaffolding on project creation
+   - Added `initialize_project_scaffolding()` call in `create_project` endpoint
+   - Logs warning but does not fail if scaffolding fails
+
+3. `agent.py`: Ensure scaffolding before agent execution
+   - Added `ensure_project_scaffolded()` call before agent runs
+   - Reports number of directories created if any
+   - Warns but continues if scaffolding fails
+
+4. `api/__init__.py`: Exports for Feature #202 components (already exported)
+   - ScaffoldingStatus, ProjectInitializationResult
+   - get_scaffolding_status, needs_scaffolding, initialize_project_scaffolding
+   - ensure_project_scaffolded, is_project_initialized
+   - Constants
+
+5. `tests/test_feature_202_project_initialization.py`: 46 comprehensive tests
+   - TestScaffoldingStatusDataClass: 5 tests
+   - TestProjectInitializationResultDataClass: 2 tests
+   - TestStep1ScaffoldingCheck: 6 tests
+   - TestStep2AutomaticCreation: 6 tests
+   - TestStep3CompletionBeforeExecution: 5 tests
+   - TestStep4MetadataRecording: 6 tests
+   - TestProjectsRouterIntegration: 2 tests
+   - TestAgentExecutionIntegration: 2 tests
+   - TestEdgeCases: 4 tests
+   - TestFeature202VerificationSteps: 4 summary tests
+   - TestApiPackageExports: 4 tests
+
+**Verification Summary (All 4 Feature Steps Passed):**
+
+1. **Project initialization triggers scaffolding check** - PASS
+   - `needs_scaffolding()` returns True for new projects
+   - `needs_scaffolding()` returns False for completed projects
+   - Status stored in .autobuildr/metadata.json
+
+2. **Missing .claude structure created automatically** - PASS
+   - `initialize_project_scaffolding()` creates .claude directory
+   - Creates all standard subdirectories (agents/generated, agents/manual, skills, commands)
+   - Optionally creates CLAUDE.md
+   - Preserves existing directories
+
+3. **Scaffolding completes before agent execution** - PASS
+   - `ensure_project_scaffolded()` runs scaffolding if needed
+   - Integrated into agent.py run_autonomous_agent()
+   - Skips if already completed (idempotent)
+   - Reports progress to console
+
+4. **Scaffolding status recorded in project metadata** - PASS
+   - Metadata stored in .autobuildr/metadata.json
+   - Includes: scaffolding_completed, scaffolding_timestamp
+   - Tracks: directories_created, claude_md_created
+   - Preserves other metadata in file
+
+**Test Results:**
+- tests/test_feature_202_project_initialization.py: 46/46 tests PASS (4.97s)
+- tests/test_feature_199_scaffolding.py: 72/72 tests PASS (no regressions)
+
+**Integration Verification:**
+- Import verification: All exports available from api package
+- projects.py integration: create_project imports initialize_project_scaffolding
+- agent.py integration: run_autonomous_agent imports ensure_project_scaffolded
+- End-to-end workflow: All steps verified
+- Idempotency: Verified second call skips scaffolding
+
+**Commit:** 629d185
+
+**Updated Progress:**
+- Feature #202: Scaffolding triggered automatically on project initialization - PASSING
+- Total: 200/227 features passing (88.1%)
+
+**Session completed successfully.**
