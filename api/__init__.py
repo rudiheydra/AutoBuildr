@@ -492,10 +492,12 @@ from api.agent_materializer import (
     # Feature #195: Agent Materializer records agent_materialized audit event
     # Feature #196: Agent Materializer validates template output
     # Feature #197: Agent Materializer handles multiple agents in batch
+    # Feature #218: Icon generation triggered during agent materialization
     # Data classes
     MaterializationResult as AgentMaterializationResult,
     BatchMaterializationResult,
     MaterializationAuditInfo,
+    IconGenerationInfo,
     ValidationError as MaterializerValidationError,
     TemplateValidationResult,
     # Type aliases
@@ -805,6 +807,82 @@ from api.icon_provider import (
     # Constants
     ICON_PROVIDER_CONFIG_KEY,
     DEFAULT_PROVIDER_NAME as DEFAULT_ICON_PROVIDER_NAME,
+)
+from api.local_placeholder_icon_provider import (
+    # Feature #216: LocalPlaceholderIconProvider implements stub
+    # Main class
+    LocalPlaceholderIconProvider,
+    # Data classes/Enums
+    PlaceholderConfig,
+    PlaceholderShape,
+    # Convenience functions
+    get_local_placeholder_provider,
+    generate_placeholder_icon,
+    get_placeholder_color,
+    get_placeholder_initials,
+    # Core functions
+    compute_name_hash,
+    compute_color_from_name,
+    extract_initials,
+    generate_placeholder_svg,
+    generate_shape_svg,
+    # Constants
+    LOCAL_PLACEHOLDER_PROVIDER_NAME,
+    DEFAULT_SVG_WIDTH,
+    DEFAULT_SVG_HEIGHT,
+    PLACEHOLDER_COLOR_PALETTE,
+)
+from api.icon_provider_config import (
+    # Feature #217: Icon provider is configurable via settings
+    # Constants
+    ENV_VAR_ICON_PROVIDER,
+    SETTINGS_ICON_PROVIDER_KEY,
+    DEFAULT_ICON_PROVIDER,
+    KNOWN_PROVIDERS,
+    PROVIDER_ALIASES,
+    # Enums
+    ConfigSource as IconConfigSource,
+    # Data classes
+    IconProviderConfigResult,
+    IconProviderSettings,
+    # Core configuration functions
+    normalize_provider_name,
+    is_valid_provider_name,
+    get_env_icon_provider,
+    get_settings_icon_provider,
+    resolve_icon_provider,
+    get_icon_provider,
+    set_icon_provider,
+    clear_icon_provider_override,
+    get_icon_provider_override,
+    # Settings file functions
+    load_icon_provider_settings,
+    save_icon_provider_settings,
+    # Configuration validation
+    validate_icon_provider_config,
+    get_available_providers,
+    get_provider_info,
+    # Module-level configuration
+    configure_icon_provider,
+    get_icon_provider_config_documentation,
+)
+from api.icon_storage import (
+    # Feature #219: Generated icons stored and retrievable
+    # Constants
+    ICON_INLINE_MAX_SIZE,
+    ICON_FORMAT_MIME_TYPES,
+    DEFAULT_PLACEHOLDER_PROVIDER,
+    # Data classes
+    StoredIconResult,
+    RetrievedIcon,
+    # Database model
+    AgentIcon,
+    # Main class
+    IconStorage,
+    # Helper functions
+    get_mime_type_for_format,
+    store_icon_from_result,
+    get_icon_storage,
 )
 
 __all__ = [
@@ -1192,10 +1270,12 @@ __all__ = [
     # Feature #192: Agent Materializer exports
     # Feature #195: Agent Materializer audit event exports
     # Feature #196: Agent Materializer validates template output
+    # Feature #218: Icon generation during materialization
     "AgentMaterializer",
     "AgentMaterializationResult",
     "BatchMaterializationResult",
     "MaterializationAuditInfo",
+    "IconGenerationInfo",
     "MaterializerValidationError",
     "TemplateValidationResult",
     "TemplateValidationError",
@@ -1408,4 +1488,57 @@ __all__ = [
     "set_active_provider_in_config",
     "ICON_PROVIDER_CONFIG_KEY",
     "DEFAULT_ICON_PROVIDER_NAME",
+    # Feature #216: LocalPlaceholderIconProvider exports
+    "LocalPlaceholderIconProvider",
+    "PlaceholderConfig",
+    "PlaceholderShape",
+    "get_local_placeholder_provider",
+    "generate_placeholder_icon",
+    "get_placeholder_color",
+    "get_placeholder_initials",
+    "compute_name_hash",
+    "compute_color_from_name",
+    "extract_initials",
+    "generate_placeholder_svg",
+    "generate_shape_svg",
+    "LOCAL_PLACEHOLDER_PROVIDER_NAME",
+    "DEFAULT_SVG_WIDTH",
+    "DEFAULT_SVG_HEIGHT",
+    "PLACEHOLDER_COLOR_PALETTE",
+    # Feature #217: Icon Provider Configuration exports
+    "ENV_VAR_ICON_PROVIDER",
+    "SETTINGS_ICON_PROVIDER_KEY",
+    "DEFAULT_ICON_PROVIDER",
+    "KNOWN_PROVIDERS",
+    "PROVIDER_ALIASES",
+    "IconConfigSource",
+    "IconProviderConfigResult",
+    "IconProviderSettings",
+    "normalize_provider_name",
+    "is_valid_provider_name",
+    "get_env_icon_provider",
+    "get_settings_icon_provider",
+    "resolve_icon_provider",
+    "get_icon_provider",
+    "set_icon_provider",
+    "clear_icon_provider_override",
+    "get_icon_provider_override",
+    "load_icon_provider_settings",
+    "save_icon_provider_settings",
+    "validate_icon_provider_config",
+    "get_available_providers",
+    "get_provider_info",
+    "configure_icon_provider",
+    "get_icon_provider_config_documentation",
+    # Feature #219: Icon Storage exports
+    "ICON_INLINE_MAX_SIZE",
+    "ICON_FORMAT_MIME_TYPES",
+    "DEFAULT_PLACEHOLDER_PROVIDER",
+    "StoredIconResult",
+    "RetrievedIcon",
+    "AgentIcon",
+    "IconStorage",
+    "get_mime_type_for_format",
+    "store_icon_from_result",
+    "get_icon_storage",
 ]
