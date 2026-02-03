@@ -89,13 +89,16 @@ EVENT_TYPES = [
     "agent_materialized",  # Feature #195: Materializer records agent file creation
     "tests_written",  # Feature #206: Test-runner writes test code from TestContract
     "tests_executed",  # Feature #207: Test-runner executes tests and reports results
+    "test_result_artifact_created",  # Feature #212: Test result stored as artifact
+    "sandbox_tests_executed",  # Feature #214: Test-runner runs tests in sandbox environment
 ]
 
 # Artifact types - outputs from agent runs
 ARTIFACT_TYPES = ["file_change", "test_result", "log", "metric", "snapshot"]
 
 # Validator types - acceptance criteria checks
-VALIDATOR_TYPES = ["test_pass", "file_exists", "lint_clean", "forbidden_patterns", "custom"]
+# Feature #211: Added test_enforcement validator for test gate enforcement
+VALIDATOR_TYPES = ["test_pass", "file_exists", "lint_clean", "forbidden_patterns", "custom", "test_enforcement"]
 
 # Payload size limit for events (chars) - larger outputs go to artifacts
 EVENT_PAYLOAD_MAX_SIZE = 4096
