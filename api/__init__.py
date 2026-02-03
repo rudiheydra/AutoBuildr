@@ -536,6 +536,47 @@ from api.scaffolding import (
     DEFAULT_DIR_PERMISSIONS,
     PHASE_1_DIRS,
     PHASE_2_DIRS,
+    # Feature #200: CLAUDE.md generation
+    # Data classes
+    ProjectMetadata,
+    ClaudeMdResult,
+    # Convenience functions
+    claude_md_exists,
+    generate_claude_md,
+    ensure_claude_md,
+    scaffold_with_claude_md,
+    generate_claude_md_content,
+    # Constants
+    CLAUDE_MD_FILE,
+    DEFAULT_FILE_PERMISSIONS,
+    # Feature #202: Project Initialization with Scaffolding
+    # Data classes
+    ScaffoldingStatus,
+    ProjectInitializationResult,
+    # Functions
+    get_scaffolding_status,
+    needs_scaffolding,
+    initialize_project_scaffolding,
+    ensure_project_scaffolded,
+    is_project_initialized,
+    # Constants
+    SCAFFOLDING_METADATA_KEY,
+    SCAFFOLDING_TIMESTAMP_KEY,
+    SCAFFOLDING_COMPLETED_KEY,
+    PROJECT_METADATA_FILE,
+    # Feature #204: Scaffolding respects .gitignore patterns
+    # Data classes
+    GitignoreUpdateResult,
+    # Functions
+    gitignore_exists,
+    update_gitignore,
+    ensure_gitignore_patterns,
+    verify_gitignore_patterns,
+    scaffold_with_gitignore,
+    # Constants
+    GITIGNORE_FILE,
+    GITIGNORE_GENERATED_PATTERNS,
+    GITIGNORE_TRACKED_PATTERNS,
 )
 from api.settings_manager import (
     # Feature #198: Agent Materializer generates settings.local.json when needed
@@ -975,6 +1016,28 @@ __all__ = [
     "DEFAULT_DIR_PERMISSIONS",
     "PHASE_1_DIRS",
     "PHASE_2_DIRS",
+    # Feature #202: Project Initialization with Scaffolding exports
+    "ScaffoldingStatus",
+    "ProjectInitializationResult",
+    "get_scaffolding_status",
+    "needs_scaffolding",
+    "initialize_project_scaffolding",
+    "ensure_project_scaffolded",
+    "is_project_initialized",
+    "SCAFFOLDING_METADATA_KEY",
+    "SCAFFOLDING_TIMESTAMP_KEY",
+    "SCAFFOLDING_COMPLETED_KEY",
+    "PROJECT_METADATA_FILE",
+    # Feature #204: Scaffolding respects .gitignore patterns exports
+    "GitignoreUpdateResult",
+    "gitignore_exists",
+    "update_gitignore",
+    "ensure_gitignore_patterns",
+    "verify_gitignore_patterns",
+    "scaffold_with_gitignore",
+    "GITIGNORE_FILE",
+    "GITIGNORE_GENERATED_PATTERNS",
+    "GITIGNORE_TRACKED_PATTERNS",
     # Feature #198: Settings Manager exports
     "SettingsUpdateResult",
     "SettingsRequirements",
