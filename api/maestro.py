@@ -1791,6 +1791,207 @@ class Maestro:
             return None
 
     # -------------------------------------------------------------------------
+    # Feature #180: Graceful Octo Failure Handling
+    # -------------------------------------------------------------------------
+
+    def delegate_to_octo_with_fallback(
+        self,
+        decision: AgentPlanningDecision,
+        session: Session,
+        project_dir: Path | str | None = None,
+        *,
+        run_id: str | None = None,
+    ) -> "OctoDelegationWithFallbackResult":
+        """
+        Delegate to Octo for AgentSpec generation with graceful fallback.
+
+        Feature #180: Maestro handles Octo failures gracefully
+
+        This method wraps Octo invocation in error handling and provides:
+        1. Error handling around Octo invocation
+        2. Full context logging on failure
+        3. Fallback to default/existing agents on failure
+        4. Failure recorded as audit event with error details
+        5. Continuation with available agents
+
+        Args:
+            decision: AgentPlanningDecision from evaluate()
+            session: SQLAlchemy database session
+            project_dir: Project directory for context
+            run_id: Optional run_id for recording audit events
+
+        Returns:
+            OctoDelegationWithFallbackResult containing:
+            - generated specs (if Octo succeeded) or empty list
+            - fallback_used: True if fallback was triggered
+            - available_agents: List of agents available for execution
+            - event_ids: Audit event IDs (including failure event if applicable)
+        """
+        _logger.info(
+            "Delegating to Octo with fallback: %d capabilities requested",
+            len(decision.required_capabilities),
+        )
+
+        # Track fallback and events
+        fallback_used = False
+        failure_event_id: int | None = None
+        octo_error: str | None = None
+        octo_error_type: str | None = None
+
+        # Step 1: Attempt Octo delegation (wrapped in error handling)
+        try:
+            delegation_result = self.delegate_to_octo(
+                decision,
+                session,
+                project_dir=project_dir,
+                run_id=run_id,
+            )
+
+            if delegation_result.success and delegation_result.agent_specs:
+                # Octo succeeded - return with generated specs
+                _logger.info(
+                    "Octo delegation succeeded: %d specs generated",
+                    len(delegation_result.agent_specs),
+                )
+
+                # Available agents = existing + newly generated
+                available_agents = list(decision.existing_capabilities)
+                for spec in delegation_result.agent_specs:
+                    if spec.name not in available_agents:
+                        available_agents.append(spec.name)
+
+                return OctoDelegationWithFallbackResult(
+                    success=True,
+                    agent_specs=delegation_result.agent_specs,
+                    fallback_used=False,
+                    available_agents=available_agents,
+                    event_ids=delegation_result.event_ids,
+                    warnings=delegation_result.warnings,
+                )
+
+            # Octo returned failure response
+            octo_error = delegation_result.error or "No valid specs generated"
+            octo_error_type = "generation_failed"
+            _logger.warning(
+                "Octo delegation failed with error: %s",
+                octo_error,
+            )
+
+        except Exception as e:
+            # Exception during Octo invocation
+            octo_error = f"Octo invocation exception: {e}"
+            octo_error_type = "exception"
+            _logger.exception(
+                "Exception during Octo delegation: %s", e,
+            )
+
+        # Step 2: Log error with full context
+        _logger.error(
+            "Octo failure - falling back to default agents. "
+            "Error: %s, Type: %s, Required capabilities: %s, "
+            "Existing agents: %s",
+            octo_error,
+            octo_error_type,
+            [req.capability for req in decision.required_capabilities],
+            decision.existing_capabilities,
+        )
+
+        # Step 3: Fall back to default/existing agents
+        fallback_used = True
+        fallback_agents = list(decision.existing_capabilities)
+
+        # Include default agents if not already present
+        for default_agent in self.default_agents:
+            if default_agent not in fallback_agents:
+                fallback_agents.append(default_agent)
+
+        _logger.info(
+            "Falling back to agents: %s",
+            fallback_agents,
+        )
+
+        # Step 4: Record failure as audit event
+        if run_id and session:
+            try:
+                event_recorder = get_event_recorder(session, project_dir)
+                failure_event_id = event_recorder.record_octo_failure(
+                    run_id,
+                    error=octo_error or "Unknown error",
+                    error_type=octo_error_type,
+                    required_capabilities=[
+                        req.capability for req in decision.required_capabilities
+                    ],
+                    fallback_agents=fallback_agents,
+                    context={
+                        "decision_justification": decision.justification,
+                        "recommended_agent_types": decision.recommended_agent_types,
+                    },
+                )
+                _logger.info(
+                    "Recorded octo_failure event: run=%s, event_id=%s",
+                    run_id, failure_event_id,
+                )
+            except Exception as e:
+                _logger.exception("Failed to record octo_failure event: %s", e)
+
+        # Step 5: Return result allowing execution to continue
+        event_ids = [failure_event_id] if failure_event_id else []
+
+        return OctoDelegationWithFallbackResult(
+            success=False,  # Octo failed
+            agent_specs=[],  # No specs generated
+            fallback_used=True,
+            available_agents=fallback_agents,
+            event_ids=event_ids,
+            error=octo_error,
+            error_type=octo_error_type,
+            warnings=[f"Octo failed: {octo_error}. Using fallback agents."],
+        )
+
+    def _record_octo_failure_event(
+        self,
+        event_recorder: EventRecorder,
+        run_id: str,
+        error: str,
+        error_type: str | None,
+        decision: AgentPlanningDecision,
+        fallback_agents: list[str],
+    ) -> int | None:
+        """
+        Record an octo_failure audit event.
+
+        Feature #180: Failure recorded as audit event with error details
+
+        Args:
+            event_recorder: EventRecorder instance
+            run_id: Run ID to associate event with
+            error: Error message
+            error_type: Type of error
+            decision: AgentPlanningDecision that triggered Octo call
+            fallback_agents: Agents being used as fallback
+
+        Returns:
+            Event ID if recorded, None if failed
+        """
+        try:
+            return event_recorder.record_octo_failure(
+                run_id,
+                error=error,
+                error_type=error_type,
+                required_capabilities=[
+                    req.capability for req in decision.required_capabilities
+                ],
+                fallback_agents=fallback_agents,
+                context={
+                    "decision_justification": decision.justification,
+                    "recommended_agent_types": decision.recommended_agent_types,
+                },
+            )
+        except Exception as e:
+            _logger.exception("Failed to record octo_failure event")
+            return None
+
+    # -------------------------------------------------------------------------
     # Feature #177: Materialization Orchestration
     # -------------------------------------------------------------------------
 
