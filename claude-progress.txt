@@ -15106,3 +15106,81 @@ Feature #181 has been marked as passing after successful:
 - Total: 200/227 features passing (88.1%)
 
 **Session completed successfully.**
+
+---
+
+## Session: 2026-02-04 - Feature #205
+
+### Feature #205: Test-runner agent archetype defined - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Dependencies:** None
+
+**Description:** Define the test-runner agent archetype with standard tools, skills, and responsibilities.
+
+**Changes Made:**
+
+1. `api/archetypes.py`: Updated test-runner archetype (lines 261-316)
+   - **Default Tools (Step 1):** Added all required tools: Bash, Read, Write, Glob, Grep
+   - **Default Skills (Step 2):** Added pytest, unittest, test discovery (plus additional skills)
+   - **Responsibilities (Step 3):** Added write tests, run tests, report results responsibilities
+   - **Model (Step 4):** Confirmed sonnet (balanced speed/capability)
+   - **Capability Keywords (Step 5):** Added pytest, unittest, write_tests, write_test, tdd
+   - **Excluded Tools:** Changed from [Write, Edit] to [Edit] only (Write now allowed for test files)
+
+2. `tests/test_feature_191_archetypes.py`: Updated test_test_runner_has_limited_tools
+   - Updated to expect Write in default_tools (per Feature #205)
+   - Updated docstring to reference Feature #205 change
+
+3. `tests/test_feature_205_test_runner_archetype.py`: 49 comprehensive tests
+   - TestStep1RequiredTools: 9 tests (tools verification)
+   - TestStep2DefaultSkills: 5 tests (skills verification)
+   - TestStep3Responsibilities: 5 tests (responsibilities verification)
+   - TestStep4Model: 4 tests (model verification)
+   - TestStep5OctoIntegration: 10 tests (Octo capability mapping)
+   - TestSerializationAndAgentCreation: 4 tests (serialization)
+   - TestEdgeCases: 5 tests (edge cases)
+   - TestApiPackageExports: 2 tests (API exports)
+   - TestFeature205VerificationSteps: 5 tests (acceptance criteria)
+
+4. `tests/verify_feature_205.py`: Standalone verification script
+
+**Verification Summary (All 5 Feature Steps Passed):**
+
+1. **Test-runner archetype includes tools: Bash, Read, Write, Glob, Grep** - PASS
+   - All 5 required tools present in default_tools
+   - Feature tracking tools also included
+
+2. **Default skills: pytest, unittest, test discovery** - PASS
+   - All 3 required skills present
+   - Additional testing skills included
+
+3. **Responsibilities: write tests, run tests, report results** - PASS
+   - "Write test cases following project patterns and best practices"
+   - "Run tests and execute test suites"
+   - "Report test results and status"
+
+4. **Model: sonnet (balanced speed/capability)** - PASS
+   - recommended_model = "sonnet"
+   - Customization preserves default unless overridden
+
+5. **Archetype used by Octo when test execution needed** - PASS
+   - "testing" capability maps to test-runner
+   - get_archetype_for_task_type("testing") returns test-runner
+   - archetype_exists("test-runner") = True
+
+**Test Results:**
+- tests/test_feature_205_test_runner_archetype.py: 49/49 tests PASS (5.15s)
+- tests/test_feature_191_archetypes.py: 72/72 tests PASS (no regressions)
+- tests/verify_feature_205.py: 5/5 verification steps PASS
+
+**Commit:** 73eab41
+
+**Updated Progress:**
+- Feature #205: Test-runner agent archetype defined - PASSING
+- Total: 203/227 features passing (89.4%)
+
+**Session completed successfully.**
