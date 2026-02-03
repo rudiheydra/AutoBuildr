@@ -1,6 +1,92 @@
 # AutoBuildr Progress Log
 # ======================
 
+## Session: 2026-02-04 - Feature #209
+
+### Feature #209: TestContract schema defined and documented - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Dependencies:** None
+
+**Description:** Define the schema for TestContract objects produced by Octo.
+
+**Changes Made:**
+
+1. `api/octo.py`: Extended TestContract with new Feature #209 fields (200+ lines added)
+   - Added `test_name` field: Human-readable name for the test contract
+   - Added `subject` field: What is being tested (component, function, endpoint)
+   - Added `dependencies` field: List of fixtures, mocks, and services needed
+   - Added `TestDependency` dataclass with validation
+   - Added `DEPENDENCY_TYPES` constant listing valid dependency types
+   - Added helper functions: `_generate_test_name()`, `_generate_subject()`, `_generate_dependencies()`
+   - Updated `generate_test_contract()` to populate new fields automatically
+
+2. `api/octo_schemas.py`: Added JSON schema validation for new fields
+   - Added `VALID_DEPENDENCY_TYPES` frozenset
+   - Added `TEST_DEPENDENCY_SCHEMA` JSON schema
+   - Updated `TEST_CONTRACT_SCHEMA` with test_name, subject, dependencies
+   - Added `_validate_dependency()` function for schema validation
+   - Updated `validate_test_contract_schema()` to validate new fields
+
+3. `api/__init__.py`: Added exports for Feature #209
+   - `TEST_DEPENDENCY_SCHEMA`
+   - `VALID_DEPENDENCY_TYPES`
+
+4. `tests/test_feature_209_test_contract_schema.py`: 60 comprehensive tests
+   - TestStep1TestNameAndType: 7 tests
+   - TestStep2SubjectAndAssertions: 7 tests
+   - TestStep3PassFailCriteria: 6 tests
+   - TestStep4Dependencies: 13 tests
+   - TestStep5SchemaDocumentedValidated: 14 tests
+   - TestIntegration: 4 tests
+   - TestEdgeCases: 6 tests
+   - TestFeature209VerificationSteps: 5 summary tests
+
+**Verification Summary (All 5 Feature Steps Passed):**
+
+1. **TestContract includes: test_name, test_type (unit/integration/e2e)** - PASS
+   - test_name field added as string (human-readable name)
+   - test_type includes unit, integration, e2e plus api, performance, security, etc.
+   - Both fields in to_dict() and from_dict() for serialization
+
+2. **Includes: subject (what to test), assertions (expected behaviors)** - PASS
+   - subject field added (describes what is being tested)
+   - assertions list describes expected behaviors with target, expected, operator
+   - _generate_subject() provides context-specific subjects
+
+3. **Includes: pass_criteria, fail_criteria** - PASS
+   - pass_criteria and fail_criteria are lists of strings
+   - At least one of assertions or pass_criteria required for validity
+
+4. **Includes: dependencies (fixtures, mocks needed)** - PASS
+   - dependencies field as list of TestDependency objects
+   - TestDependency has: name, dependency_type, description, setup_hints, required
+   - DEPENDENCY_TYPES: fixture, mock, service, database, file, environment, api, component
+   - _generate_dependencies() creates appropriate deps based on capability
+
+5. **Schema documented and validated** - PASS
+   - TestContract docstring documents all fields including Feature #209 additions
+   - TestDependency docstring documents its fields
+   - TEST_CONTRACT_SCHEMA and TEST_DEPENDENCY_SCHEMA have descriptions
+   - validate_test_contract_schema() validates all new fields
+   - Invalid data properly fails validation with helpful error messages
+
+**Test Results:**
+- tests/test_feature_209_test_contract_schema.py: 60/60 tests PASS (4.89s)
+- tests/test_feature_184_octo_test_contracts.py: 40/40 tests PASS (no regressions)
+- tests/test_feature_188_octo_schema_validation.py: 56/56 tests PASS (no regressions)
+
+**Updated Progress:**
+- Feature #209: TestContract schema defined and documented - PASSING
+- Total: 209/227 features passing (92.1%)
+
+**Session completed successfully.**
+
+---
+
 ## Session: 2026-02-04 - Feature #206
 
 ### Feature #206: Test-runner agent writes test code from TestContract - COMPLETED
@@ -15480,3 +15566,99 @@ Feature #181 has been marked as passing after successful:
 
 **Session completed successfully.**
 
+
+---
+
+## Session: 2026-02-04 - Feature #210
+
+### Feature #210: Feature cannot pass without tests passing - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Dependencies:** None
+
+**Description:** Acceptance gates require associated tests to pass before feature is marked complete.
+
+**Changes Made:**
+
+1. `api/test_contract_gate.py`: New module implementing TestContractGate (500+ lines)
+   - **TestGateStatus**: Enum with statuses: PASSED, FAILED, NO_TESTS, NO_CONTRACT, SKIPPED, ERROR
+   - **TestGateConfiguration**: Dataclass with configuration options
+     - enforce_test_gate: Enable/disable the gate
+     - require_all_assertions: Require all TestContract assertions covered
+     - min_test_coverage: Minimum test coverage percentage
+     - allow_skip_for_no_contract: Allow passing if no TestContract exists
+     - timeout_seconds: Test execution timeout
+     - max_retries: Maximum retries for flaky tests
+   - **AssertionCoverage**: Dataclass tracking coverage of individual assertions
+   - **TestContractCoverage**: Dataclass tracking coverage for a TestContract
+   - **TestGateResult**: Dataclass with gate evaluation results
+   - **TestContractGate**: Main class implementing the gate
+     - evaluate(): Evaluate test gate for a feature
+     - _evaluate_contract(): Evaluate coverage for a single TestContract
+     - _evaluate_assertion(): Evaluate coverage for a single assertion
+     - check_feature_can_pass(): Convenience method with database session
+   - Convenience functions: get_test_contract_gate, reset_test_contract_gate, evaluate_test_gate, check_tests_required, get_blocking_test_issues
+
+2. `api/__init__.py`: Added exports for Feature #210
+   - TestGateStatus, TestGateConfiguration, AssertionCoverage
+   - TestContractCoverage, TestGateResult, TestContractGate
+   - get_test_contract_gate, reset_test_contract_gate, evaluate_test_gate
+   - check_tests_required, get_blocking_test_issues
+   - Constants: DEFAULT_ENFORCE_TEST_GATE, DEFAULT_REQUIRE_ALL_ASSERTIONS, DEFAULT_MIN_TEST_COVERAGE, DEFAULT_ALLOW_SKIP_FOR_NO_CONTRACT
+
+3. `tests/test_feature_210_test_contract_gate.py`: 51 comprehensive tests
+   - TestTestGateStatus: 2 tests
+   - TestTestGateConfiguration: 4 tests
+   - TestAssertionCoverage: 4 tests
+   - TestTestContractCoverage: 5 tests
+   - TestTestGateResult: 3 tests
+   - TestStep1TestsMustBeWritten: 2 tests
+   - TestStep2TestsMustPass: 3 tests
+   - TestStep3AllAssertionsCovered: 3 tests
+   - TestStep4GateBlocksCompletion: 3 tests
+   - TestStep5GateConfigurable: 5 tests
+   - TestConvenienceFunctions: 7 tests
+   - TestApiPackageExports: 5 tests
+   - TestFeature210VerificationSteps: 5 tests
+
+**Verification Summary (All 5 Feature Steps Passed):**
+
+1. **Feature with TestContract must have tests written** - PASS
+   - If TestContract exists but no test results, gate blocks
+   - tests_exist field tracks whether tests were written
+   - Missing test results cause TestGateStatus.FAILED
+
+2. **Tests must execute successfully (exit code 0)** - PASS
+   - Tests with exit_code=0 allow feature to pass
+   - Tests with exit_code!=0 block completion
+   - tests_passed field tracks test execution success
+
+3. **All assertions in TestContract must be covered** - PASS
+   - Uncovered assertions block when require_all_assertions=True
+   - Partial coverage allowed when require_all_assertions=False
+   - AssertionCoverage tracks individual assertion coverage
+
+4. **Acceptance gate blocks completion if tests fail** - PASS
+   - Failed tests block feature completion
+   - Passed tests allow feature completion
+   - blocking_reason provides details on why feature cannot pass
+
+5. **Gate is enforceable via configuration** - PASS
+   - enforce_test_gate: Enable/disable the gate
+   - require_all_assertions: Require all assertions covered
+   - min_test_coverage: Minimum coverage threshold
+   - allow_skip_for_no_contract: Allow passing without TestContract
+
+**Test Results:**
+- tests/test_feature_210_test_contract_gate.py: 51/51 tests PASS (5.99s)
+- tests/test_feature_35_acceptance_gate.py: 36/36 tests PASS (no regression)
+- tests/test_feature_207_test_runner.py: 66/66 tests PASS (no regression)
+
+**Updated Progress:**
+- Feature #210: Feature cannot pass without tests passing - PASSING
+- Total: 206/227 features passing (90.7%)
+
+**Session completed successfully.**
