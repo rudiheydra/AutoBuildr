@@ -187,6 +187,19 @@ code: _check-running ## List recently generated/modified code files
 	@echo "=== Recently Modified Files (last 60 min) ==="
 	@docker exec $(CONTAINER_NAME) find /test-projects/repo-concierge -path '*/.venv' -prune -o -type f \( -name "*.py" -o -name "*.md" -o -name "*.json" -o -name "*.yaml" \) -mmin -60 -print 2>/dev/null | head -30 || echo "No recent changes"
 
+.PHONY: export-agents
+export-agents: _check-running ## Export generated agents to a destination directory
+	@if [ -z "$(DEST)" ]; then \
+		echo "Usage: make export-agents DEST=/path/to/destination"; \
+		echo "Example: make export-agents DEST=~/workspace/agent-playground/agents/"; \
+		exit 1; \
+	fi
+	@mkdir -p $(DEST)
+	@echo "=== Exporting Generated Agents ==="
+	@docker cp $(CONTAINER_NAME):/test-projects/repo-concierge/.claude/agents/generated/. $(DEST)/ 2>/dev/null && \
+		echo "Exported to: $(DEST)" && ls -la $(DEST) || \
+		echo "No agents to export (directory empty or doesn't exist)"
+
 .PHONY: down
 down: ## Stop the environment (preserve data)
 	$(DC) down
