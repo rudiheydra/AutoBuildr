@@ -621,11 +621,17 @@ class EventRecorder:
         task_type: str | None = None,
         capabilities: list[str] | None = None,
         rationale: str | None = None,
+        project_name: str | None = None,
+        feature_id: int | None = None,
     ) -> int:
         """
         Convenience method to record an 'agent_planned' event.
 
         Feature #176/221: Maestro agent planning audit event.
+
+        This event is recorded when Maestro plans a new agent, typically before
+        invoking Octo for agent generation. The event links to the project or
+        feature that triggered the planning decision.
 
         Args:
             run_id: Run ID
@@ -634,6 +640,8 @@ class EventRecorder:
             task_type: Task type (coding, testing, etc.)
             capabilities: List of capabilities the agent provides
             rationale: Explanation for why this agent was planned
+            project_name: Name of the project triggering the planning (Feature #221)
+            feature_id: ID of the feature triggering the planning (Feature #221)
 
         Returns:
             Event ID
@@ -647,6 +655,10 @@ class EventRecorder:
             payload["capabilities"] = capabilities
         if rationale:
             payload["rationale"] = rationale
+        if project_name:
+            payload["project_name"] = project_name
+        if feature_id is not None:
+            payload["feature_id"] = feature_id
 
         return self.record(run_id, "agent_planned", payload=payload)
 
@@ -850,6 +862,65 @@ class EventRecorder:
             payload["error_message"] = error_message
 
         return self.record(run_id, "tests_executed", payload=payload)
+
+    def record_icon_generated(
+        self,
+        run_id: str,
+        agent_name: str,
+        icon_data: str | None,
+        icon_format: str,
+        *,
+        spec_id: str | None = None,
+        provider_name: str | None = None,
+        generation_time_ms: int = 0,
+        success: bool = True,
+        error: str | None = None,
+    ) -> int:
+        """
+        Convenience method to record an 'icon_generated' event.
+
+        Feature #218: Icon generation triggered during agent materialization.
+        Records details of icon generation including format, provider, and timing.
+
+        This event is recorded when an icon is generated for an agent during
+        materialization. The event is recorded regardless of whether icon
+        generation succeeded or failed, to maintain an audit trail.
+
+        Args:
+            run_id: Run ID
+            agent_name: Name of the agent the icon was generated for
+            icon_data: The generated icon data (base64 for binary, text for emoji/icon_id)
+            icon_format: Format of the icon (svg, png, emoji, icon_id)
+            spec_id: Optional ID of the AgentSpec
+            provider_name: Name of the icon provider used
+            generation_time_ms: Time taken to generate the icon in milliseconds
+            success: Whether icon generation succeeded
+            error: Error message if icon generation failed
+
+        Returns:
+            Event ID
+        """
+        payload = {
+            "agent_name": agent_name,
+            "icon_format": icon_format,
+            "success": success,
+            "generation_time_ms": generation_time_ms,
+        }
+        if icon_data:
+            # Truncate icon_data if too large for payload
+            if len(icon_data) > 1000:
+                payload["icon_data"] = icon_data[:1000]
+                payload["icon_data_truncated"] = True
+            else:
+                payload["icon_data"] = icon_data
+        if spec_id:
+            payload["spec_id"] = spec_id
+        if provider_name:
+            payload["provider_name"] = provider_name
+        if error:
+            payload["error"] = error
+
+        return self.record(run_id, "icon_generated", payload=payload)
 
     def clear_sequence_cache(self, run_id: str | None = None) -> None:
         """

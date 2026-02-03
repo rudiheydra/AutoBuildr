@@ -360,7 +360,11 @@ class TestStep4EventPersistedToTable:
             AgentEvent.run_id == sample_agent_run.id
         ).count()
 
-        assert count_after == count_before + 1
+        # Feature #218 adds icon_generated event, so we now record 2 events:
+        # 1. agent_materialized (the main event)
+        # 2. icon_generated (added by Feature #218)
+        assert count_after >= count_before + 1  # At least agent_materialized
+        assert count_after == count_before + 2  # Both events recorded
         assert result.audit_info.recorded
 
     def test_event_has_correct_event_type(

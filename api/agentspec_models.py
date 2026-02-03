@@ -91,6 +91,7 @@ EVENT_TYPES = [
     "tests_executed",  # Feature #207: Test-runner executes tests and reports results
     "test_result_artifact_created",  # Feature #212: Test result stored as artifact
     "sandbox_tests_executed",  # Feature #214: Test-runner runs tests in sandbox environment
+    "icon_generated",  # Feature #218: Icon generation triggered during agent materialization
 ]
 
 # Artifact types - outputs from agent runs

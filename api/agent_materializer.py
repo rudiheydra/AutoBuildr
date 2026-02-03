@@ -48,6 +48,7 @@ from typing import Any, Callable, TYPE_CHECKING
 if TYPE_CHECKING:
     from api.agentspec_models import AgentSpec
     from api.event_recorder import EventRecorder
+    from api.icon_provider import IconResult
     from sqlalchemy.orm import Session
 
 _logger = logging.getLogger(__name__)
@@ -278,6 +279,46 @@ class MaterializationAuditInfo:
 
 
 @dataclass
+class IconGenerationInfo:
+    """
+    Information about icon generation during materialization.
+
+    Feature #218: Icon generation triggered during agent materialization.
+
+    Attributes:
+        success: Whether icon generation succeeded
+        icon_data: The generated icon data (if successful)
+        icon_format: Format of the icon (svg, png, emoji, icon_id)
+        provider_name: Name of the provider that generated the icon
+        generation_time_ms: Time taken to generate the icon
+        event_id: ID of the recorded icon_generated event (if recorded)
+        audit_recorded: Whether the audit event was successfully recorded
+        error: Error message if generation failed (does not block materialization)
+    """
+    success: bool = False
+    icon_data: str | None = None
+    icon_format: str | None = None
+    provider_name: str | None = None
+    generation_time_ms: int = 0
+    event_id: int | None = None
+    audit_recorded: bool = False
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for serialization."""
+        return {
+            "success": self.success,
+            "icon_data": self.icon_data,
+            "icon_format": self.icon_format,
+            "provider_name": self.provider_name,
+            "generation_time_ms": self.generation_time_ms,
+            "event_id": self.event_id,
+            "audit_recorded": self.audit_recorded,
+            "error": self.error,
+        }
+
+
+@dataclass
 class MaterializationResult:
     """
     Result of materializing a single AgentSpec.
@@ -291,6 +332,7 @@ class MaterializationResult:
         content_hash: SHA256 hash of the generated content (for determinism verification)
         validation_result: Result of template validation (Feature #196)
         audit_info: Audit event recording info (Feature #195)
+        icon_info: Icon generation info (Feature #218)
     """
     spec_id: str
     spec_name: str
@@ -300,6 +342,7 @@ class MaterializationResult:
     content_hash: str | None = None
     validation_result: TemplateValidationResult | None = None
     audit_info: MaterializationAuditInfo | None = None
+    icon_info: IconGenerationInfo | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
@@ -312,6 +355,7 @@ class MaterializationResult:
             "content_hash": self.content_hash,
             "validation_result": self.validation_result.to_dict() if self.validation_result else None,
             "audit_info": self.audit_info.to_dict() if self.audit_info else None,
+            "icon_info": self.icon_info.to_dict() if self.icon_info else None,
         }
 
 
@@ -557,6 +601,9 @@ class AgentMaterializer:
                 spec.name, filepath, content_hash[:16],
             )
 
+            # Feature #218: Generate icon (does not block materialization on failure)
+            icon_info = self._generate_icon_for_spec(spec)
+
             return MaterializationResult(
                 spec_id=spec.id,
                 spec_name=spec.name,
@@ -564,6 +611,7 @@ class AgentMaterializer:
                 file_path=filepath,
                 content_hash=content_hash,
                 validation_result=validation_result,
+                icon_info=icon_info,
             )
 
         except TemplateValidationError:
@@ -621,7 +669,7 @@ class AgentMaterializer:
         if not result.success:
             return result
 
-        # Record the audit event
+        # Record the agent_materialized audit event
         audit_info = self._record_materialization_event(
             session=session,
             run_id=run_id,
@@ -632,6 +680,15 @@ class AgentMaterializer:
 
         # Update result with audit info
         result.audit_info = audit_info
+
+        # Feature #218: Record icon_generated audit event if icon was generated
+        if result.icon_info:
+            self._record_icon_generated_event(
+                session=session,
+                run_id=run_id,
+                spec=spec,
+                icon_info=result.icon_info,
+            )
 
         return result
 
@@ -696,6 +753,60 @@ class AgentMaterializer:
             audit_info.recorded = False
 
         return audit_info
+
+    def _record_icon_generated_event(
+        self,
+        session: "Session",
+        run_id: str,
+        spec: "AgentSpec",
+        icon_info: IconGenerationInfo,
+    ) -> None:
+        """
+        Record an icon_generated event to the database.
+
+        Feature #218: Icon generation triggered during agent materialization.
+
+        This event is recorded after icon generation (regardless of success/failure)
+        to maintain an audit trail of all icon generation attempts.
+
+        Args:
+            session: SQLAlchemy database session
+            run_id: UUID of the AgentRun to link the event to
+            spec: The AgentSpec the icon was generated for
+            icon_info: The icon generation result info
+        """
+        from api.event_recorder import get_event_recorder
+
+        try:
+            recorder = get_event_recorder(session, self.project_dir)
+
+            event_id = recorder.record_icon_generated(
+                run_id=run_id,
+                agent_name=spec.name,
+                icon_data=icon_info.icon_data,
+                icon_format=icon_info.icon_format or "unknown",
+                spec_id=spec.id,
+                provider_name=icon_info.provider_name,
+                generation_time_ms=icon_info.generation_time_ms,
+                success=icon_info.success,
+                error=icon_info.error,
+            )
+
+            # Update icon_info with audit event info
+            icon_info.event_id = event_id
+            icon_info.audit_recorded = True
+
+            _logger.info(
+                "Recorded icon_generated event: run_id=%s, agent=%s, event_id=%d, success=%s",
+                run_id, spec.name, event_id, icon_info.success,
+            )
+
+        except Exception as e:
+            _logger.warning(
+                "Failed to record icon_generated event for '%s': %s",
+                spec.name, e,
+            )
+            icon_info.audit_recorded = False
 
     def materialize_batch_with_audit(
         self,
@@ -1628,6 +1739,133 @@ Focus on achieving this objective while following the guidelines and constraints
     # -------------------------------------------------------------------------
     # Utility Methods
     # -------------------------------------------------------------------------
+
+    # -------------------------------------------------------------------------
+    # Feature #218: Icon Generation During Materialization
+    # -------------------------------------------------------------------------
+
+    def _generate_icon_for_spec(
+        self,
+        spec: "AgentSpec",
+    ) -> IconGenerationInfo:
+        """
+        Generate an icon for an AgentSpec during materialization.
+
+        Feature #218: Icon generation triggered during agent materialization.
+
+        This method:
+        1. Calls IconProvider.generate_icon() based on agent name and role
+        2. Returns icon generation info (success or failure)
+        3. Does NOT block materialization if icon generation fails
+
+        Icon generation failure is logged but does not cause materialization
+        to fail - the agent file is still created successfully.
+
+        Args:
+            spec: The AgentSpec to generate an icon for
+
+        Returns:
+            IconGenerationInfo with icon data or error details
+        """
+        import time
+
+        start_time = time.time()
+        icon_info = IconGenerationInfo()
+
+        try:
+            from api.icon_provider import generate_icon, IconFormat
+
+            # Derive role from task_type
+            role = self._derive_role_from_spec(spec)
+
+            # Generate icon using the global icon registry
+            result = generate_icon(
+                agent_name=spec.name,
+                role=role,
+                tone="professional",  # Default tone for materialized agents
+            )
+
+            generation_time_ms = int((time.time() - start_time) * 1000)
+
+            if result.success:
+                icon_info.success = True
+                icon_info.icon_data = result.icon_data
+                icon_info.icon_format = (
+                    result.format.value
+                    if isinstance(result.format, IconFormat)
+                    else str(result.format)
+                )
+                icon_info.provider_name = result.provider_name
+                icon_info.generation_time_ms = generation_time_ms
+
+                _logger.info(
+                    "Icon generated for AgentSpec '%s': format=%s, provider=%s, time=%dms",
+                    spec.name,
+                    icon_info.icon_format,
+                    icon_info.provider_name,
+                    generation_time_ms,
+                )
+            else:
+                # Icon generation returned failure result
+                icon_info.success = False
+                icon_info.error = result.error or "Icon generation returned failure"
+                icon_info.generation_time_ms = generation_time_ms
+                icon_info.provider_name = result.provider_name
+
+                _logger.warning(
+                    "Icon generation failed for AgentSpec '%s': %s",
+                    spec.name,
+                    icon_info.error,
+                )
+
+        except ImportError as e:
+            # IconProvider module not available - graceful degradation
+            icon_info.success = False
+            icon_info.error = f"Icon provider not available: {e}"
+            icon_info.generation_time_ms = int((time.time() - start_time) * 1000)
+
+            _logger.debug(
+                "Icon provider not available for AgentSpec '%s': %s",
+                spec.name,
+                e,
+            )
+
+        except Exception as e:
+            # Any other error during icon generation
+            icon_info.success = False
+            icon_info.error = f"Icon generation error: {e}"
+            icon_info.generation_time_ms = int((time.time() - start_time) * 1000)
+
+            _logger.warning(
+                "Icon generation error for AgentSpec '%s': %s",
+                spec.name,
+                e,
+            )
+
+        return icon_info
+
+    def _derive_role_from_spec(self, spec: "AgentSpec") -> str:
+        """
+        Derive the role from an AgentSpec for icon generation.
+
+        Maps task_type to a role that the IconProvider can use.
+
+        Args:
+            spec: The AgentSpec
+
+        Returns:
+            Role string for icon generation
+        """
+        task_type_to_role = {
+            "coding": "coder",
+            "testing": "tester",
+            "refactoring": "refactorer",
+            "documentation": "documenter",
+            "audit": "auditor",
+            "custom": "coder",  # Default to coder for custom tasks
+        }
+
+        return task_type_to_role.get(spec.task_type, "coder")
 
     def _escape_yaml_string(self, value: str) -> str:
         """
