@@ -1795,6 +1795,263 @@ class Octo:
 
         return ConstraintValidator(constraints)
 
+    # -------------------------------------------------------------------------
+    # Feature #189: AgentSpec Persistence
+    # -------------------------------------------------------------------------
+
+    def persist_spec(
+        self,
+        spec: AgentSpec,
+        session: Session,
+        *,
+        project_name: str | None = None,
+        octo_request_id: str | None = None,
+        source_feature_ids: list[int] | None = None,
+    ) -> SpecPersistenceResult:
+        """
+        Persist a single AgentSpec to the database.
+
+        Feature #189: Octo persists AgentSpecs to database
+
+        This method saves the AgentSpec to the agent_specs table with:
+        - source_type='octo_generated' in the context field
+        - Project name and request ID linkage in context
+        - Source feature ID linkage if provided
+
+        The database record is the system-of-record. Files materialized later
+        are CLI-authoritative but secondary to the database.
+
+        Args:
+            spec: The AgentSpec to persist
+            session: SQLAlchemy session for database operations
+            project_name: Name of the project this spec belongs to
+            octo_request_id: ID of the Octo request that generated this spec
+            source_feature_ids: Feature IDs that triggered the spec generation
+
+        Returns:
+            SpecPersistenceResult indicating success or failure
+        """
+        try:
+            # Step 2: Spec includes source_type='octo_generated'
+            # Inject source metadata into context before persisting
+            self._inject_source_metadata(
+                spec=spec,
+                source_type=SOURCE_TYPE_OCTO_GENERATED,
+                project_name=project_name,
+                octo_request_id=octo_request_id,
+                source_feature_ids=source_feature_ids,
+            )
+
+            # Link to first source feature if provided
+            if source_feature_ids and len(source_feature_ids) > 0:
+                spec.source_feature_id = source_feature_ids[0]
+
+            # Add spec to session and flush to get ID assigned
+            session.add(spec)
+            session.flush()
+
+            _logger.info(
+                "Persisted AgentSpec '%s' (id=%s) to database with source_type='%s'",
+                spec.name,
+                spec.id,
+                SOURCE_TYPE_OCTO_GENERATED,
+            )
+
+            return SpecPersistenceResult(
+                spec_id=spec.id,
+                spec_name=spec.name,
+                success=True,
+                source_type=SOURCE_TYPE_OCTO_GENERATED,
+                project_name=project_name,
+                octo_request_id=octo_request_id,
+            )
+
+        except Exception as e:
+            _logger.error(
+                "Failed to persist AgentSpec '%s': %s",
+                spec.name if spec else "unknown",
+                e,
+            )
+            return SpecPersistenceResult(
+                spec_id=spec.id if spec else "",
+                spec_name=spec.name if spec else "",
+                success=False,
+                error=str(e),
+                source_type=SOURCE_TYPE_OCTO_GENERATED,
+                project_name=project_name,
+                octo_request_id=octo_request_id,
+            )
+
+    def persist_specs(
+        self,
+        specs: list[AgentSpec],
+        session: Session,
+        *,
+        project_name: str | None = None,
+        octo_request_id: str | None = None,
+        source_feature_ids: list[int] | None = None,
+    ) -> list[SpecPersistenceResult]:
+        """
+        Persist multiple AgentSpecs to the database.
+
+        Feature #189: Octo persists AgentSpecs to database
+
+        This is a convenience method that persists multiple specs in a single
+        transaction. All specs are saved or none are (atomic).
+
+        Args:
+            specs: List of AgentSpecs to persist
+            session: SQLAlchemy session for database operations
+            project_name: Name of the project these specs belong to
+            octo_request_id: ID of the Octo request that generated these specs
+            source_feature_ids: Feature IDs that triggered the spec generation
+
+        Returns:
+            List of SpecPersistenceResults for each spec
+        """
+        results: list[SpecPersistenceResult] = []
+
+        for spec in specs:
+            result = self.persist_spec(
+                spec=spec,
+                session=session,
+                project_name=project_name,
+                octo_request_id=octo_request_id,
+                source_feature_ids=source_feature_ids,
+            )
+            results.append(result)
+
+        succeeded = sum(1 for r in results if r.success)
+        _logger.info(
+            "Persisted %d/%d AgentSpecs for project '%s', request '%s'",
+            succeeded,
+            len(specs),
+            project_name or "unknown",
+            octo_request_id or "unknown",
+        )
+
+        return results
+
+    def generate_and_persist_specs(
+        self,
+        payload: OctoRequestPayload,
+        session: Session,
+    ) -> tuple[OctoResponse, list[SpecPersistenceResult]]:
+        """
+        Generate AgentSpecs and persist them to the database.
+
+        Feature #189 Step 4: Database record created before file materialization
+
+        This method combines spec generation with database persistence, ensuring
+        the DB record is created BEFORE any file materialization occurs. This
+        implements the "dual persistence" model where:
+        - Database is the system-of-record
+        - Files are CLI-authoritative
+
+        The workflow is:
+        1. Generate specs via DSPy pipeline
+        2. Persist specs to database (system-of-record)
+        3. Return both OctoResponse and persistence results
+        4. Caller can then proceed with file materialization
+
+        Args:
+            payload: OctoRequestPayload with project context and requirements
+            session: SQLAlchemy session for database operations
+
+        Returns:
+            Tuple of (OctoResponse, list of SpecPersistenceResults)
+        """
+        # Step 1: Generate specs using existing generate_specs method
+        response = self.generate_specs(payload)
+
+        # If generation failed, return early with empty persistence results
+        if not response.success or not response.agent_specs:
+            _logger.warning(
+                "Spec generation failed or no specs generated for request %s",
+                payload.request_id,
+            )
+            return response, []
+
+        # Step 2: Extract project name from context
+        project_name = payload.project_context.get("name") or payload.project_context.get("project_name")
+
+        # Step 3: Persist all generated specs to database BEFORE materialization
+        _logger.info(
+            "Persisting %d generated specs to database before materialization",
+            len(response.agent_specs),
+        )
+
+        persistence_results = self.persist_specs(
+            specs=response.agent_specs,
+            session=session,
+            project_name=project_name,
+            octo_request_id=payload.request_id,
+            source_feature_ids=payload.source_feature_ids,
+        )
+
+        # Log persistence summary
+        succeeded = sum(1 for r in persistence_results if r.success)
+        _logger.info(
+            "Persisted %d/%d specs for request %s (project=%s)",
+            succeeded,
+            len(persistence_results),
+            payload.request_id,
+            project_name,
+        )
+
+        return response, persistence_results
+
+    def _inject_source_metadata(
+        self,
+        spec: AgentSpec,
+        source_type: str,
+        project_name: str | None = None,
+        octo_request_id: str | None = None,
+        source_feature_ids: list[int] | None = None,
+    ) -> None:
+        """
+        Inject source metadata into the AgentSpec's context.
+
+        Feature #189 Step 2 & 3: Spec includes source_type and project linkage
+
+        This ensures every spec persisted by Octo has proper provenance tracking:
+        - source_type: How the spec was created (octo_generated)
+        - project_name: Which project this spec belongs to
+        - octo_request_id: Which Octo request generated this spec
+        - source_feature_ids: Which features triggered generation
+
+        Args:
+            spec: The AgentSpec to modify
+            source_type: The source type to record
+            project_name: Name of the project
+            octo_request_id: ID of the triggering Octo request
+            source_feature_ids: Feature IDs that triggered generation
+        """
+        # Ensure context exists
+        if spec.context is None:
+            spec.context = {}
+
+        # Step 2: Include source_type='octo_generated'
+        spec.context["source_type"] = source_type
+
+        # Step 3: Link to project and triggering request
+        if project_name:
+            spec.context["project_name"] = project_name
+
+        if octo_request_id:
+            spec.context["octo_request_id"] = octo_request_id
+
+        if source_feature_ids:
+            spec.context["source_feature_ids"] = source_feature_ids
+
+        _logger.debug(
+            "Injected source metadata into AgentSpec '%s': source_type=%s, project=%s, request=%s",
+            spec.name,
+            source_type,
+            project_name,
+            octo_request_id,
+        )
+
 
 # =============================================================================
 # Module-level convenience functions

@@ -524,9 +524,14 @@ class TestStep5SpecValidation:
         octo = Octo(spec_builder=mock_builder)
 
         with patch("api.octo.validate_spec") as mock_validate:
+            from api.spec_validator import ValidationError
             mock_validate.return_value = SpecValidationResult(
                 is_valid=False,
-                errors=["objective cannot be empty"],
+                errors=[ValidationError(
+                    field="objective",
+                    message="objective cannot be empty",
+                    code="required_field_empty",
+                )],
             )
             response = octo.generate_specs(sample_payload)
 
