@@ -14118,3 +14118,202 @@ Feature #181 has been marked as passing after successful:
 
 **Session completed successfully.**
 
+[Testing] 2026-02-03T23:54:04+11:00 - Feature #35 regression test PASSED
+  - Feature: Acceptance Gate Orchestration
+  - Category: D. Workflow Completeness
+  - All 11 verification steps verified:
+    Step 1: AcceptanceGate class with evaluate method - PASS
+    Step 2: Iterates through validators array - PASS
+    Step 3: Instantiates appropriate validator class for type - PASS
+    Step 4: Executes validator and collects ValidatorResult - PASS
+    Step 5: Required flag check enforced - PASS
+    Step 6: all_pass mode correctly implemented - PASS
+    Step 7: any_pass mode correctly implemented - PASS
+    Step 8: acceptance_results array built - PASS
+    Step 9: AgentRun.final_verdict set - PASS
+    Step 10: acceptance_results stored in AgentRun - PASS
+    Step 11: Returns overall verdict - PASS
+  - Unit tests: 36/36 PASS
+  - Browser automation unavailable (Chrome SIGTRAP in container)
+  - No regression found - feature still working correctly
+
+
+[Testing] 2026-02-03T23:56:52+11:00 - Feature #86 regression test PASSED
+  - Feature: Core validate_dependency_graph function detects self-references
+  - Category: error-handling
+  - All 4 verification steps verified:
+    Step 1: Create test feature with id=1 and dependencies=[1] - PASS
+    Step 2: Call validate_dependency_graph() with this feature - PASS
+    Step 3: self_references list contains feature id 1 - PASS
+    Step 4: error type marked as auto_fixable=True - PASS
+  - Unit tests: 14/14 PASS
+  - API endpoint: /api/projects/{project}/features/dependency-health - Working
+  - Browser automation: Unavailable (Chrome SIGTRAP in container)
+  - No regression found - feature still working correctly
+
+
+---
+
+## Session: 2026-02-03 - Feature #195
+
+### Feature #195: Agent Materializer records agent_materialized audit event - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Dependencies:** None
+
+**Description:** After successfully writing an agent file, Materializer records an audit event.
+
+**Changes Made:**
+
+1. `api/agentspec_models.py`: Added 'agent_materialized' to EVENT_TYPES
+   - New event type for tracking agent file materialization
+
+2. `api/event_recorder.py`: Added record_agent_materialized() convenience method
+   - Records materialization details: agent_name, file_path, spec_hash
+   - Optional fields: spec_id, display_name, task_type
+
+3. `api/agent_materializer.py`: Added audit event recording functionality
+   - `MaterializationAuditInfo` dataclass for tracking audit results
+   - `materialize_with_audit()` method for single spec with event recording
+   - `materialize_batch_with_audit()` for batch operations with events
+   - `_record_materialization_event()` helper method
+
+4. `api/__init__.py`: Added exports for MaterializationAuditInfo
+
+5. `tests/test_feature_195_materializer_audit_event.py`: 33 comprehensive tests
+   - TestStep1AgentMaterializedEventType: 3 tests
+   - TestStep2EventPayloadFields: 7 tests
+   - TestStep3EventLinkedToAgentSpec: 3 tests
+   - TestStep4EventPersistedToTable: 5 tests
+   - TestMaterializationAuditInfo: 4 tests
+   - TestIntegration: 3 tests
+   - TestEdgeCases: 2 tests
+   - TestFeature195VerificationSteps: 4 tests
+   - TestApiPackageExports: 2 tests
+
+**Verification Summary (All 4 Feature Steps Passed):**
+
+1. **Create agent_materialized event type** - PASS
+   - 'agent_materialized' added to EVENT_TYPES
+   - EventRecorder accepts the event type
+   - Convenience method record_agent_materialized() exists
+
+2. **Event includes: agent_name, file_path, spec_hash, timestamp** - PASS
+   - Payload includes all required fields
+   - timestamp set automatically by EventRecorder
+   - Optional spec_id, display_name, task_type also supported
+
+3. **Event linked to AgentSpec in database** - PASS
+   - spec_id stored in payload links to AgentSpec.id
+   - agent_name matches AgentSpec.name
+   - Can query spec from event payload
+
+4. **Event persisted to agent_events table** - PASS
+   - Events stored in agent_events table
+   - Linked to AgentRun via run_id
+   - Event type is 'agent_materialized'
+   - Sequence number assigned
+
+**Test Results:**
+- tests/test_feature_195_materializer_audit_event.py: 33/33 tests PASS (6.18s)
+- tests/test_feature_192_agent_materializer.py: 61/61 tests PASS (no regression)
+- tests/test_feature_30_event_recorder.py: 44/44 tests PASS (no regression)
+
+**Commit:** 5a6659f
+
+**Updated Progress:**
+- Feature #195: Agent Materializer records agent_materialized audit event - PASSING
+- Total: 194/227 features passing
+
+**Session completed successfully.**
+
+
+---
+
+## Session: 2026-02-03 - Feature #196
+
+### Feature #196: Agent Materializer validates template output - COMPLETED
+
+**Status:** PASSING
+
+**Category:** functional
+
+**Dependencies:** None
+
+**Description:** Materializer validates that rendered markdown is valid Claude Code agent format before writing.
+
+**Changes Made:**
+
+1. `api/agent_materializer.py`: Added template validation functionality
+   - REQUIRED_MARKDOWN_SECTIONS constant (## Your Objective, ## Tool Policy, ## Execution Guidelines)
+   - REQUIRED_FRONTMATTER_FIELDS constant (name, description, model)
+   - ValidationError dataclass for individual validation errors
+   - TemplateValidationResult dataclass for validation results
+   - TemplateValidationError exception for raise_on_invalid mode
+   - validate_template_output() method for comprehensive validation
+   - _validate_required_sections() helper method
+   - _validate_frontmatter() helper method  
+   - _validate_tool_declarations() method (validates against AVAILABLE_TOOLS)
+   - _validate_model_specification() method (validates against VALID_MODELS)
+   - Updated materialize() with validate and raise_on_invalid parameters
+
+2. `api/__init__.py`: Added exports for Feature #196 components
+   - MaterializerValidationError, TemplateValidationResult, TemplateValidationError
+   - REQUIRED_MARKDOWN_SECTIONS, REQUIRED_FRONTMATTER_FIELDS
+
+3. `tests/test_feature_196_template_validation.py`: 46 comprehensive tests
+   - TestStep1RequiredSections: 8 tests for section validation
+   - TestStep2ToolDeclarations: 5 tests for tool validation
+   - TestStep3ModelValidation: 6 tests for model validation
+   - TestStep4InvalidOutputRaisesError: 6 tests for error handling
+   - TestValidationErrorDataClass: 4 tests for error dataclass
+   - TestTemplateValidationResult: 3 tests for result dataclass
+   - TestTemplateValidationErrorException: 3 tests for exception
+   - TestIntegration: 3 integration tests
+   - TestFeature196VerificationSteps: 4 comprehensive verification tests
+   - TestEdgeCases: 4 edge case tests
+
+4. `tests/verify_feature_196.py`: Verification script for all 4 steps
+
+**Verification Summary (All 4 Feature Steps Passed):**
+
+1. **Rendered markdown checked for required sections** - PASS
+   - REQUIRED_MARKDOWN_SECTIONS: ## Your Objective, ## Tool Policy, ## Execution Guidelines
+   - REQUIRED_FRONTMATTER_FIELDS: name, description, model
+   - _validate_required_sections() checks all sections present
+   - _validate_frontmatter() checks all fields present
+
+2. **Tool declarations validated against known tools** - PASS
+   - _validate_tool_declarations() validates against AVAILABLE_TOOLS
+   - Invalid tools reported with category="invalid_tool", value=tool_name
+   - Valid tools (Read, Write, Glob, etc.) pass validation
+   - Empty tool list and None tool_policy pass validation
+
+3. **Model specification validated** - PASS
+   - VALID_MODELS: sonnet, opus, haiku
+   - _validate_model_specification() extracts model from frontmatter
+   - Invalid models reported with category="invalid_model"
+   - Default model (sonnet) used when not specified
+
+4. **Invalid output raises error before file write** - PASS
+   - validate=True (default) validates before writing
+   - Invalid validation returns success=False without writing file
+   - raise_on_invalid=True raises TemplateValidationError
+   - validate=False skips validation for legacy behavior
+
+**Test Results:**
+- tests/test_feature_196_template_validation.py: 46/46 tests PASS (4.99s)
+- tests/test_feature_192_agent_materializer.py: 67/67 tests PASS (no regressions)
+- tests/test_feature_193_materializer_writes_files.py: 36/36 tests PASS (no regressions)
+- tests/verify_feature_196.py: All 4 steps PASS
+
+**Commit:** 3bbcd56
+
+**Updated Progress:**
+- Feature #196: Agent Materializer validates template output - PASSING
+- Total passing features: 194/227 (85.5%)
+
+**Session completed successfully.**
