@@ -1,17 +1,32 @@
 # =============================================================================
-# AutoBuildr Docker Test Environment
+# AutoBuildr Docker Environment
 # =============================================================================
 #
-# Usage:
-#   make help            Show available targets
-#   make test-env        Full lifecycle: snapshot, build, start, load, verify
+# Two modes:
+#
+#   TEST  (default)  Isolated snapshot volume, raw_messages executor.
+#                    Safe for experimentation — real code is never touched.
+#
+#   PROD             Mounts the real repo-concierge directory,
+#                    claude_sdk executor (full Claude Code CLI sessions).
+#                    Changes made by agents are written to your real repo.
+#
+# Quick start:
+#   make test-env        Full test lifecycle  (snapshot → build → up → load)
+#   make prod-env        Full prod lifecycle  (build → up → load)
+#   make switch-test     Restart into test mode
+#   make switch-prod     Restart into prod mode
+#
+# Other targets:
 #   make build           Build the Docker image
-#   make up              Start the test environment
+#   make up              Start (uses docker/.env settings)
+#   make up-test         Start in test mode
+#   make up-prod         Start in prod mode
 #   make load            Register the test project
-#   make build-project   Trigger agent execution on test project
+#   make build-project   Trigger agent execution
 #   make verify-spec-path Assert spec-driven path was executed
 #   make logs            Follow container logs
-#   make status          Check health and project status
+#   make status          Check health, mode, and project status
 #   make shell           Open a shell in the container
 #   make down            Stop (preserve data)
 #   make clean           Stop and remove all artifacts
@@ -19,6 +34,7 @@
 # Configuration:
 #   ANTHROPIC_API_KEY    Required. Set via environment or docker/.env
 #   PORT                 Host port (default: 8888)
+#   PROD_PROJECT_DIR     Real repo path for prod mode
 #   REPO_URL             GitHub repo URL for test project (optional)
 #
 
@@ -30,12 +46,19 @@ COMPOSE_PROJECT := autobuildr-test
 CONTAINER_NAME  := autobuildr-test
 PORT            ?= 8888
 
-# Test project source (on host, for snapshot fallback)
+# Test project source (on host, for snapshot)
 TEST_PROJECT_SRC  ?= $(HOME)/workspace/repo-concierge
 TEST_PROJECT_DEST := docker/test-project/repo-concierge
 
+# Production project directory (real repo mounted into container)
+PROD_PROJECT_DIR  ?= $(HOME)/workspace/repo-concierge
+
 # Compose command
 DC := docker compose -f $(COMPOSE_FILE) -p $(COMPOSE_PROJECT)
+
+# Mode-specific compose commands (env vars override .env file)
+DC_TEST := PROJECT_DIR= AUTOBUILDR_EXECUTOR=raw_messages $(DC)
+DC_PROD := PROJECT_DIR=$(PROD_PROJECT_DIR) AUTOBUILDR_EXECUTOR=claude_sdk $(DC)
 
 # =============================================================================
 # Primary Targets
@@ -51,25 +74,58 @@ help: ## Show available targets
 	@echo ""
 
 .PHONY: test-env
-test-env: snapshot build up load status ## Full lifecycle: snapshot, build, start, load, verify
+test-env: snapshot build up-test load status ## Full test lifecycle: snapshot, build, start (test), load
 	@echo ""
 	@echo "========================================="
-	@echo "  Test environment is ready"
+	@echo "  TEST environment is ready"
 	@echo "  UI: http://localhost:$(PORT)"
 	@echo "========================================="
+
+.PHONY: prod-env
+prod-env: build up-prod load status ## Full prod lifecycle: build, start (prod), load
+	@echo ""
+	@echo "========================================="
+	@echo "  PROD environment is ready"
+	@echo "  UI: http://localhost:$(PORT)"
+	@echo "  Repo: $(PROD_PROJECT_DIR)"
+	@echo "========================================="
+
+.PHONY: switch-test
+switch-test: down up-test load ## Switch to TEST mode (restart with snapshot volume)
+
+.PHONY: switch-prod
+switch-prod: down up-prod load ## Switch to PROD mode (restart with real repo)
 
 .PHONY: build
 build: _check-snapshot ## Build the Docker image
 	$(DC) build
 
 .PHONY: up
-up: _check-auth _check-snapshot ## Start the test environment
+up: _check-auth _check-snapshot ## Start with docker/.env settings
 	$(DC) up -d
 	@echo ""
 	@echo "AutoBuildr starting..."
 	@$(MAKE) --no-print-directory _wait-healthy
 	@echo ""
 	@echo "AutoBuildr running at: http://localhost:$(PORT)"
+
+.PHONY: up-test
+up-test: _check-auth _check-snapshot ## Start in TEST mode (snapshot volume, raw_messages)
+	$(DC_TEST) up -d
+	@echo ""
+	@echo "AutoBuildr starting [TEST mode]..."
+	@$(MAKE) --no-print-directory _wait-healthy
+	@echo ""
+	@echo "[TEST] http://localhost:$(PORT)  executor=raw_messages  volume=snapshot"
+
+.PHONY: up-prod
+up-prod: _check-auth _check-prod-dir ## Start in PROD mode (real repo, claude_sdk)
+	$(DC_PROD) up -d
+	@echo ""
+	@echo "AutoBuildr starting [PROD mode]..."
+	@$(MAKE) --no-print-directory _wait-healthy
+	@echo ""
+	@echo "[PROD] http://localhost:$(PORT)  executor=claude_sdk  repo=$(PROD_PROJECT_DIR)"
 
 .PHONY: load
 load: _check-running ## Register the test project
@@ -88,9 +144,19 @@ logs: ## Follow container logs
 	$(DC) logs -f
 
 .PHONY: status
-status: ## Check environment health and project status
+status: ## Check environment health, mode, and project status
 	@echo "=== Container ==="
 	@$(DC) ps 2>/dev/null || echo "  Not running"
+	@echo ""
+	@echo "=== Mode ==="
+	@EXEC=$$(docker exec $(CONTAINER_NAME) printenv AUTOBUILDR_EXECUTOR 2>/dev/null); \
+	if [ -z "$$EXEC" ]; then \
+		echo "  (container not running)"; \
+	elif [ "$$EXEC" = "claude_sdk" ]; then \
+		echo "  PROD  (executor=claude_sdk, real repo mounted)"; \
+	else \
+		echo "  TEST  (executor=$$EXEC, snapshot volume)"; \
+	fi
 	@echo ""
 	@echo "=== Health ==="
 	@curl -sf http://localhost:$(PORT)/api/health 2>/dev/null \
@@ -178,6 +244,17 @@ _check-snapshot:
 	@if [ ! -d "$(TEST_PROJECT_DEST)" ]; then \
 		echo "Snapshot not found. Creating..."; \
 		$(MAKE) --no-print-directory snapshot; \
+	fi
+
+.PHONY: _check-prod-dir
+_check-prod-dir:
+	@if [ ! -d "$(PROD_PROJECT_DIR)" ]; then \
+		echo "ERROR: Production repo not found at $(PROD_PROJECT_DIR)"; \
+		echo ""; \
+		echo "Set PROD_PROJECT_DIR to your real repo path:"; \
+		echo "  make up-prod PROD_PROJECT_DIR=/path/to/repo-concierge"; \
+		echo ""; \
+		exit 1; \
 	fi
 
 .PHONY: _wait-healthy

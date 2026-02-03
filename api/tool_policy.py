@@ -1883,18 +1883,23 @@ TOOL_SETS: dict[str, list[str]] = {
     "coding": [
         # Feature management tools
         "feature_get_by_id",
+        "feature_get_summary",
+        "feature_get_stats",
+        "feature_claim_and_get",
         "feature_mark_in_progress",
         "feature_mark_passing",
         "feature_mark_failing",
         "feature_skip",
         "feature_clear_in_progress",
-        "feature_get_stats",
         # Code editing tools
         "Read",
         "Write",
         "Edit",
         "Glob",
         "Grep",
+        # Claude Code built-in tools
+        "TodoRead",
+        "TodoWrite",
         # Browser automation for testing
         "browser_navigate",
         "browser_click",
@@ -1914,13 +1919,18 @@ TOOL_SETS: dict[str, list[str]] = {
     "testing": [
         # Feature management tools
         "feature_get_by_id",
+        "feature_get_summary",
+        "feature_get_stats",
+        "feature_claim_and_get",
         "feature_mark_passing",
         "feature_mark_failing",
-        "feature_get_stats",
         # Read-only code access
         "Read",
         "Glob",
         "Grep",
+        # Claude Code built-in tools
+        "TodoRead",
+        "TodoWrite",
         # Browser automation for testing
         "browser_navigate",
         "browser_click",
@@ -1946,6 +1956,7 @@ TOOL_SETS: dict[str, list[str]] = {
         "Bash",
         # Feature management (read-only status updates)
         "feature_get_by_id",
+        "feature_get_summary",
         "feature_get_stats",
     ],
     # documentation: file write, read-only code access
@@ -1957,6 +1968,7 @@ TOOL_SETS: dict[str, list[str]] = {
         "Grep",
         # Feature management (read-only)
         "feature_get_by_id",
+        "feature_get_summary",
         "feature_get_stats",
         # Web research for documentation
         "WebFetch",
@@ -1970,6 +1982,7 @@ TOOL_SETS: dict[str, list[str]] = {
         "Grep",
         # Feature management (read-only)
         "feature_get_by_id",
+        "feature_get_summary",
         "feature_get_stats",
         "feature_get_ready",
         "feature_get_blocked",
@@ -1987,6 +2000,7 @@ TOOL_SETS: dict[str, list[str]] = {
         "Glob",
         "Grep",
         "feature_get_by_id",
+        "feature_get_summary",
         "feature_get_stats",
     ],
 }
@@ -2204,6 +2218,10 @@ def derive_tool_policy(
     # Add additional hints if provided
     if additional_tool_hints:
         tool_hints.update(additional_tool_hints)
+
+    # Expand short tool names to include MCP-prefixed equivalents
+    from api.agentspec_models import _expand_mcp_tool_names
+    allowed_tools = _expand_mcp_tool_names(allowed_tools)
 
     # Build the complete tool_policy structure
     tool_policy: dict[str, Any] = {

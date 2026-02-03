@@ -944,8 +944,8 @@ class SpecBuilder:
         # Derive icon from task_type
         icon = self._derive_icon(task_type)
 
-        # Ensure tool_policy has required structure
-        tool_policy = self._normalize_tool_policy(parsed.tool_policy)
+        # Ensure tool_policy has required structure and standard tools
+        tool_policy = self._normalize_tool_policy(parsed.tool_policy, task_type=task_type)
 
         # Create AgentSpec
         agent_spec = AgentSpec(
@@ -993,10 +993,34 @@ class SpecBuilder:
         """
         return derive_icon(task_type)
 
-    def _normalize_tool_policy(self, policy: dict[str, Any]) -> dict[str, Any]:
-        """Ensure tool_policy has required structure."""
+    def _normalize_tool_policy(
+        self, policy: dict[str, Any], task_type: str = "coding"
+    ) -> dict[str, Any]:
+        """Ensure tool_policy has required structure and standard tools for task type.
+
+        DSPy may generate an empty or narrow ``allowed_tools`` list.  This
+        method merges the DSPy output with the canonical ``TOOL_SETS`` for
+        the given *task_type* so that built-in tools (Read, Write, Bash, ...)
+        and feature/browser MCP tools are always present.
+        """
+        from api.tool_policy import TOOL_SETS
+
+        # Standard tools for this task type (canonical source of truth)
+        standard_tools = list(
+            TOOL_SETS.get(task_type, TOOL_SETS.get("custom", []))
+        )
+
+        # Merge: standard first, then any extras DSPy added
+        dspy_tools = policy.get("allowed_tools", [])
+        seen: set[str] = set()
+        combined: list[str] = []
+        for tool in standard_tools + dspy_tools:
+            if tool not in seen:
+                seen.add(tool)
+                combined.append(tool)
+
         return create_tool_policy(
-            allowed_tools=policy.get("allowed_tools", []),
+            allowed_tools=combined,
             forbidden_patterns=policy.get("forbidden_patterns", []),
             tool_hints=policy.get("tool_hints", {}),
             policy_version=policy.get("policy_version", "v1"),

@@ -151,10 +151,11 @@ async function fetchIconAsDataUrl(
 export function useAgentIcon({
   projectName,
   specId,
-  displayName,
+  displayName: _displayName,
   taskType,
   enabled = true,
 }: UseAgentIconOptions): UseAgentIconReturn {
+  // _displayName reserved for future use (e.g., generating initials for placeholder)
   const [iconUrl, setIconUrl] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)

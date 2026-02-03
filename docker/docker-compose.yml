@@ -20,12 +20,13 @@ services:
     volumes:
       # Persist registry and artifacts between restarts
       - autobuildr-data:/home/autobuildr/.autobuildr
-      # Persist test project data (features.db, etc.) across rebuilds
-      - test-project-data:/test-projects/repo-concierge
+      # Test project mount: set PROJECT_DIR in .env to use real repo, or leave
+      # empty to use the Docker volume snapshot for isolated testing.
+      #   Real:  PROJECT_DIR=/home/you/workspace/repo-concierge
+      #   Test:  PROJECT_DIR=  (or unset — uses named volume)
+      - ${PROJECT_DIR:-test-project-data}:/test-projects/repo-concierge
       # Mount Claude OAuth credentials (Claude Max subscription)
       - ${HOME}/.claude/.credentials.json:/home/autobuildr/.claude/.credentials.json:ro
-      # Uncomment to mount live host files for development:
-      # - ../../repo-concierge:/test-projects/repo-concierge
     restart: "no"
 
 volumes:

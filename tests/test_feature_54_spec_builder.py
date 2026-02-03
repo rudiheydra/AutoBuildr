@@ -559,14 +559,22 @@ class TestSpecBuilderBuild:
         assert "OAuth2" in result.agent_spec.objective
 
     def test_generated_spec_has_tool_policy(self, builder_with_mocked_dspy, valid_tool_policy):
-        """Test generated spec has tool policy from DSPy output."""
+        """Test generated spec has tool policy including DSPy tools and standard tools."""
         result = builder_with_mocked_dspy.build(
             task_description="Do something",
             task_type="coding",
         )
 
         assert result.success is True
-        assert result.agent_spec.tool_policy["allowed_tools"] == valid_tool_policy["allowed_tools"]
+        allowed = result.agent_spec.tool_policy["allowed_tools"]
+        # DSPy-specified tools are included in the final policy
+        for tool in valid_tool_policy["allowed_tools"]:
+            assert tool in allowed, f"DSPy tool '{tool}' missing from policy"
+        # Standard coding tools from TOOL_SETS are also present
+        assert "Glob" in allowed
+        assert "Grep" in allowed
+        # MCP-prefixed feature tools are auto-expanded
+        assert "mcp__features__feature_get_by_id" in allowed
 
     def test_generated_acceptance_spec_has_validators(self, builder_with_mocked_dspy):
         """Test generated acceptance spec has validators."""
