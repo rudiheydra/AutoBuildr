@@ -43,6 +43,7 @@ from .routers import (
     settings_router,
     spec_builder_router,
     spec_creation_router,
+    task_pipeline_router,
     terminal_router,
 )
 from .schemas import SetupStatus
@@ -200,6 +201,7 @@ app.include_router(assistant_chat_router)
 app.include_router(settings_router)
 app.include_router(terminal_router)
 app.include_router(planning_decisions_router)  # Feature #179
+app.include_router(task_pipeline_router)  # Task Interface Pipeline Integration
 
 
 # ============================================================================
