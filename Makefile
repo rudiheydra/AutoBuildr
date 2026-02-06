@@ -431,7 +431,7 @@ autobuildr-status: ## Check status of all development services
 		echo "NOT RESPONDING"; \
 	fi
 	@printf "  Agent Executor (8200):  "; \
-	if curl -sf http://localhost:8200/health > /dev/null 2>&1; then \
+	if curl -sf http://localhost:8200/api/health > /dev/null 2>&1; then \
 		echo "HEALTHY"; \
 	else \
 		echo "NOT RESPONDING"; \
