@@ -45,6 +45,62 @@ router = APIRouter(prefix="/api/task-pipeline", tags=["task-pipeline"])
 # Lazy import for project-specific database
 _create_database = None
 
+# Docker path mapping configuration
+# Maps container paths to host paths when API runs on host
+# Format: DOCKER_PATH_MAP="/container/path:/host/path,/another:/path"
+import os
+_DOCKER_PATH_MAPPINGS: list[tuple[str, str]] = []
+
+def _init_path_mappings():
+    """Initialize Docker path mappings from environment."""
+    global _DOCKER_PATH_MAPPINGS
+    if _DOCKER_PATH_MAPPINGS:
+        return  # Already initialized
+
+    # Default mapping for test environment
+    default_mappings = [
+        ("/test-projects/repo-concierge", str(Path(__file__).parent.parent.parent / "docker/test-project/repo-concierge")),
+    ]
+
+    # Parse additional mappings from environment
+    env_mappings = os.environ.get("DOCKER_PATH_MAP", "")
+    if env_mappings:
+        for mapping in env_mappings.split(","):
+            if ":" in mapping:
+                container_path, host_path = mapping.split(":", 1)
+                default_mappings.append((container_path.strip(), host_path.strip()))
+
+    _DOCKER_PATH_MAPPINGS = default_mappings
+    _logger.info("Docker path mappings: %s", _DOCKER_PATH_MAPPINGS)
+
+
+def _translate_docker_path(path_str: str) -> str:
+    """
+    Translate a Docker container path to host path if needed.
+
+    If the path exists on host, returns it unchanged.
+    Otherwise, checks for Docker path mappings and translates.
+    """
+    _init_path_mappings()
+
+    path = Path(path_str)
+
+    # If path exists, use it directly
+    if path.exists():
+        return str(path.resolve())
+
+    # Check for Docker path mappings
+    for container_prefix, host_prefix in _DOCKER_PATH_MAPPINGS:
+        if path_str.startswith(container_prefix):
+            translated = path_str.replace(container_prefix, host_prefix, 1)
+            translated_path = Path(translated)
+            if translated_path.exists():
+                _logger.info("Translated Docker path: %s -> %s", path_str, translated)
+                return str(translated_path.resolve())
+
+    # Return original if no translation found
+    return str(path.resolve())
+
 
 def _get_db_factory():
     """Get the create_database function with lazy import."""
@@ -173,7 +229,9 @@ async def initialize_session(
         Session initialization result with tasks and instructions
     """
     try:
-        project_dir = Path(request.project_dir).resolve()
+        # Translate Docker container path to host path if needed
+        translated_path = _translate_docker_path(request.project_dir)
+        project_dir = Path(translated_path).resolve()
         if not project_dir.exists():
             raise HTTPException(
                 status_code=400,
@@ -231,7 +289,9 @@ async def sync_task_status(
 
         # Get project_dir from metadata or use default
         project_dir_str = metadata.get("project_dir", ".")
-        project_dir = Path(project_dir_str).resolve()
+        # Translate Docker container path to host path if needed
+        translated_path = _translate_docker_path(project_dir_str)
+        project_dir = Path(translated_path).resolve()
 
         # Use project-specific database session
         db = get_project_session(project_dir)
@@ -286,7 +346,9 @@ async def trigger_pipeline(
         Result with paths to generated agent files
     """
     try:
-        project_dir = Path(request.project_dir).resolve()
+        # Translate Docker container path to host path if needed
+        translated_path = _translate_docker_path(request.project_dir)
+        project_dir = Path(translated_path).resolve()
         if not project_dir.exists():
             raise HTTPException(
                 status_code=400,
@@ -343,7 +405,9 @@ async def check_agent_exists(
         Agent existence status and path if found
     """
     try:
-        project_dir = Path(request.project_dir).resolve()
+        # Translate Docker container path to host path if needed
+        translated_path = _translate_docker_path(request.project_dir)
+        project_dir = Path(translated_path).resolve()
 
         # Use project-specific database session
         db = get_project_session(project_dir)
@@ -384,7 +448,9 @@ async def validate_tool_result(
         Validation result with feedback for correction if needed
     """
     try:
-        project_dir = Path(request.cwd).resolve()
+        # Translate Docker container path to host path if needed
+        translated_path = _translate_docker_path(request.cwd)
+        project_dir = Path(translated_path).resolve()
 
         # Use project-specific database session
         db = get_project_session(project_dir)

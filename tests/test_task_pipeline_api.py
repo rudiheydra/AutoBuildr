@@ -22,12 +22,20 @@ def mock_db():
 
 
 @pytest.fixture
-def app(mock_db):
+def mock_get_project_session(mock_db):
+    """Patch get_project_session to return mock_db."""
+    with patch("server.routers.task_pipeline.get_project_session") as mock_get_session:
+        mock_get_session.return_value = mock_db
+        yield mock_get_session
+
+
+@pytest.fixture
+def app(mock_db, mock_get_project_session):
     """Create a test FastAPI app with the task pipeline router."""
     app = FastAPI()
     app.include_router(router)
 
-    # Override the get_db dependency
+    # Override the get_db dependency (legacy)
     def override_get_db():
         yield mock_db
 
