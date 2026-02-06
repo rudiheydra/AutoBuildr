@@ -310,3 +310,182 @@ _wait-healthy:
 	echo "ERROR: Server not healthy within 60s"; \
 	$(DC) logs --tail=30; \
 	exit 1
+
+# =============================================================================
+# Local Development Environment (autobuildr)
+# =============================================================================
+#
+# Starts all services needed for local development:
+#   - AutoBuildr API (FastAPI) on port 8000
+#   - AutoBuildr UI (React/Vite) on port 5173
+#   - DSPy Backend (FastAPI) on port 8100
+#   - Agent Executor (Express) on port 8200
+#
+# Usage:
+#   make autobuildr           Start all services in tmux
+#   make autobuildr-down      Stop all services
+#   make autobuildr-status    Check status of all services
+#
+# Prerequisites:
+#   - tmux must be installed
+#   - Python virtual environments set up in each project
+#   - Node.js/pnpm installed for agent-executor
+#
+# ---------------------------------------------------------------------------
+
+# Paths to external services
+DSPY_BACKEND_DIR    := $(HOME)/workspace/agent-playground/dspy-backend
+AGENT_EXECUTOR_DIR  := $(HOME)/workspace/agent-playground/agent-executor
+AUTOBUILDR_SESSION  := autobuildr-dev
+
+.PHONY: autobuildr
+autobuildr: _check-tmux _check-autobuildr-deps ## Start all development services in tmux
+	@if tmux has-session -t $(AUTOBUILDR_SESSION) 2>/dev/null; then \
+		echo "Session '$(AUTOBUILDR_SESSION)' already exists."; \
+		echo "Run 'make autobuildr-down' first or attach with: tmux attach -t $(AUTOBUILDR_SESSION)"; \
+		exit 1; \
+	fi
+	@echo ""
+	@echo "========================================="
+	@echo "  Starting AutoBuildr Development Environment"
+	@echo "========================================="
+	@echo ""
+	@# Create tmux session with first window for AutoBuildr API
+	tmux new-session -d -s $(AUTOBUILDR_SESSION) -n api \
+		'cd $(CURDIR) && source venv/bin/activate && python -m uvicorn server.main:app --host 0.0.0.0 --port 8000 --reload; read -p "Press enter to close..."'
+	@# Add window for AutoBuildr UI
+	tmux new-window -t $(AUTOBUILDR_SESSION) -n ui \
+		'cd $(CURDIR)/ui && npm run dev; read -p "Press enter to close..."'
+	@# Add window for DSPy Backend
+	tmux new-window -t $(AUTOBUILDR_SESSION) -n dspy \
+		'cd $(DSPY_BACKEND_DIR) && source .venv/bin/activate && python -m uvicorn app.main:app --host 0.0.0.0 --port 8100 --reload; read -p "Press enter to close..."'
+	@# Add window for Agent Executor
+	tmux new-window -t $(AUTOBUILDR_SESSION) -n agent \
+		'cd $(AGENT_EXECUTOR_DIR) && pnpm run dev; read -p "Press enter to close..."'
+	@# Select the api window
+	tmux select-window -t $(AUTOBUILDR_SESSION):api
+	@echo ""
+	@echo "Services starting in tmux session '$(AUTOBUILDR_SESSION)'..."
+	@echo ""
+	@sleep 3
+	@echo "========================================="
+	@echo "  AutoBuildr Development Environment"
+	@echo "========================================="
+	@echo ""
+	@echo "  Services:"
+	@echo "    AutoBuildr API:    http://localhost:8000"
+	@echo "    AutoBuildr UI:     http://localhost:5173"
+	@echo "    DSPy Backend:      http://localhost:8100"
+	@echo "    Agent Executor:    http://localhost:8200"
+	@echo ""
+	@echo "  Tmux Commands:"
+	@echo "    Attach to session: tmux attach -t $(AUTOBUILDR_SESSION)"
+	@echo "    Switch windows:    Ctrl+b, then window number (0-3)"
+	@echo "    Detach:            Ctrl+b, then d"
+	@echo "    Stop all:          make autobuildr-down"
+	@echo ""
+	@echo "========================================="
+
+.PHONY: autobuildr-down
+autobuildr-down: ## Stop all development services
+	@if tmux has-session -t $(AUTOBUILDR_SESSION) 2>/dev/null; then \
+		echo "Stopping AutoBuildr development environment..."; \
+		tmux kill-session -t $(AUTOBUILDR_SESSION); \
+		echo "All services stopped."; \
+	else \
+		echo "Session '$(AUTOBUILDR_SESSION)' is not running."; \
+	fi
+
+.PHONY: autobuildr-status
+autobuildr-status: ## Check status of all development services
+	@echo "========================================="
+	@echo "  AutoBuildr Development Status"
+	@echo "========================================="
+	@echo ""
+	@echo "=== Tmux Session ==="
+	@if tmux has-session -t $(AUTOBUILDR_SESSION) 2>/dev/null; then \
+		echo "  Session '$(AUTOBUILDR_SESSION)' is RUNNING"; \
+		echo "  Windows:"; \
+		tmux list-windows -t $(AUTOBUILDR_SESSION) 2>/dev/null | sed 's/^/    /'; \
+	else \
+		echo "  Session '$(AUTOBUILDR_SESSION)' is NOT RUNNING"; \
+	fi
+	@echo ""
+	@echo "=== Service Health ==="
+	@printf "  AutoBuildr API (8000):  "; \
+	if curl -sf http://localhost:8000/api/health > /dev/null 2>&1; then \
+		echo "HEALTHY"; \
+	else \
+		echo "NOT RESPONDING"; \
+	fi
+	@printf "  AutoBuildr UI (5173):   "; \
+	if curl -sf http://localhost:5173 > /dev/null 2>&1; then \
+		echo "HEALTHY"; \
+	else \
+		echo "NOT RESPONDING"; \
+	fi
+	@printf "  DSPy Backend (8100):    "; \
+	if curl -sf http://localhost:8100/api/health > /dev/null 2>&1; then \
+		echo "HEALTHY"; \
+	else \
+		echo "NOT RESPONDING"; \
+	fi
+	@printf "  Agent Executor (8200):  "; \
+	if curl -sf http://localhost:8200/health > /dev/null 2>&1; then \
+		echo "HEALTHY"; \
+	else \
+		echo "NOT RESPONDING"; \
+	fi
+	@echo ""
+
+.PHONY: autobuildr-attach
+autobuildr-attach: ## Attach to the tmux session
+	@if tmux has-session -t $(AUTOBUILDR_SESSION) 2>/dev/null; then \
+		tmux attach -t $(AUTOBUILDR_SESSION); \
+	else \
+		echo "Session '$(AUTOBUILDR_SESSION)' is not running."; \
+		echo "Start it with: make autobuildr"; \
+	fi
+
+.PHONY: _check-tmux
+_check-tmux:
+	@if ! command -v tmux > /dev/null 2>&1; then \
+		echo "ERROR: tmux is not installed."; \
+		echo ""; \
+		echo "Install tmux:"; \
+		echo "  Ubuntu/Debian: sudo apt install tmux"; \
+		echo "  macOS:         brew install tmux"; \
+		echo ""; \
+		exit 1; \
+	fi
+
+.PHONY: _check-autobuildr-deps
+_check-autobuildr-deps:
+	@# Check AutoBuildr venv
+	@if [ ! -f "$(CURDIR)/venv/bin/activate" ]; then \
+		echo "ERROR: AutoBuildr virtual environment not found."; \
+		echo "Run './start_ui.sh' once to set it up, or create it manually:"; \
+		echo "  python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt"; \
+		exit 1; \
+	fi
+	@# Check DSPy Backend venv
+	@if [ ! -f "$(DSPY_BACKEND_DIR)/.venv/bin/activate" ]; then \
+		echo "ERROR: DSPy Backend virtual environment not found at $(DSPY_BACKEND_DIR)/.venv"; \
+		echo "Set it up with:"; \
+		echo "  cd $(DSPY_BACKEND_DIR) && uv sync"; \
+		exit 1; \
+	fi
+	@# Check Agent Executor dependencies
+	@if [ ! -d "$(AGENT_EXECUTOR_DIR)/node_modules" ]; then \
+		echo "ERROR: Agent Executor dependencies not installed."; \
+		echo "Set it up with:"; \
+		echo "  cd $(AGENT_EXECUTOR_DIR) && pnpm install"; \
+		exit 1; \
+	fi
+	@# Check UI dependencies
+	@if [ ! -d "$(CURDIR)/ui/node_modules" ]; then \
+		echo "ERROR: UI dependencies not installed."; \
+		echo "Set it up with:"; \
+		echo "  cd $(CURDIR)/ui && npm install"; \
+		exit 1; \
+	fi

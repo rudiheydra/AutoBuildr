@@ -411,11 +411,31 @@ class TaskPipelineController:
             # Invalidate cache
             self._agents_cache = None
 
+            # Get list of generated agent files
+            agent_files = [str(r.file_path) for r in orchestration.results if r.success]
+
+            # Sync to agent-playground if available
+            playground_sync_result = None
+            try:
+                from api.playground_sync import PlaygroundSync
+                playground = PlaygroundSync(self.project_dir)
+                if playground.is_available():
+                    playground_sync_result = playground.sync_agents(agent_files)
+                    _logger.info(
+                        "Playground sync: %d agents synced to %s",
+                        len(playground_sync_result.synced_files),
+                        playground_sync_result.namespace,
+                    )
+            except Exception as e:
+                _logger.warning("Playground sync skipped: %s", e)
+
             return {
                 "success": True,
                 "error": None,
                 "agents_generated": orchestration.succeeded,
-                "agent_files": [str(r.file_path) for r in orchestration.results if r.success],
+                "agent_files": agent_files,
+                "playground_synced": playground_sync_result.synced_files if playground_sync_result else [],
+                "playground_namespace": playground_sync_result.namespace if playground_sync_result else None,
             }
 
         except Exception as e:

@@ -118,6 +118,9 @@ class TriggerResponse(BaseModel):
     agent_files: list[str] = Field(default_factory=list, description="Paths to generated agent files")
     agents_generated: int = Field(0, description="Number of agents generated")
     error: str | None = Field(None, description="Error message if generation failed")
+    # Playground sync info
+    playground_synced: list[str] = Field(default_factory=list, description="Files synced to playground")
+    playground_namespace: str | None = Field(None, description="Namespace used for playground sync")
 
 
 class CheckAgentRequest(BaseModel):
@@ -308,6 +311,8 @@ async def trigger_pipeline(
             agent_files=result.get("agent_files", []),
             agents_generated=result.get("agents_generated", 0),
             error=result.get("error"),
+            playground_synced=result.get("playground_synced", []),
+            playground_namespace=result.get("playground_namespace"),
         )
 
     except HTTPException:
@@ -319,6 +324,8 @@ async def trigger_pipeline(
             agent_files=[],
             agents_generated=0,
             error=str(e),
+            playground_synced=[],
+            playground_namespace=None,
         )
 
 
