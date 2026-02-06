@@ -73,7 +73,6 @@ LINUX_BLOCKED = {
     "/lib",
     "/lib64",
     "/run",
-    "/tmp",
     "/opt",
 }
 
