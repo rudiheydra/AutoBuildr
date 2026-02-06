@@ -193,6 +193,24 @@ class TaskPipelineController:
             hydration_result=hydration_result,
         )
 
+    def _is_autobuildr_project(self) -> bool:
+        """
+        Check if current project is AutoBuildr itself.
+
+        AutoBuildr should not generate agents for itself - it's the platform,
+        not a target project.
+
+        Returns:
+            True if project is AutoBuildr
+        """
+        # Detect AutoBuildr by its unique file structure
+        markers = [
+            self.project_dir / "api" / "maestro.py",
+            self.project_dir / "api" / "task_pipeline_controller.py",
+            self.project_dir / "server" / "routers" / "task_pipeline.py",
+        ]
+        return all(m.exists() for m in markers)
+
     def should_trigger_pipeline(self) -> bool:
         """
         Determine if the Maestro → Octo pipeline should run.
@@ -200,10 +218,16 @@ class TaskPipelineController:
         Pipeline should trigger when:
         - Features exist in database
         - No generated agents exist yet
+        - Project is NOT AutoBuildr itself
 
         Returns:
             True if pipeline should run
         """
+        # Never generate agents for AutoBuildr itself
+        if self._is_autobuildr_project():
+            _logger.info("Skipping pipeline: project is AutoBuildr itself")
+            return False
+
         # Check if features exist
         feature_count = self.session.query(Feature).count()
         if feature_count == 0:
