@@ -415,7 +415,7 @@ class TaskPipelineController:
                 "success": True,
                 "error": None,
                 "agents_generated": orchestration.succeeded,
-                "agent_files": [str(r.output_file) for r in orchestration.results if r.success],
+                "agent_files": [str(r.file_path) for r in orchestration.results if r.success],
             }
 
         except Exception as e:

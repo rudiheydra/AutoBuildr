@@ -27,11 +27,10 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from api.database import get_db
 from api.task_pipeline_controller import (
     TaskPipelineController,
     SessionInitResult,
@@ -42,6 +41,30 @@ from api.task_syncback import SyncResult
 _logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/task-pipeline", tags=["task-pipeline"])
+
+# Lazy import for project-specific database
+_create_database = None
+
+
+def _get_db_factory():
+    """Get the create_database function with lazy import."""
+    global _create_database
+    if _create_database is None:
+        import sys
+        from pathlib import Path
+        root = Path(__file__).parent.parent.parent
+        if str(root) not in sys.path:
+            sys.path.insert(0, str(root))
+        from api.database import create_database
+        _create_database = create_database
+    return _create_database
+
+
+def get_project_session(project_dir: Path) -> Session:
+    """Get a database session for a specific project directory."""
+    create_database = _get_db_factory()
+    _, SessionLocal = create_database(project_dir)
+    return SessionLocal()
 
 
 # =============================================================================
@@ -132,7 +155,6 @@ class ValidateResponse(BaseModel):
 @router.post("/init", response_model=InitResponse)
 async def initialize_session(
     request: InitRequest,
-    db: Session = Depends(get_db),
 ) -> InitResponse:
     """
     Initialize a Claude Code session.
@@ -155,6 +177,8 @@ async def initialize_session(
                 detail=f"Project directory does not exist: {project_dir}",
             )
 
+        # Use project-specific database session
+        db = get_project_session(project_dir)
         controller = TaskPipelineController(project_dir, db)
         result = controller.initialize_session(session_id=request.session_id)
 
@@ -185,7 +209,6 @@ async def initialize_session(
 @router.post("/sync", response_model=SyncResponse)
 async def sync_task_status(
     request: SyncRequest,
-    db: Session = Depends(get_db),
 ) -> SyncResponse:
     """
     Sync Claude Code Task status to Feature database.
@@ -207,6 +230,8 @@ async def sync_task_status(
         project_dir_str = metadata.get("project_dir", ".")
         project_dir = Path(project_dir_str).resolve()
 
+        # Use project-specific database session
+        db = get_project_session(project_dir)
         controller = TaskPipelineController(project_dir, db)
 
         # Build task data for handler
@@ -247,7 +272,6 @@ async def sync_task_status(
 @router.post("/trigger", response_model=TriggerResponse)
 async def trigger_pipeline(
     request: TriggerRequest,
-    db: Session = Depends(get_db),
 ) -> TriggerResponse:
     """
     Trigger agent generation pipeline.
@@ -266,6 +290,8 @@ async def trigger_pipeline(
                 detail=f"Project directory does not exist: {project_dir}",
             )
 
+        # Use project-specific database session
+        db = get_project_session(project_dir)
         controller = TaskPipelineController(project_dir, db)
         result = controller.trigger_pipeline(
             capability=request.capability,
@@ -299,7 +325,6 @@ async def trigger_pipeline(
 @router.post("/check-agent", response_model=CheckAgentResponse)
 async def check_agent_exists(
     request: CheckAgentRequest,
-    db: Session = Depends(get_db),
 ) -> CheckAgentResponse:
     """
     Check if an agent type exists in the project.
@@ -313,6 +338,8 @@ async def check_agent_exists(
     try:
         project_dir = Path(request.project_dir).resolve()
 
+        # Use project-specific database session
+        db = get_project_session(project_dir)
         controller = TaskPipelineController(project_dir, db)
         result = controller.check_agent_exists(request.agent_type)
 
@@ -337,7 +364,6 @@ async def check_agent_exists(
 @router.post("/validate", response_model=ValidateResponse)
 async def validate_tool_result(
     request: ValidateRequest,
-    db: Session = Depends(get_db),
 ) -> ValidateResponse:
     """
     Validate tool result against acceptance criteria.
@@ -353,6 +379,8 @@ async def validate_tool_result(
     try:
         project_dir = Path(request.cwd).resolve()
 
+        # Use project-specific database session
+        db = get_project_session(project_dir)
         controller = TaskPipelineController(project_dir, db)
         validators = controller.get_active_validators()
 
